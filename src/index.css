@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-black text-zinc-100 font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1, h2, h3, h4, .font-heading {
+    font-family: 'Poppins', sans-serif;
+  }
+
+  /* Crisp minimalist scrollbar */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #09090b;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #27272a;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3f3f46;
+  }
+}
+
+/* SweetAlert2 Elegant Dark Black Theme */
+.swal2-popup {
+  background: #09090b !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 1rem !important;
+  color: #f4f4f5 !important;
+  font-family: 'Inter', sans-serif !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
+}
+
+.swal2-title {
+  color: #ffffff !important;
+  font-family: 'Poppins', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 1.15rem !important;
+}
+
+.swal2-html-container {
+  color: #a1a1aa !important;
+  font-size: 0.85rem !important;
+}
+
+.swal2-confirm {
+  background: #ffffff !important;
+  color: #09090b !important;
+  font-weight: 700 !important;
+  border-radius: 0.75rem !important;
+  font-size: 0.8rem !important;
+  padding: 0.6rem 1.25rem !important;
+}
+
+.swal2-confirm:hover {
+  background: #e4e4e7 !important;
+}
+
+.swal2-cancel {
+  background: #18181b !important;
+  color: #d4d4d8 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.75rem !important;
+  font-size: 0.8rem !important;
+  padding: 0.6rem 1.25rem !important;
+}
+
+.swal2-cancel:hover {
+  background: #27272a !important;
+  color: #ffffff !important;
+}
+
+.swal2-input, .swal2-textarea {
+  background: #111114 !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  border-radius: 0.75rem !important;
+  font-size: 0.85rem !important;
+}

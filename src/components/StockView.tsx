@@ -1,0 +1,419 @@
+import React, { useMemo, useState } from 'react';
+import { Package, Plus, History, ArrowUpDown, Layers } from 'lucide-react';
+import Swal from 'sweetalert2';
+import { StockBatch, StockMovement } from '../types';
+import { addStockAdjustment } from '../services/repository';
+import { formatNumber, formatRupiah } from '../utils/formatters';
+
+interface StockViewProps {
+  batches: StockBatch[];
+  stockMovements: StockMovement[];
+  onRefreshData: () => Promise<void>;
+  onNavigateToRestock: () => void;
+}
+
+export const StockView: React.FC<StockViewProps> = ({
+  batches,
+  stockMovements,
+  onRefreshData,
+  onNavigateToRestock,
+}) => {
+  const [activeTab, setActiveTab] = useState<'batches' | 'movements'>('batches');
+  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+  const [adjType, setAdjType] = useState<'ADJUSTMENT_ADD' | 'ADJUSTMENT_SUB'>('ADJUSTMENT_ADD');
+  const [adjQty, setAdjQty] = useState<number>(100);
+  const [adjReason, setAdjReason] = useState<string>('');
+  const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+
+  const totalAvailableStock = useMemo(() => {
+    return batches.reduce((sum, b) => sum + (b.remaining_quantity || 0), 0);
+  }, [batches]);
+
+  const totalSoldStock = useMemo(() => {
+    return batches.reduce(
+      (sum, b) => sum + (b.initial_quantity - b.remaining_quantity),
+      0
+    );
+  }, [batches]);
+
+  const totalAssetValue = useMemo(() => {
+    return batches.reduce(
+      (sum, b) => sum + (b.remaining_quantity || 0) * (b.cost_per_unit || 0),
+      0
+    );
+  }, [batches]);
+
+  const handleSaveAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adjQty <= 0) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Jumlah Tidak Valid',
+        text: 'Jumlah penyesuaian harus lebih dari 0',
+      });
+      return;
+    }
+    if (!adjReason.trim()) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Alasan Wajib Diisi',
+        text: 'Penyesuaian stok harus memiliki catatan alasan resmi!',
+      });
+      return;
+    }
+
+    try {
+      await addStockAdjustment(adjType, adjQty, adjReason.trim(), selectedBatchId || undefined);
+      await onRefreshData();
+      setShowAdjustmentModal(false);
+      setAdjReason('');
+      Swal.fire({
+        icon: 'success',
+        title: 'Penyesuaian Berhasil',
+        text: `Stok telah diperbarui dan mutasi stok tercatat rapi.`,
+      });
+    } catch (err: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal Menyesuaikan Stok',
+        text: err.message,
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Top Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-5 rounded-2xl border border-white/10">
+        <div>
+          <h2 className="text-lg font-heading font-bold text-white flex items-center gap-2">
+            <Package className="text-white" size={20} />
+            <span>Manajemen Stok Robux & Persediaan</span>
+          </h2>
+          <p className="text-xs text-zinc-400 mt-1">
+            Pantau stok tersedia, nilai persediaan batch FIFO, dan riwayat mutasi stok.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setShowAdjustmentModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#111114] hover:bg-[#18181b] text-zinc-200 text-xs font-semibold border border-white/10 transition"
+          >
+            <ArrowUpDown size={13} />
+            <span>Koreksi Stok</span>
+          </button>
+          <button
+            onClick={onNavigateToRestock}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 text-black text-xs font-bold transition shadow-sm"
+          >
+            <Plus size={14} />
+            <span>+ Beli Stok (Restock)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Stock Metrics Overview Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
+          <span className="text-[11px] text-zinc-400 block mb-1">Stok Tersedia Saat Ini</span>
+          <div className="text-3xl font-bold font-mono text-white flex items-baseline gap-1">
+            {formatNumber(totalAvailableStock)}
+            <span className="text-sm font-normal text-zinc-500 font-sans">R$</span>
+          </div>
+          <span className="text-[10px] text-zinc-500 mt-2 block">
+            Stok aktif siap dijual
+          </span>
+        </div>
+
+        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
+          <span className="text-[11px] text-zinc-400 block mb-1">Total Nilai Persediaan</span>
+          <div className="text-3xl font-bold font-mono text-white">
+            {formatRupiah(totalAssetValue)}
+          </div>
+          <span className="text-[10px] text-zinc-500 mt-2 block">
+            Aset modal persediaan buku riil
+          </span>
+        </div>
+
+        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
+          <span className="text-[11px] text-zinc-400 block mb-1">Total Robux Terjual</span>
+          <div className="text-3xl font-bold font-mono text-zinc-300 flex items-baseline gap-1">
+            {formatNumber(totalSoldStock)}
+            <span className="text-sm font-normal text-zinc-500 font-sans">R$</span>
+          </div>
+          <span className="text-[10px] text-zinc-500 mt-2 block">
+            Akumulasi Robux keluar dari batch
+          </span>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4">
+        <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+          <button
+            onClick={() => setActiveTab('batches')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              activeTab === 'batches'
+                ? 'bg-white text-black shadow-sm'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Layers size={14} />
+            <span>Daftar Batch Stok ({batches.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('movements')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              activeTab === 'movements'
+                ? 'bg-white text-black shadow-sm'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <History size={14} />
+            <span>Riwayat Mutasi Stok ({stockMovements.length})</span>
+          </button>
+        </div>
+
+        {/* Tab 1: Batches Table */}
+        {activeTab === 'batches' && (
+          <div className="overflow-x-auto border border-white/10 rounded-xl">
+            <table className="w-full text-left text-xs min-w-[750px]">
+              <thead className="bg-[#111114] text-zinc-400 border-b border-white/10">
+                <tr>
+                  <th className="p-3">Kode Batch</th>
+                  <th className="p-3">Tanggal Restock</th>
+                  <th className="p-3">Supplier</th>
+                  <th className="p-3 text-right">Modal Awal</th>
+                  <th className="p-3 text-right">Sisa Stok</th>
+                  <th className="p-3 text-right">HPP / Unit</th>
+                  <th className="p-3 text-right">Nilai Sisa</th>
+                  <th className="p-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {batches.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-zinc-500">
+                      Belum ada batch stok. Klik "Beli Stok (Restock)" untuk menambahkan persediaan pertama Anda.
+                    </td>
+                  </tr>
+                ) : (
+                  batches.map(b => (
+                    <tr key={b.id} className="hover:bg-white/5 transition">
+                      <td className="p-3 font-mono font-bold text-zinc-300">{b.batch_code}</td>
+                      <td className="p-3 text-zinc-400">{b.date.slice(0, 10)}</td>
+                      <td className="p-3 text-white font-medium">{b.supplier}</td>
+                      <td className="p-3 text-right font-mono text-zinc-400">
+                        {formatNumber(b.initial_quantity)} R$
+                      </td>
+                      <td className="p-3 text-right font-mono font-bold text-white">
+                        {formatNumber(b.remaining_quantity)} R$
+                      </td>
+                      <td className="p-3 text-right font-mono text-zinc-300 font-semibold">
+                        Rp{b.cost_per_unit}
+                      </td>
+                      <td className="p-3 text-right font-mono font-bold text-white">
+                        {formatRupiah(b.remaining_quantity * b.cost_per_unit)}
+                      </td>
+                      <td className="p-3 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            b.remaining_quantity > 0
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-[#18181b] text-zinc-500'
+                          }`}
+                        >
+                          {b.remaining_quantity > 0 ? 'TERSEDIA' : 'HABIS'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Tab 2: Stock Movements Table */}
+        {activeTab === 'movements' && (
+          <div className="overflow-x-auto border border-white/10 rounded-xl">
+            <table className="w-full text-left text-xs min-w-[700px]">
+              <thead className="bg-[#111114] text-zinc-400 border-b border-white/10">
+                <tr>
+                  <th className="p-3">Waktu</th>
+                  <th className="p-3">Tipe Mutasi</th>
+                  <th className="p-3 text-right">Jumlah (R$)</th>
+                  <th className="p-3">Referensi</th>
+                  <th className="p-3">Keterangan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {stockMovements.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-zinc-500">
+                      Belum ada riwayat pergerakan stok.
+                    </td>
+                  </tr>
+                ) : (
+                  stockMovements.map(m => {
+                    const isPositive =
+                      m.type === 'PURCHASE' ||
+                      m.type === 'ADJUSTMENT_ADD' ||
+                      m.type === 'REFUND_RESTORE' ||
+                      m.type === 'CANCELLATION_RESTORE';
+
+                    return (
+                      <tr key={m.id} className="hover:bg-white/5 transition font-mono">
+                        <td className="p-3 text-zinc-400 font-sans">{m.date.slice(0, 16).replace('T', ' ')}</td>
+                        <td className="p-3 font-semibold font-sans">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              isPositive
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            }`}
+                          >
+                            {m.type}
+                          </span>
+                        </td>
+                        <td
+                          className={`p-3 text-right font-bold ${
+                            isPositive ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {isPositive ? '+' : '-'}
+                          {formatNumber(m.quantity)} R$
+                        </td>
+                        <td className="p-3 text-zinc-300">{m.reference_id}</td>
+                        <td className="p-3 text-zinc-300 font-sans">{m.notes}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Stock Adjustment Modal */}
+      {showAdjustmentModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleSaveAdjustment}
+            className="bg-[#09090b] border border-white/15 rounded-2xl max-w-md w-full p-6 space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-sm font-heading font-bold text-white flex items-center gap-2">
+                <ArrowUpDown size={16} />
+                <span>Koreksi & Penyesuaian Stok</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAdjustmentModal(false)}
+                className="text-zinc-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                  Jenis Penyesuaian
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdjType('ADJUSTMENT_ADD')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition ${
+                      adjType === 'ADJUSTMENT_ADD'
+                        ? 'bg-white text-black border-white'
+                        : 'border-white/10 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    + Tambah Stok
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjType('ADJUSTMENT_SUB')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition ${
+                      adjType === 'ADJUSTMENT_SUB'
+                        ? 'bg-rose-500/20 border-rose-500 text-rose-300'
+                        : 'border-white/10 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    − Kurang Stok
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                  Jumlah Robux (R$)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={adjQty}
+                  onChange={e => setAdjQty(Number(e.target.value))}
+                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-white/30"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                  Pilih Batch (Opsional)
+                </label>
+                <select
+                  value={selectedBatchId}
+                  onChange={e => setSelectedBatchId(e.target.value)}
+                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                >
+                  <option value="">Semua Batch (Otomatis FIFO)</option>
+                  {batches.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.batch_code} (Sisa: {formatNumber(b.remaining_quantity)} R$)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                  Alasan Penyesuaian (Wajib)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Misal: Koreksi stok expired di Roblox, bonus supplier..."
+                  value={adjReason}
+                  onChange={e => setAdjReason(e.target.value)}
+                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-white/30"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAdjustmentModal(false)}
+                className="px-4 py-2 bg-[#18181b] text-zinc-300 text-xs font-semibold rounded-xl border border-white/10"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-white text-black text-xs font-bold rounded-xl hover:bg-zinc-200 transition"
+              >
+                Simpan Penyesuaian
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+};
