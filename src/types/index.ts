@@ -118,6 +118,37 @@ export interface AppSettings {
   suppliers: string[];
   sales_sources: string[];
   stock_method: 'FIFO';
+  // Customization & Themes
+  custom_logo?: string;
+  theme_mode?: 'dark' | 'light' | 'system';
+  theme_preset?: string;
+  custom_accent_color?: string;
+}
+
+export interface DailyBreakdown {
+  date: string; // YYYY-MM-DD
+  dayLabel: string;
+  robuxSold: number;
+  grossRevenue: number;
+  discount: number;
+  netRevenue: number;
+  cogs: number;
+  grossProfit: number;
+  transactionCount: number;
+
+  // Detail Dana Keluar / Terpakai
+  restockExpense: number;
+  operationalExpense: number;
+  transactionFees: number;
+  priveWithdrawal: number;
+  refundExpense: number;
+  otherExpense: number;
+  totalExpensesOut: number;
+
+  // Dana Masuk & Saldo Bersih
+  totalCashIn: number;
+  netCashFlow: number;
+  netDailyProfit: number;
 }
 
 export interface SalesCalculatorInput {

@@ -417,34 +417,34 @@ export const SalesView: React.FC<SalesViewProps> = ({
       {/* Mode Selector Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
         <div>
-          <h2 className="text-lg font-heading font-bold text-white">Modul Pencatatan Penjualan</h2>
-          <p className="text-xs text-zinc-400">
+          <h2 className="text-base sm:text-lg font-poppins font-bold text-white">Modul Pencatatan Penjualan</h2>
+          <p className="text-xs text-neutral-400">
             Pencatatan real-time dengan alokasi batch stok FIFO dan perhitungan laba akurat.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-[#111114] p-1 rounded-xl border border-white/10">
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 bg-[#111114] p-1 rounded-xl border border-white/10 w-full sm:w-auto">
           <button
             onClick={() => setActiveMode('single')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition text-center ${
               activeMode === 'single'
                 ? 'bg-white text-black shadow-sm'
-                : 'text-zinc-400 hover:text-white'
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
-            <ShoppingBag size={14} />
-            <span>Mode A — Satu Transaksi</span>
+            <ShoppingBag size={14} className="shrink-0" />
+            <span className="truncate">Satu Transaksi</span>
           </button>
           <button
             onClick={() => setActiveMode('multi')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition text-center ${
               activeMode === 'multi'
                 ? 'bg-white text-black shadow-sm'
-                : 'text-zinc-400 hover:text-white'
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
-            <FileSpreadsheet size={14} />
-            <span>Mode B — Banyak Transaksi Sekaligus</span>
+            <FileSpreadsheet size={14} className="shrink-0" />
+            <span className="truncate">Banyak Transaksi</span>
           </button>
         </div>
       </div>
@@ -1105,18 +1105,18 @@ export const SalesView: React.FC<SalesViewProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full md:w-auto">
+            <div className="relative col-span-2 sm:w-56">
               <Search
                 size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"
               />
               <input
                 type="text"
                 placeholder="Cari transaksi..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                className="bg-[#111114] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/30 w-44 sm:w-56"
+                className="w-full bg-[#111114] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-white/30"
               />
             </div>
 
@@ -1142,23 +1142,25 @@ export const SalesView: React.FC<SalesViewProps> = ({
               <option value="BELUM_LUNAS">Belum Lunas</option>
             </select>
 
-            <select
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as any)}
-              className="bg-[#111114] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white"
-            >
-              <option value="date">Tanggal</option>
-              <option value="revenue">Nilai</option>
-              <option value="profit">Laba</option>
-            </select>
+            <div className="col-span-2 sm:col-span-1 flex items-center gap-1.5">
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as any)}
+                className="flex-1 bg-[#111114] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white"
+              >
+                <option value="date">Urut Tanggal</option>
+                <option value="revenue">Urut Nilai</option>
+                <option value="profit">Urut Laba</option>
+              </select>
 
-            <button
-              onClick={() => setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
-              className="p-1.5 bg-[#111114] border border-white/10 rounded-xl text-zinc-300 hover:text-white"
-              title="Balik Urutan"
-            >
-              <ArrowUpDown size={14} />
-            </button>
+              <button
+                onClick={() => setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
+                className="p-1.5 bg-[#111114] border border-white/10 rounded-xl text-neutral-300 hover:text-white shrink-0"
+                title="Balik Urutan"
+              >
+                <ArrowUpDown size={14} />
+              </button>
+            </div>
           </div>
         </div>
 

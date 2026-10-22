@@ -84,31 +84,31 @@ export const StockView: React.FC<StockViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-5 rounded-2xl border border-white/10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-4 sm:p-5 rounded-2xl border border-white/10">
         <div>
-          <h2 className="text-lg font-heading font-bold text-white flex items-center gap-2">
+          <h2 className="text-base sm:text-lg font-poppins font-bold text-white flex items-center gap-2">
             <Package className="text-white" size={20} />
             <span>Manajemen Stok Robux & Persediaan</span>
           </h2>
-          <p className="text-xs text-zinc-400 mt-1">
+          <p className="text-xs text-neutral-400 mt-1">
             Pantau stok tersedia, nilai persediaan batch FIFO, dan riwayat mutasi stok.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => setShowAdjustmentModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#111114] hover:bg-[#18181b] text-zinc-200 text-xs font-semibold border border-white/10 transition"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-[#111114] hover:bg-neutral-800 text-neutral-200 text-xs font-semibold border border-white/10 transition"
           >
             <ArrowUpDown size={13} />
             <span>Koreksi Stok</span>
           </button>
           <button
             onClick={onNavigateToRestock}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 text-black text-xs font-bold transition shadow-sm"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition shadow-sm"
           >
             <Plus size={14} />
-            <span>+ Beli Stok (Restock)</span>
+            <span>+ Restock</span>
           </button>
         </div>
       </div>

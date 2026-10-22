@@ -8,11 +8,17 @@ import {
   AlertTriangle,
   ShieldCheck,
   Trash2,
+  Palette,
+  Image as ImageIcon,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { AppSettings, Cashflow, StockBatch, Transaction } from '../types';
 import { exportSqliteBinary, getDatabase, importSqliteBinary } from '../services/db';
 import { resetAllDataToEmpty, saveSettings } from '../services/repository';
+import { applyTheme, COLOR_PRESETS, ThemeMode } from '../utils/theme';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -33,16 +39,67 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newPaymentMethod, setNewPaymentMethod] = useState('');
   const [newSupplier, setNewSupplier] = useState('');
 
+  // Handle Logo Upload
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Ukuran Gambar Terlalu Besar',
+        text: 'Maksimum ukuran logo adalah 2 MB.',
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const base64 = ev.target?.result as string;
+      setFormData(prev => ({ ...prev, custom_logo: base64 }));
+      Swal.fire({
+        icon: 'success',
+        title: 'Logo Diunggah',
+        text: 'Jangan lupa klik "Simpan Pengaturan" untuk menetapkan perubahan.',
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Remove Custom Logo
+  const handleRemoveLogo = () => {
+    setFormData(prev => ({ ...prev, custom_logo: undefined }));
+  };
+
+  // Handle Theme Mode Change
+  const handleThemeModeChange = (mode: ThemeMode) => {
+    setFormData(prev => ({ ...prev, theme_mode: mode }));
+    applyTheme(mode, formData.custom_accent_color);
+  };
+
+  // Handle Accent Color Change
+  const handleColorChange = (hex: string, presetName?: string) => {
+    setFormData(prev => ({
+      ...prev,
+      custom_accent_color: hex,
+      theme_preset: presetName || 'custom',
+    }));
+    applyTheme(formData.theme_mode || 'dark', hex);
+  };
+
   // Save Settings
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await saveSettings(formData);
+      applyTheme(formData.theme_mode || 'dark', formData.custom_accent_color);
       await onRefreshData();
       Swal.fire({
         icon: 'success',
-        title: 'Pengaturan Disimpan',
-        text: 'Semua preferensi harga dan konfigurasi berhasil diperbarui.',
+        title: 'Pengaturan & Tema Disimpan',
+        text: 'Semua preferensi harga, identitas logo, dan konfigurasi tema berhasil diperbarui.',
         timer: 1600,
         showConfirmButton: false,
       });
@@ -226,30 +283,157 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
         <h2 className="text-xl font-poppins font-bold text-white flex items-center gap-2">
           <Settings className="text-white" size={22} />
-          <span>Pengaturan Bisnis, Harga & Backup Database</span>
+          <span>Pengaturan Bisnis, Personalisasi & Backup</span>
         </h2>
         <p className="text-xs text-neutral-400 mt-1">
-          Kustomisasi rate default, tier kuantitas paket Robux, kategori kas, serta backup dan restore data lokal.
+          Kustomisasi identitas logo toko, tema gelap/terang, kode warna, rate default, serta pencadangan database lokal.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Settings Form */}
+        {/* Left Column: Store Config & Customization */}
         <form
           onSubmit={handleSave}
-          className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4"
+          className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-5"
         >
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
-            <h3 className="font-poppins font-bold text-white text-base">Konfigurasi Toko & Harga</h3>
+            <h3 className="font-poppins font-bold text-white text-base">Identitas Toko & Harga</h3>
             <button
               type="submit"
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition"
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition shadow-sm"
             >
               <Save size={14} />
               <span>Simpan Pengaturan</span>
             </button>
           </div>
 
+          {/* Logo / Icon Application Upload */}
+          <div className="p-4 rounded-xl bg-[#111114] border border-white/10 space-y-3">
+            <label className="text-xs font-bold text-white flex items-center gap-2">
+              <ImageIcon size={15} />
+              <span>Logo & Ikon Kustom Aplikasi</span>
+            </label>
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-black border border-white/20 p-1 flex items-center justify-center overflow-hidden shrink-0">
+                {formData.custom_logo ? (
+                  <img
+                    src={formData.custom_logo}
+                    alt="Custom Logo"
+                    className="w-full h-full object-contain rounded-xl"
+                  />
+                ) : (
+                  <span className="text-[10px] text-neutral-500 font-mono text-center">Bawaan</span>
+                )}
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <div className="flex flex-wrap gap-2">
+                  <label className="px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold cursor-pointer transition">
+                    Unggah Logo
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={handleLogoUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  {formData.custom_logo && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveLogo}
+                      className="px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold transition"
+                    >
+                      Hapus
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-neutral-400">
+                  Logo tampil di sidebar, header, dan layar ponsel. Format PNG, JPEG, SVG (Maks. 2MB).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Theme Mode & Custom Colors */}
+          <div className="p-4 rounded-xl bg-[#111114] border border-white/10 space-y-3">
+            <label className="text-xs font-bold text-white flex items-center gap-2">
+              <Palette size={15} />
+              <span>Mode Tampilan & Kustom Warna Aksen</span>
+            </label>
+
+            {/* Dark, Light, System Selector */}
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'dark' as ThemeMode, label: 'Gelap (Dark)', icon: <Moon size={13} /> },
+                { id: 'light' as ThemeMode, label: 'Terang (Light)', icon: <Sun size={13} /> },
+                { id: 'system' as ThemeMode, label: 'Sistem HP', icon: <Monitor size={13} /> },
+              ].map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => handleThemeModeChange(t.id)}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-semibold transition ${
+                    (formData.theme_mode || 'dark') === t.id
+                      ? 'bg-white text-black font-bold shadow-sm'
+                      : 'bg-black/40 text-neutral-400 hover:text-white border border-white/10'
+                  }`}
+                >
+                  {t.icon}
+                  <span>{t.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Preset Color Swatches */}
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[11px] text-neutral-400 block font-medium">Pilihan Preset Warna Aksen:</span>
+              <div className="flex flex-wrap gap-2">
+                {COLOR_PRESETS.map(preset => {
+                  const isSelected = (formData.custom_accent_color || '#ffffff') === preset.colorHex;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => handleColorChange(preset.colorHex, preset.id)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs border transition ${
+                        isSelected
+                          ? 'border-white text-white font-bold bg-white/15'
+                          : 'border-white/10 text-neutral-400 hover:text-white bg-black/40'
+                      }`}
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: preset.colorHex }}
+                      />
+                      <span>{preset.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Custom Hex Color Picker */}
+            <div className="flex items-center gap-3 pt-1">
+              <span className="text-[11px] text-neutral-400">Kode Warna Hex Kustom:</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={formData.custom_accent_color || '#ffffff'}
+                  onChange={e => handleColorChange(e.target.value, 'custom')}
+                  className="w-7 h-7 rounded-lg cursor-pointer bg-transparent border-0"
+                  title="Pilih warna bebas"
+                />
+                <input
+                  type="text"
+                  placeholder="#ffffff"
+                  value={formData.custom_accent_color || '#ffffff'}
+                  onChange={e => handleColorChange(e.target.value, 'custom')}
+                  className="w-24 bg-black border border-white/15 rounded-lg px-2 py-1 text-xs font-mono text-white text-center"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Pricing Preferences */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-neutral-300 block mb-1">Nama Toko</label>
@@ -450,7 +634,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </form>
 
-        {/* Database Backup, Restore & Danger Zone */}
+        {/* Right Column: Database Backup, Restore & Danger Zone */}
         <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-5">
           <div className="border-b border-white/10 pb-3 flex items-center justify-between">
             <h3 className="font-poppins font-bold text-white text-base flex items-center gap-2">

@@ -210,7 +210,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
       {/* Report Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#09090b] p-3 rounded-2xl border border-white/10">
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex items-center gap-1.5 overflow-x-auto max-w-full no-scrollbar pb-1 sm:pb-0">
           {[
             ['sales', 'Laporan Penjualan'],
             ['profit_loss', 'Laba Rugi'],
@@ -221,7 +221,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             <button
               key={k}
               onClick={() => setReportType(k as any)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
                 reportType === k
                   ? 'bg-white text-black font-bold'
                   : 'text-neutral-400 hover:text-white hover:bg-white/5'
@@ -232,7 +232,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs text-neutral-400">Periode:</span>
           <select
             value={dateFilter}

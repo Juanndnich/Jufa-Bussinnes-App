@@ -15,6 +15,7 @@ import {
 import { AppSettings, Cashflow, StockBatch, Transaction } from '../types';
 import { formatDecimal, formatNumber, formatRupiah } from '../utils/formatters';
 import { calculateWeightedAverageRate, safeDivide } from '../utils/calculations';
+import { computeDailyBreakdowns } from '../utils/dailyJournal';
 
 interface DashboardViewProps {
   transactions: Transaction[];
@@ -186,21 +187,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
   }, [filteredData]);
 
+  const dailyBreakdowns = useMemo(() => {
+    return computeDailyBreakdowns(transactions, cashflows);
+  }, [transactions, cashflows]);
+
   const isStockLow = totalStockAvailable <= (settings.min_stock_alert ?? settings.minStockAlert ?? 500);
 
   return (
     <div className="space-y-6">
       {/* Top Banner / Filter Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-5 rounded-2xl border border-white/10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-4 sm:p-5 rounded-2xl border border-white/10">
         <div>
-          <h2 className="text-lg font-heading font-bold text-white">Ringkasan Bisnis & Performa</h2>
-          <p className="text-xs text-zinc-400">
+          <h2 className="text-base sm:text-lg font-poppins font-bold text-white">Ringkasan Bisnis & Performa</h2>
+          <p className="text-xs text-neutral-400">
             Perhitungan akuntansi otomatis berbasis batch FIFO dan arus kas riil.
           </p>
         </div>
 
-        {/* Filter Buttons */}
-        <div className="flex flex-wrap items-center gap-1 bg-[#111114] p-1 rounded-xl border border-white/10">
+        {/* Filter Buttons (Horizontally scrollable on mobile) */}
+        <div className="flex items-center gap-1 bg-[#111114] p-1 rounded-xl border border-white/10 overflow-x-auto max-w-full no-scrollbar shrink-0">
           {(
             [
               ['today', 'Hari Ini'],
@@ -215,10 +220,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               key={key}
               onClick={() => setFilterPeriod(key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
                 filterPeriod === key
-                  ? 'bg-white text-black shadow-sm'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  ? 'bg-white text-black shadow-sm font-bold'
+                  : 'text-neutral-400 hover:text-white hover:bg-white/5'
               }`}
             >
               {label}
@@ -477,6 +482,86 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* Daily 24H Financial Journal / Riwayat Hasil & Dana Terpakai Harian */}
+      <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="font-poppins font-bold text-white text-sm flex items-center gap-2">
+              <span>Jurnal Rekap Hasil & Dana Terpakai Harian</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-white/10 text-neutral-300 font-mono">
+                Transparansi 24 Jam
+              </span>
+            </h3>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Rincian komprehensif pemasukan penjualan robux vs rincian dana keluar/terpakai (restock, operasional, privé, fee).
+            </p>
+          </div>
+        </div>
+
+        {dailyBreakdowns.length === 0 ? (
+          <div className="p-6 text-center text-neutral-500 text-xs border border-dashed border-white/10 rounded-xl">
+            Belum ada mutasi transaksi atau kas yang tercatat hari ini. Catat penjualan atau mutasi kas untuk melihat pembukuan harian.
+          </div>
+        ) : (
+          <div className="overflow-x-auto border border-white/10 rounded-xl">
+            <table className="w-full text-left text-xs min-w-[850px]">
+              <thead className="bg-[#111114] text-neutral-400 border-b border-white/10">
+                <tr>
+                  <th className="p-3">Periode Hari</th>
+                  <th className="p-3 text-right">Robux Terjual</th>
+                  <th className="p-3 text-right">Omzet Penjualan</th>
+                  <th className="p-3 text-right">Laba Penjualan</th>
+                  <th className="p-3 text-right text-rose-400">Restock Stok</th>
+                  <th className="p-3 text-right text-rose-400">Biaya Ops/Fee</th>
+                  <th className="p-3 text-right text-amber-400">Prive/Lainnya</th>
+                  <th className="p-3 text-right font-bold text-white">Arus Kas Bersih</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {dailyBreakdowns.slice(0, 7).map(day => (
+                  <tr key={day.date} className="hover:bg-white/[0.02] transition">
+                    <td className="p-3">
+                      <div className="font-bold text-white">{day.dayLabel}</div>
+                      <div className="text-[11px] text-neutral-500 font-mono">{day.date}</div>
+                    </td>
+                    <td className="p-3 text-right font-mono text-white">
+                      {formatNumber(day.robuxSold)} R$
+                      <div className="text-[10px] text-neutral-500 font-sans">{day.transactionCount} order</div>
+                    </td>
+                    <td className="p-3 text-right font-mono font-bold text-white">
+                      {formatRupiah(day.netRevenue)}
+                    </td>
+                    <td className="p-3 text-right font-mono font-bold text-emerald-400">
+                      {formatRupiah(day.grossProfit)}
+                    </td>
+                    <td className="p-3 text-right font-mono text-neutral-300">
+                      {day.restockExpense > 0 ? `-${formatRupiah(day.restockExpense)}` : '-'}
+                    </td>
+                    <td className="p-3 text-right font-mono text-neutral-300">
+                      {day.operationalExpense + day.transactionFees > 0
+                        ? `-${formatRupiah(day.operationalExpense + day.transactionFees)}`
+                        : '-'}
+                    </td>
+                    <td className="p-3 text-right font-mono text-amber-300">
+                      {day.priveWithdrawal + day.refundExpense + day.otherExpense > 0
+                        ? `-${formatRupiah(day.priveWithdrawal + day.refundExpense + day.otherExpense)}`
+                        : '-'}
+                    </td>
+                    <td
+                      className={`p-3 text-right font-mono font-bold ${
+                        day.netCashFlow >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                      }`}
+                    >
+                      {formatRupiah(day.netCashFlow)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Recent Activity / Clean Empty State */}
       <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10">
         <div className="flex items-center justify-between mb-4">
@@ -505,7 +590,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs min-w-[650px]">
               <thead>
                 <tr className="border-b border-white/10 text-zinc-400">
                   <th className="pb-2.5">Kode</th>

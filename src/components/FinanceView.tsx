@@ -117,20 +117,20 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-5 rounded-2xl border border-white/10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-4 sm:p-5 rounded-2xl border border-white/10">
         <div>
-          <h2 className="text-lg font-heading font-bold text-white flex items-center gap-2">
+          <h2 className="text-base sm:text-lg font-poppins font-bold text-white flex items-center gap-2">
             <Wallet className="text-white" size={20} />
             <span>Buku Kas & Manajemen Saldo</span>
           </h2>
-          <p className="text-xs text-zinc-400 mt-1">
+          <p className="text-xs text-neutral-400 mt-1">
             Pemisahan tegas antara Saldo Kas, Nilai Aset Persediaan, Piutang Pelanggan, dan Laba Bersih.
           </p>
         </div>
 
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 text-black text-xs font-bold transition shadow-sm"
+          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition shadow-sm w-full sm:w-auto"
         >
           <Plus size={14} />
           <span>+ Catat Kas Masuk / Keluar</span>
