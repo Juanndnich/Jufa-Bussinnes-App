@@ -231,6 +231,18 @@ function initTables(db: Database) {
       notes TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS investors (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      invested_amount REAL NOT NULL,
+      share_percentage REAL NOT NULL,
+      duration_months INTEGER NOT NULL,
+      start_date TEXT NOT NULL,
+      status TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 }
 

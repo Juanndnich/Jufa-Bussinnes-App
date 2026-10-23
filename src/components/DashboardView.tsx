@@ -11,6 +11,10 @@ import {
   Layers,
   Award,
   Wallet,
+  BarChart2,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { AppSettings, Cashflow, StockBatch, Transaction } from '../types';
 import { formatDecimal, formatNumber, formatRupiah } from '../utils/formatters';
@@ -42,7 +46,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   settings,
   onNavigate,
 }) => {
-  const [filterPeriod, setFilterPeriod] = useState<DateFilterOption>('30days');
+  // Default filter period: 'today' (Hari Ini) as requested by user
+  const [filterPeriod, setFilterPeriod] = useState<DateFilterOption>('today');
+  const [chartType, setChartType] = useState<'revenue_profit' | 'robux_volume'>('revenue_profit');
+  const [isDailyRecapOpen, setIsDailyRecapOpen] = useState(false);
 
   // 1. Calculate Current Global Stock & Value
   const totalStockAvailable = useMemo(() => {
@@ -152,19 +159,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
     const lossTransactions = trxs.filter(t => t.net_profit < 0);
 
-    const packageFreq: { [key: number]: number } = {};
-    trxs.forEach(t => {
-      packageFreq[t.quantity] = (packageFreq[t.quantity] || 0) + 1;
-    });
-    let topPackage = 0;
-    let maxFreq = 0;
-    Object.entries(packageFreq).forEach(([qty, count]) => {
-      if (count > maxFreq) {
-        maxFreq = count;
-        topPackage = Number(qty);
-      }
-    });
-
     return {
       grossRevenue,
       discounts,
@@ -182,10 +176,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       avgDailyRevenue,
       avgDailyProfit,
       lossTransactions,
-      topPackage,
-      topPackageFreq: maxFreq,
     };
   }, [filteredData]);
+
+  // Compute 7-day chart data points
+  const chartData = useMemo(() => {
+    const days: { label: string; dateStr: string; revenue: number; profit: number; robux: number }[] = [];
+    const now = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(now.getDate() - i);
+      const dateStr = d.toISOString().slice(0, 10);
+      const label = d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' });
+
+      const dayTrxs = transactions.filter(t => t.status !== 'CANCELLED' && t.date.slice(0, 10) === dateStr);
+      const rev = dayTrxs.reduce((s, t) => s + (t.net_revenue || 0), 0);
+      const prof = dayTrxs.reduce((s, t) => s + (t.net_profit || 0), 0);
+      const rbx = dayTrxs.reduce((s, t) => s + (t.quantity || 0), 0);
+
+      days.push({ label, dateStr, revenue: rev, profit: prof, robux: rbx });
+    }
+
+    const maxRev = Math.max(1, ...days.map(d => d.revenue));
+    const maxRobux = Math.max(1, ...days.map(d => d.robux));
+
+    return { days, maxRev, maxRobux };
+  }, [transactions]);
 
   const dailyBreakdowns = useMemo(() => {
     return computeDailyBreakdowns(transactions, cashflows);
@@ -195,446 +212,281 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Banner / Filter Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-4 sm:p-5 rounded-2xl border border-white/10">
+      {/* Top Header & Filter Selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b theme-border pb-4">
         <div>
-          <h2 className="text-base sm:text-lg font-poppins font-bold text-white">Ringkasan Bisnis & Performa</h2>
-          <p className="text-xs text-neutral-400">
-            Perhitungan akuntansi otomatis berbasis batch FIFO dan arus kas riil.
+          <h2 className="text-base sm:text-lg font-heading font-bold theme-text-primary">
+            Ringkasan Bisnis JUFA STORE
+          </h2>
+          <p className="text-xs theme-text-secondary">
+            Performa penjualan Robux, perputaran stok FIFO, dan arus kas riil.
           </p>
         </div>
 
-        {/* Filter Buttons (Horizontally scrollable on mobile) */}
-        <div className="flex items-center gap-1 bg-[#111114] p-1 rounded-xl border border-white/10 overflow-x-auto max-w-full no-scrollbar shrink-0">
-          {(
-            [
-              ['today', 'Hari Ini'],
-              ['yesterday', 'Kemarin'],
-              ['7days', '7 Hari'],
-              ['30days', '30 Hari'],
-              ['thisMonth', 'Bulan Ini'],
-              ['thisYear', 'Tahun Ini'],
-              ['all', 'Semua'],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setFilterPeriod(key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
-                filterPeriod === key
-                  ? 'bg-white text-black shadow-sm font-bold'
-                  : 'text-neutral-400 hover:text-white hover:bg-white/5'
-              }`}
+        {/* Period Filter Dropdown / Pills (Default: Hari Ini) */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 theme-bg-card border theme-border px-3 py-1.5 rounded-xl">
+            <Calendar size={14} className="theme-text-muted" />
+            <select
+              value={filterPeriod}
+              onChange={e => setFilterPeriod(e.target.value as DateFilterOption)}
+              className="theme-bg-card theme-text-primary text-xs font-bold focus:outline-none cursor-pointer"
             >
-              {label}
-            </button>
-          ))}
+              <option value="today">Hari Ini</option>
+              <option value="yesterday">Kemarin</option>
+              <option value="7days">7 Hari Terakhir</option>
+              <option value="30days">30 Hari Terakhir</option>
+              <option value="thisMonth">Bulan Ini</option>
+              <option value="lastMonth">Bulan Lalu</option>
+              <option value="thisYear">Tahun Ini</option>
+              <option value="all">Semua Waktu</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* Critical Warnings */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {isStockLow && totalStockAvailable > 0 && (
-          <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/30 flex items-start gap-3 text-amber-300">
-            <AlertCircle size={18} className="shrink-0 text-amber-400 mt-0.5" />
-            <div className="text-xs">
-              <span className="font-bold block text-sm">Peringatan: Stok Robux Menipis!</span>
-              Stok tersisa{' '}
-              <strong className="text-white font-mono">{formatNumber(totalStockAvailable)} R$</strong>{' '}
-              (Ambang minimum: {formatNumber(settings.min_stock_alert ?? 500)} R$).
-            </div>
+      {/* Warnings Banner */}
+      {isStockLow && totalStockAvailable > 0 && (
+        <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-500 flex items-start gap-2.5 text-xs">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <div>
+            <strong>Peringatan: Stok Robux Anda Menipis!</strong>
+            <p className="mt-0.5 opacity-90">
+              Sisa stok saat ini <strong className="font-mono">{formatNumber(totalStockAvailable)} R$</strong> (di bawah batas minimum {formatNumber(settings.min_stock_alert || 500)} R$). Disarankan segera melakukan restock.
+            </p>
           </div>
-        )}
+        </div>
+      )}
 
-        {metrics.lossTransactions.length > 0 && (
-          <div className="p-4 rounded-2xl bg-rose-950/20 border border-rose-500/30 flex items-start gap-3 text-rose-300">
-            <AlertCircle size={18} className="shrink-0 text-rose-400 mt-0.5" />
-            <div className="text-xs">
-              <span className="font-bold block text-sm">Peringatan: Transaksi Minus!</span>
-              Terdapat{' '}
-              <strong className="text-white">{metrics.lossTransactions.length} transaksi</strong> pada
-              periode ini dengan margin minus / merugi.
-            </div>
+      {/* Key Metric Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        {/* Card 1: Pendapatan Bersih */}
+        <div className="theme-bg-surface p-3.5 sm:p-5 rounded-2xl border theme-border space-y-1 overflow-hidden">
+          <div className="flex items-center justify-between text-xs theme-text-secondary">
+            <span className="truncate">Pendapatan</span>
+            <DollarSign size={15} className="theme-text-muted shrink-0" />
           </div>
-        )}
-      </div>
-
-      {/* Key Financial Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Net Revenue */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10 hover:border-white/20 transition">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-            <span className="font-medium uppercase tracking-wider text-[11px]">Pendapatan Bersih</span>
-            <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-white">
-              <DollarSign size={15} />
-            </span>
-          </div>
-          <div className="text-2xl font-bold font-mono text-white">
+          <div className="text-base sm:text-lg lg:text-xl font-heading font-bold theme-text-primary font-mono tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatRupiah(metrics.netRevenue)}
           </div>
-          <div className="text-[11px] text-zinc-400 mt-2 flex items-center justify-between font-mono">
-            <span>Kotor: {formatRupiah(metrics.grossRevenue)}</span>
-            {metrics.discounts > 0 && (
-              <span className="text-amber-300">
-                Diskon -{formatRupiah(metrics.discounts)}
-              </span>
-            )}
-          </div>
+          <span className="text-[10px] theme-text-muted block truncate">
+            {metrics.transactionCount} transaksi pesanan
+          </span>
         </div>
 
-        {/* COGS (Modal Barang Terjual) */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10 hover:border-white/20 transition">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-            <span className="font-medium uppercase tracking-wider text-[11px]">Modal HPP (FIFO)</span>
-            <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-zinc-300">
-              <Layers size={15} />
-            </span>
-          </div>
-          <div className="text-2xl font-bold font-mono text-zinc-300">
-            {formatRupiah(metrics.cogs)}
-          </div>
-          <div className="text-[11px] text-zinc-500 mt-2">
-            Biaya perolehan stok yang terjual
-          </div>
-        </div>
-
-        {/* Gross Profit */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10 hover:border-white/20 transition">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-            <span className="font-medium uppercase tracking-wider text-[11px]">Laba Kotor</span>
-            <span
-              className={`p-2 rounded-xl border ${
-                metrics.grossProfit >= 0
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-              }`}
-            >
-              {metrics.grossProfit >= 0 ? <TrendingUp size={15} /> : <TrendingDown size={15} />}
-            </span>
+        {/* Card 2: Laba Bersih */}
+        <div className="theme-bg-surface p-3.5 sm:p-5 rounded-2xl border theme-border space-y-1 overflow-hidden">
+          <div className="flex items-center justify-between text-xs theme-text-secondary">
+            <span className="truncate">Laba Bersih</span>
+            <TrendingUp size={15} className="text-emerald-400 shrink-0" />
           </div>
           <div
-            className={`text-2xl font-bold font-mono ${
-              metrics.grossProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}
-          >
-            {formatRupiah(metrics.grossProfit)}
-          </div>
-          <div className="text-[11px] text-zinc-400 mt-2 font-mono">
-            Margin: {metrics.netRevenue > 0 ? formatDecimal((metrics.grossProfit / metrics.netRevenue) * 100, 1) + '%' : '-'}
-          </div>
-        </div>
-
-        {/* Net Profit */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10 hover:border-white/20 transition">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-            <span className="font-medium uppercase tracking-wider text-[11px]">Laba Bersih</span>
-            <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-white">
-              <Award size={15} />
-            </span>
-          </div>
-          <div
-            className={`text-2xl font-bold font-mono ${
-              metrics.netProfit >= 0 ? 'text-white' : 'text-rose-400'
+            className={`text-base sm:text-lg lg:text-xl font-heading font-bold font-mono tracking-tight whitespace-nowrap overflow-hidden text-ellipsis ${
+              metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'
             }`}
           >
             {formatRupiah(metrics.netProfit)}
           </div>
-          <div className="text-[11px] text-zinc-400 mt-2 font-mono">
-            Fee ({formatRupiah(metrics.txFees)}) & Ops ({formatRupiah(metrics.opExpenses)})
-          </div>
-        </div>
-      </div>
-
-      {/* Second Row: Stock & Cash Health */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Robux Stock Card */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-white">
-                <Coins size={17} />
-              </span>
-              <div>
-                <h4 className="text-xs font-heading font-bold text-white">Stok Robux Tersedia</h4>
-                <p className="text-[11px] text-zinc-500">Persediaan saat ini</p>
-              </div>
-            </div>
-            <button
-              onClick={() => onNavigate('stock')}
-              className="text-xs text-zinc-300 hover:text-white flex items-center gap-0.5 underline font-medium"
-            >
-              Lihat Batch <ArrowUpRight size={13} />
-            </button>
-          </div>
-          <div className="text-3xl font-bold font-mono text-white mb-2">
-            {formatNumber(totalStockAvailable)}{' '}
-            <span className="text-sm font-normal text-zinc-400 font-sans">R$</span>
-          </div>
-          <div className="p-3 rounded-xl bg-[#111114] border border-white/10 flex justify-between items-center text-xs">
-            <span className="text-zinc-400">Nilai Persediaan:</span>
-            <span className="font-bold text-white font-mono">
-              {formatRupiah(stockAssetValue)}
-            </span>
-          </div>
+          <span className="text-[10px] theme-text-muted block truncate">
+            Setelah HPP & operasional
+          </span>
         </div>
 
-        {/* Real Cash Balance */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-white">
-                <Wallet size={17} />
-              </span>
-              <div>
-                <h4 className="text-xs font-heading font-bold text-white">Saldo Kas Riil</h4>
-                <p className="text-[11px] text-zinc-500">Uang masuk − keluar</p>
-              </div>
-            </div>
-            <button
-              onClick={() => onNavigate('finance')}
-              className="text-xs text-zinc-300 hover:text-white flex items-center gap-0.5 underline font-medium"
-            >
-              Buku Kas <ArrowUpRight size={13} />
-            </button>
+        {/* Card 3: Robux Terjual */}
+        <div className="theme-bg-surface p-3.5 sm:p-5 rounded-2xl border theme-border space-y-1 overflow-hidden">
+          <div className="flex items-center justify-between text-xs theme-text-secondary">
+            <span className="truncate">Robux Terjual</span>
+            <Coins size={15} className="text-amber-400 shrink-0" />
           </div>
-          <div className="text-3xl font-bold font-mono text-white mb-2">
-            {formatRupiah(cashBalance)}
+          <div className="text-base sm:text-lg lg:text-xl font-heading font-bold theme-text-primary font-mono tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
+            {formatNumber(metrics.totalRobuxSold)} <span className="text-xs font-normal">R$</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-            <div className="p-2 rounded-lg bg-[#111114] border border-white/10 text-emerald-400">
-              <span className="text-zinc-500 block text-[10px]">Masuk:</span> <strong>{formatRupiah(totalCashIn)}</strong>
-            </div>
-            <div className="p-2 rounded-lg bg-[#111114] border border-white/10 text-rose-400">
-              <span className="text-zinc-500 block text-[10px]">Keluar:</span> <strong>{formatRupiah(totalCashOut)}</strong>
-            </div>
-          </div>
+          <span className="text-[10px] theme-text-muted block truncate">
+            Rata-rata: Rp{formatDecimal(metrics.weightedAvgSellRate)}/R$
+          </span>
         </div>
 
-        {/* Total Estimated Asset */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-white">
-                <Package size={17} />
-              </span>
-              <div>
-                <h4 className="text-xs font-heading font-bold text-white">Total Estimasi Aset</h4>
-                <p className="text-[11px] text-zinc-500">Kas + Nilai Stok</p>
-              </div>
-            </div>
+        {/* Card 4: Sisa Stok Robux */}
+        <div className="theme-bg-surface p-3.5 sm:p-5 rounded-2xl border theme-border space-y-1 overflow-hidden">
+          <div className="flex items-center justify-between text-xs theme-text-secondary">
+            <span className="truncate">Stok Tersisa</span>
+            <Package size={15} className="theme-text-muted shrink-0" />
           </div>
-          <div className="text-3xl font-bold font-mono text-white mb-2">
-            {formatRupiah(cashBalance + stockAssetValue)}
+          <div className="text-base sm:text-lg lg:text-xl font-heading font-bold theme-text-primary font-mono tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
+            {formatNumber(totalStockAvailable)} <span className="text-xs font-normal">R$</span>
           </div>
-          <div className="p-3 rounded-xl bg-[#111114] border border-white/10 text-xs space-y-1 text-zinc-400 font-mono">
-            <div className="flex justify-between">
-              <span>Robux Terjual:</span>
-              <span className="text-white font-semibold">
-                {formatNumber(metrics.totalRobuxSold)} R$
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>Transaksi:</span>
-              <span className="text-white font-semibold">
-                {metrics.transactionCount} pesanan
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Third Row: Analytics */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-[#09090b] p-4 rounded-xl border border-white/10">
-          <span className="text-[11px] text-zinc-400 block mb-1">Rate Tertimbang Riil</span>
-          <div className="text-lg font-bold font-mono text-white">
-            Rp{metrics.weightedAvgSellRate}
-            <span className="text-xs text-zinc-500 font-normal"> / R$</span>
-          </div>
-          <span className="text-[10px] text-zinc-500">Total omzet ÷ Total Robux</span>
-        </div>
-
-        <div className="bg-[#09090b] p-4 rounded-xl border border-white/10">
-          <span className="text-[11px] text-zinc-400 block mb-1">Rata-rata Nilai Order</span>
-          <div className="text-lg font-bold font-mono text-white">
-            {formatRupiah(metrics.avgTransactionValue)}
-          </div>
-          <span className="text-[10px] text-zinc-500">Per transaksi pembeli</span>
-        </div>
-
-        <div className="bg-[#09090b] p-4 rounded-xl border border-white/10">
-          <span className="text-[11px] text-zinc-400 block mb-1">Rata-rata Robux / Order</span>
-          <div className="text-lg font-bold font-mono text-white">
-            {formatNumber(metrics.avgRobuxPerTransaction)}
-            <span className="text-xs text-zinc-500 font-normal"> R$</span>
-          </div>
-          <span className="text-[10px] text-zinc-500">Ukuran order rata-rata</span>
-        </div>
-
-        <div className="bg-[#09090b] p-4 rounded-xl border border-white/10">
-          <span className="text-[11px] text-zinc-400 block mb-1">Paket Paling Sering Dibeli</span>
-          <div className="text-lg font-bold font-mono text-white">
-            {metrics.topPackage > 0 ? `${formatNumber(metrics.topPackage)} R$` : '-'}
-          </div>
-          <span className="text-[10px] text-zinc-500">
-            {metrics.topPackageFreq > 0 ? `${metrics.topPackageFreq} kali dipesan` : 'Belum ada data'}
+          <span className="text-[10px] theme-text-muted block truncate">
+            Aset: {formatRupiah(stockAssetValue)}
           </span>
         </div>
       </div>
 
-      {/* Daily 24H Financial Journal / Riwayat Hasil & Dana Terpakai Harian */}
-      <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      {/* Statistical Interactive Chart Section */}
+      <div className="theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b theme-border pb-3">
           <div>
-            <h3 className="font-poppins font-bold text-white text-sm flex items-center gap-2">
-              <span>Jurnal Rekap Hasil & Dana Terpakai Harian</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-white/10 text-neutral-300 font-mono">
-                Transparansi 24 Jam
-              </span>
+            <h3 className="font-heading font-bold theme-text-primary text-sm flex items-center gap-2">
+              <BarChart2 size={16} /> Grafik Statistik Tren 7 Hari Terakhir
             </h3>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Rincian komprehensif pemasukan penjualan robux vs rincian dana keluar/terpakai (restock, operasional, privé, fee).
+            <p className="text-xs theme-text-secondary mt-0.5">
+              Visualisasi grafik harian omzet, laba bersih, dan kuantitas Robux.
             </p>
           </div>
-        </div>
 
-        {dailyBreakdowns.length === 0 ? (
-          <div className="p-6 text-center text-neutral-500 text-xs border border-dashed border-white/10 rounded-xl">
-            Belum ada mutasi transaksi atau kas yang tercatat hari ini. Catat penjualan atau mutasi kas untuk melihat pembukuan harian.
-          </div>
-        ) : (
-          <div className="overflow-x-auto border border-white/10 rounded-xl">
-            <table className="w-full text-left text-xs min-w-[850px]">
-              <thead className="bg-[#111114] text-neutral-400 border-b border-white/10">
-                <tr>
-                  <th className="p-3">Periode Hari</th>
-                  <th className="p-3 text-right">Robux Terjual</th>
-                  <th className="p-3 text-right">Omzet Penjualan</th>
-                  <th className="p-3 text-right">Laba Penjualan</th>
-                  <th className="p-3 text-right text-rose-400">Restock Stok</th>
-                  <th className="p-3 text-right text-rose-400">Biaya Ops/Fee</th>
-                  <th className="p-3 text-right text-amber-400">Prive/Lainnya</th>
-                  <th className="p-3 text-right font-bold text-white">Arus Kas Bersih</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {dailyBreakdowns.slice(0, 7).map(day => (
-                  <tr key={day.date} className="hover:bg-white/[0.02] transition">
-                    <td className="p-3">
-                      <div className="font-bold text-white">{day.dayLabel}</div>
-                      <div className="text-[11px] text-neutral-500 font-mono">{day.date}</div>
-                    </td>
-                    <td className="p-3 text-right font-mono text-white">
-                      {formatNumber(day.robuxSold)} R$
-                      <div className="text-[10px] text-neutral-500 font-sans">{day.transactionCount} order</div>
-                    </td>
-                    <td className="p-3 text-right font-mono font-bold text-white">
-                      {formatRupiah(day.netRevenue)}
-                    </td>
-                    <td className="p-3 text-right font-mono font-bold text-emerald-400">
-                      {formatRupiah(day.grossProfit)}
-                    </td>
-                    <td className="p-3 text-right font-mono text-neutral-300">
-                      {day.restockExpense > 0 ? `-${formatRupiah(day.restockExpense)}` : '-'}
-                    </td>
-                    <td className="p-3 text-right font-mono text-neutral-300">
-                      {day.operationalExpense + day.transactionFees > 0
-                        ? `-${formatRupiah(day.operationalExpense + day.transactionFees)}`
-                        : '-'}
-                    </td>
-                    <td className="p-3 text-right font-mono text-amber-300">
-                      {day.priveWithdrawal + day.refundExpense + day.otherExpense > 0
-                        ? `-${formatRupiah(day.priveWithdrawal + day.refundExpense + day.otherExpense)}`
-                        : '-'}
-                    </td>
-                    <td
-                      className={`p-3 text-right font-mono font-bold ${
-                        day.netCashFlow >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {formatRupiah(day.netCashFlow)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Recent Activity / Clean Empty State */}
-      <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-heading font-bold text-white text-sm">Transaksi Penjualan Terkini</h3>
-          <button
-            onClick={() => onNavigate('sales')}
-            className="text-xs text-zinc-300 hover:text-white flex items-center gap-1 underline font-medium"
-          >
-            Lihat Semua Penjualan <ArrowUpRight size={13} />
-          </button>
-        </div>
-
-        {filteredData.validTrxs.length === 0 ? (
-          <div className="py-12 text-center text-zinc-500 text-xs border border-dashed border-white/10 rounded-xl">
-            <ShoppingCart size={28} className="mx-auto mb-2 text-zinc-600" />
-            <p className="font-semibold text-zinc-300">Belum Ada Transaksi Tercatat</p>
-            <p className="mt-1 text-zinc-500">
-              Database bersih. Catat penjualan baru satu per satu atau massal di tab Penjualan.
-            </p>
+          <div className="flex items-center gap-1.5 theme-bg-card p-1 rounded-xl border theme-border">
             <button
-              onClick={() => onNavigate('sales')}
-              className="mt-3 px-3 py-1.5 rounded-lg bg-white text-black font-semibold text-xs hover:bg-zinc-200 transition"
+              onClick={() => setChartType('revenue_profit')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                chartType === 'revenue_profit'
+                  ? 'theme-bg-surface theme-text-primary shadow-sm border theme-border'
+                  : 'theme-text-muted hover:theme-text-primary'
+              }`}
             >
-              + Catat Penjualan Baru
+              Omzet & Laba
+            </button>
+            <button
+              onClick={() => setChartType('robux_volume')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                chartType === 'robux_volume'
+                  ? 'theme-bg-surface theme-text-primary shadow-sm border theme-border'
+                  : 'theme-text-muted hover:theme-text-primary'
+              }`}
+            >
+              Volume Robux
             </button>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs min-w-[650px]">
-              <thead>
-                <tr className="border-b border-white/10 text-zinc-400">
-                  <th className="pb-2.5">Kode</th>
-                  <th className="pb-2.5">Tanggal</th>
-                  <th className="pb-2.5">Pelanggan</th>
-                  <th className="pb-2.5 text-right">Robux</th>
-                  <th className="pb-2.5 text-right">Rate</th>
-                  <th className="pb-2.5 text-right">Total</th>
-                  <th className="pb-2.5 text-right">Laba Bersih</th>
-                  <th className="pb-2.5 text-center">Status</th>
+        </div>
+
+        {/* Visual Bar/Line Chart */}
+        <div className="pt-2">
+          <div className="h-48 sm:h-56 flex items-end justify-between gap-2 sm:gap-4 px-2 pt-6">
+            {chartData.days.map((item, idx) => {
+              const revHeight = Math.max(8, Math.round((item.revenue / chartData.maxRev) * 160));
+              const profHeight = Math.max(4, Math.round((Math.max(0, item.profit) / chartData.maxRev) * 160));
+              const robuxHeight = Math.max(8, Math.round((item.robux / chartData.maxRobux) * 160));
+
+              return (
+                <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative">
+                  {/* Tooltip on Hover */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full mb-2 z-20 pointer-events-none theme-bg-card border theme-border rounded-lg p-2 text-[10px] shadow-lg whitespace-nowrap">
+                    <div className="font-bold theme-text-primary">{item.dateStr}</div>
+                    <div className="theme-text-secondary">Omzet: {formatRupiah(item.revenue)}</div>
+                    <div className="text-emerald-400">Laba: {formatRupiah(item.profit)}</div>
+                    <div className="text-amber-400">Robux: {formatNumber(item.robux)} R$</div>
+                  </div>
+
+                  {/* Bars Container */}
+                  <div className="w-full flex items-end justify-center gap-1 sm:gap-1.5 h-full">
+                    {chartType === 'revenue_profit' ? (
+                      <>
+                        <div
+                          style={{ height: `${revHeight}px` }}
+                          className="w-full max-w-[20px] rounded-t-md bg-zinc-400/80 group-hover:bg-white transition-all"
+                          title={`Omzet: ${formatRupiah(item.revenue)}`}
+                        />
+                        <div
+                          style={{ height: `${profHeight}px` }}
+                          className="w-full max-w-[20px] rounded-t-md bg-emerald-500/80 group-hover:bg-emerald-400 transition-all"
+                          title={`Laba: ${formatRupiah(item.profit)}`}
+                        />
+                      </>
+                    ) : (
+                      <div
+                        style={{ height: `${robuxHeight}px` }}
+                        className="w-full max-w-[28px] rounded-t-md bg-amber-500/80 group-hover:bg-amber-400 transition-all"
+                        title={`Robux: ${formatNumber(item.robux)} R$`}
+                      />
+                    )}
+                  </div>
+
+                  {/* X Axis Label */}
+                  <span className="text-[10px] theme-text-muted mt-2 font-mono whitespace-nowrap">
+                    {item.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Chart Legend */}
+          <div className="flex items-center justify-center gap-6 mt-4 pt-3 border-t theme-border text-xs">
+            {chartType === 'revenue_profit' ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded bg-zinc-300 inline-block" />
+                  <span className="theme-text-secondary">Pendapatan Kotor / Omzet</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded bg-emerald-500 inline-block" />
+                  <span className="theme-text-secondary">Laba Bersih</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded bg-amber-500 inline-block" />
+                <span className="theme-text-secondary">Jumlah Robux Terjual (R$)</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Collapsible 24-Hours Recap Journal */}
+      <div className="theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4">
+        <button
+          onClick={() => setIsDailyRecapOpen(!isDailyRecapOpen)}
+          className="w-full flex items-center justify-between text-left focus:outline-none"
+        >
+          <div>
+            <h3 className="font-heading font-bold theme-text-primary text-sm">
+              Rekapitulasi Harian & Mutasi Kas
+            </h3>
+            <p className="text-xs theme-text-secondary mt-0.5">
+              Rincian pendapatan penjualan vs pengeluaran operasional per hari.
+            </p>
+          </div>
+          <div className="p-2 rounded-xl theme-bg-card border theme-border theme-text-primary">
+            {isDailyRecapOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </div>
+        </button>
+
+        {isDailyRecapOpen && (
+          <div className="overflow-x-auto border theme-border rounded-xl mt-3">
+            <table className="w-full text-left text-xs min-w-[700px]">
+              <thead className="theme-bg-card theme-text-secondary border-b theme-border">
+                <tr>
+                  <th className="p-2.5">Tanggal</th>
+                  <th className="p-2.5 text-right">Robux Terjual</th>
+                  <th className="p-2.5 text-right">Pendapatan</th>
+                  <th className="p-2.5 text-right">Dana Keluar</th>
+                  <th className="p-2.5 text-right">Laba Harian</th>
+                  <th className="p-2.5 text-center">Pesanan</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
-                {filteredData.validTrxs.slice(0, 5).map(trx => (
-                  <tr key={trx.id} className="hover:bg-white/5 transition">
-                    <td className="py-2.5 font-mono text-zinc-300">{trx.transaction_code}</td>
-                    <td className="py-2.5 text-zinc-400">{trx.date.slice(0, 10)}</td>
-                    <td className="py-2.5 font-medium text-white">{trx.customer_name}</td>
-                    <td className="py-2.5 text-right font-mono font-bold text-white">
-                      {formatNumber(trx.quantity)} R$
+              <tbody className="divide-y theme-border-subtle">
+                {dailyBreakdowns.slice(0, 10).map((b, idx) => (
+                  <tr key={idx} className="theme-bg-card-hover">
+                    <td className="p-2.5 font-medium theme-text-primary whitespace-nowrap">
+                      {b.dayLabel} ({b.date})
                     </td>
-                    <td className="py-2.5 text-right font-mono text-zinc-300">
-                      Rp{trx.sell_rate}
+                    <td className="p-2.5 text-right font-mono theme-text-primary">
+                      {formatNumber(b.robuxSold)} R$
                     </td>
-                    <td className="py-2.5 text-right font-mono font-bold text-white">
-                      {formatRupiah(trx.net_revenue)}
+                    <td className="p-2.5 text-right font-mono theme-text-primary">
+                      {formatRupiah(b.netRevenue)}
+                    </td>
+                    <td className="p-2.5 text-right font-mono text-rose-400">
+                      -{formatRupiah(b.totalExpensesOut)}
                     </td>
                     <td
-                      className={`py-2.5 text-right font-mono font-bold ${
-                        trx.net_profit >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                      className={`p-2.5 text-right font-mono font-bold ${
+                        b.netDailyProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'
                       }`}
                     >
-                      {formatRupiah(trx.net_profit)}
+                      {formatRupiah(b.netDailyProfit)}
                     </td>
-                    <td className="py-2.5 text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          trx.payment_status === 'LUNAS'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                        }`}
-                      >
-                        {trx.payment_status}
-                      </span>
+                    <td className="p-2.5 text-center theme-text-secondary font-mono">
+                      {b.transactionCount}
                     </td>
                   </tr>
                 ))}

@@ -104,6 +104,18 @@ export interface Cashflow {
   created_at: string;
 }
 
+export interface Investor {
+  id: string;
+  name: string;
+  invested_amount: number;
+  share_percentage: number; // e.g. 50 for 50:50
+  duration_months: number;
+  start_date: string;
+  status: 'AKTIF' | 'SELESAI' | 'PENDING';
+  notes?: string;
+  created_at: string;
+}
+
 export interface AppSettings {
   store_name: string;
   currency: string;
@@ -118,11 +130,8 @@ export interface AppSettings {
   suppliers: string[];
   sales_sources: string[];
   stock_method: 'FIFO';
-  // Customization & Themes
-  custom_logo?: string;
+  // Theme Mode (Dark, Light, System)
   theme_mode?: 'dark' | 'light' | 'system';
-  theme_preset?: string;
-  custom_accent_color?: string;
 }
 
 export interface DailyBreakdown {

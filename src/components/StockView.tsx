@@ -84,13 +84,13 @@ export const StockView: React.FC<StockViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-4 sm:p-5 rounded-2xl border border-white/10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border">
         <div>
-          <h2 className="text-base sm:text-lg font-poppins font-bold text-white flex items-center gap-2">
-            <Package className="text-white" size={20} />
+          <h2 className="text-base sm:text-lg font-heading font-bold theme-text-primary flex items-center gap-2">
+            <Package size={20} />
             <span>Manajemen Stok Robux & Persediaan</span>
           </h2>
-          <p className="text-xs text-neutral-400 mt-1">
+          <p className="text-xs theme-text-secondary mt-1">
             Pantau stok tersedia, nilai persediaan batch FIFO, dan riwayat mutasi stok.
           </p>
         </div>
@@ -98,14 +98,14 @@ export const StockView: React.FC<StockViewProps> = ({
         <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => setShowAdjustmentModal(true)}
-            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-[#111114] hover:bg-neutral-800 text-neutral-200 text-xs font-semibold border border-white/10 transition"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl theme-bg-card hover:theme-bg-card-hover theme-text-primary text-xs font-semibold border theme-border transition active:scale-95"
           >
             <ArrowUpDown size={13} />
             <span>Koreksi Stok</span>
           </button>
           <button
             onClick={onNavigateToRestock}
-            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition shadow-sm"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition shadow-sm active:scale-95"
           >
             <Plus size={14} />
             <span>+ Restock</span>
@@ -114,49 +114,49 @@ export const StockView: React.FC<StockViewProps> = ({
       </div>
 
       {/* Stock Metrics Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <span className="text-[11px] text-zinc-400 block mb-1">Stok Tersedia Saat Ini</span>
-          <div className="text-3xl font-bold font-mono text-white flex items-baseline gap-1">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
+          <span className="text-[11px] theme-text-muted block mb-1 truncate">Stok Tersedia Saat Ini</span>
+          <div className="text-2xl sm:text-3xl font-bold font-mono theme-text-primary flex items-baseline gap-1 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatNumber(totalAvailableStock)}
-            <span className="text-sm font-normal text-zinc-500 font-sans">R$</span>
+            <span className="text-xs font-normal theme-text-muted font-sans">R$</span>
           </div>
-          <span className="text-[10px] text-zinc-500 mt-2 block">
+          <span className="text-[10px] theme-text-muted mt-2 block truncate">
             Stok aktif siap dijual
           </span>
         </div>
 
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <span className="text-[11px] text-zinc-400 block mb-1">Total Nilai Persediaan</span>
-          <div className="text-3xl font-bold font-mono text-white">
+        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
+          <span className="text-[11px] theme-text-muted block mb-1 truncate">Total Nilai Persediaan</span>
+          <div className="text-2xl sm:text-3xl font-bold font-mono theme-text-primary tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatRupiah(totalAssetValue)}
           </div>
-          <span className="text-[10px] text-zinc-500 mt-2 block">
+          <span className="text-[10px] theme-text-muted mt-2 block truncate">
             Aset modal persediaan buku riil
           </span>
         </div>
 
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <span className="text-[11px] text-zinc-400 block mb-1">Total Robux Terjual</span>
-          <div className="text-3xl font-bold font-mono text-zinc-300 flex items-baseline gap-1">
+        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
+          <span className="text-[11px] theme-text-muted block mb-1 truncate">Total Robux Terjual</span>
+          <div className="text-2xl sm:text-3xl font-bold font-mono theme-text-primary flex items-baseline gap-1 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatNumber(totalSoldStock)}
-            <span className="text-sm font-normal text-zinc-500 font-sans">R$</span>
+            <span className="text-xs font-normal theme-text-muted font-sans">R$</span>
           </div>
-          <span className="text-[10px] text-zinc-500 mt-2 block">
+          <span className="text-[10px] theme-text-muted mt-2 block truncate">
             Akumulasi Robux keluar dari batch
           </span>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4">
-        <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+      <div className="theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4">
+        <div className="flex items-center gap-2 border-b theme-border pb-3">
           <button
             onClick={() => setActiveTab('batches')}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
               activeTab === 'batches'
                 ? 'bg-white text-black shadow-sm'
-                : 'text-zinc-400 hover:text-white'
+                : 'theme-text-muted hover:theme-text-primary'
             }`}
           >
             <Layers size={14} />
@@ -167,7 +167,7 @@ export const StockView: React.FC<StockViewProps> = ({
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
               activeTab === 'movements'
                 ? 'bg-white text-black shadow-sm'
-                : 'text-zinc-400 hover:text-white'
+                : 'theme-text-muted hover:theme-text-primary'
             }`}
           >
             <History size={14} />
@@ -177,9 +177,9 @@ export const StockView: React.FC<StockViewProps> = ({
 
         {/* Tab 1: Batches Table */}
         {activeTab === 'batches' && (
-          <div className="overflow-x-auto border border-white/10 rounded-xl">
+          <div className="overflow-x-auto border theme-border rounded-xl">
             <table className="w-full text-left text-xs min-w-[750px]">
-              <thead className="bg-[#111114] text-zinc-400 border-b border-white/10">
+              <thead className="theme-bg-card theme-text-secondary border-b theme-border">
                 <tr>
                   <th className="p-3">Kode Batch</th>
                   <th className="p-3">Tanggal Restock</th>
@@ -191,29 +191,29 @@ export const StockView: React.FC<StockViewProps> = ({
                   <th className="p-3 text-center">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y theme-border-subtle">
                 {batches.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-zinc-500">
+                    <td colSpan={8} className="py-8 text-center theme-text-muted">
                       Belum ada batch stok. Klik "Beli Stok (Restock)" untuk menambahkan persediaan pertama Anda.
                     </td>
                   </tr>
                 ) : (
                   batches.map(b => (
-                    <tr key={b.id} className="hover:bg-white/5 transition">
-                      <td className="p-3 font-mono font-bold text-zinc-300">{b.batch_code}</td>
-                      <td className="p-3 text-zinc-400">{b.date.slice(0, 10)}</td>
-                      <td className="p-3 text-white font-medium">{b.supplier}</td>
-                      <td className="p-3 text-right font-mono text-zinc-400">
+                    <tr key={b.id} className="theme-bg-card-hover transition">
+                      <td className="p-3 font-mono font-bold theme-text-primary">{b.batch_code}</td>
+                      <td className="p-3 theme-text-secondary">{b.date.slice(0, 10)}</td>
+                      <td className="p-3 theme-text-primary font-medium">{b.supplier}</td>
+                      <td className="p-3 text-right font-mono theme-text-secondary">
                         {formatNumber(b.initial_quantity)} R$
                       </td>
-                      <td className="p-3 text-right font-mono font-bold text-white">
+                      <td className="p-3 text-right font-mono font-bold theme-text-primary">
                         {formatNumber(b.remaining_quantity)} R$
                       </td>
-                      <td className="p-3 text-right font-mono text-zinc-300 font-semibold">
+                      <td className="p-3 text-right font-mono theme-text-secondary font-semibold">
                         Rp{b.cost_per_unit}
                       </td>
-                      <td className="p-3 text-right font-mono font-bold text-white">
+                      <td className="p-3 text-right font-mono font-bold theme-text-primary">
                         {formatRupiah(b.remaining_quantity * b.cost_per_unit)}
                       </td>
                       <td className="p-3 text-center">
@@ -221,7 +221,7 @@ export const StockView: React.FC<StockViewProps> = ({
                           className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                             b.remaining_quantity > 0
                               ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-[#18181b] text-zinc-500'
+                              : 'theme-bg-card theme-text-muted'
                           }`}
                         >
                           {b.remaining_quantity > 0 ? 'TERSEDIA' : 'HABIS'}
@@ -237,9 +237,9 @@ export const StockView: React.FC<StockViewProps> = ({
 
         {/* Tab 2: Stock Movements Table */}
         {activeTab === 'movements' && (
-          <div className="overflow-x-auto border border-white/10 rounded-xl">
+          <div className="overflow-x-auto border theme-border rounded-xl">
             <table className="w-full text-left text-xs min-w-[700px]">
-              <thead className="bg-[#111114] text-zinc-400 border-b border-white/10">
+              <thead className="theme-bg-card theme-text-secondary border-b theme-border">
                 <tr>
                   <th className="p-3">Waktu</th>
                   <th className="p-3">Tipe Mutasi</th>
@@ -248,10 +248,10 @@ export const StockView: React.FC<StockViewProps> = ({
                   <th className="p-3">Keterangan</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y theme-border-subtle">
                 {stockMovements.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-zinc-500">
+                    <td colSpan={5} className="py-8 text-center theme-text-muted">
                       Belum ada riwayat pergerakan stok.
                     </td>
                   </tr>
@@ -264,8 +264,8 @@ export const StockView: React.FC<StockViewProps> = ({
                       m.type === 'CANCELLATION_RESTORE';
 
                     return (
-                      <tr key={m.id} className="hover:bg-white/5 transition font-mono">
-                        <td className="p-3 text-zinc-400 font-sans">{m.date.slice(0, 16).replace('T', ' ')}</td>
+                      <tr key={m.id} className="theme-bg-card-hover transition font-mono">
+                        <td className="p-3 theme-text-secondary font-sans">{m.date.slice(0, 16).replace('T', ' ')}</td>
                         <td className="p-3 font-semibold font-sans">
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -285,8 +285,8 @@ export const StockView: React.FC<StockViewProps> = ({
                           {isPositive ? '+' : '-'}
                           {formatNumber(m.quantity)} R$
                         </td>
-                        <td className="p-3 text-zinc-300">{m.reference_id}</td>
-                        <td className="p-3 text-zinc-300 font-sans">{m.notes}</td>
+                        <td className="p-3 theme-text-primary">{m.reference_id}</td>
+                        <td className="p-3 theme-text-secondary font-sans">{m.notes}</td>
                       </tr>
                     );
                   })

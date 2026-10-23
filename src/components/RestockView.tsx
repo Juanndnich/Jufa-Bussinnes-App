@@ -90,12 +90,12 @@ export const RestockView: React.FC<RestockViewProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-        <h2 className="text-lg font-heading font-bold text-white flex items-center gap-2">
-          <Truck className="text-white" size={20} />
+      <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border">
+        <h2 className="text-base sm:text-lg font-heading font-bold theme-text-primary flex items-center gap-2">
+          <Truck size={20} />
           <span>Restock Pembelian Stok & Supplier</span>
         </h2>
-        <p className="text-xs text-zinc-400 mt-1">
+        <p className="text-xs theme-text-secondary mt-1">
           Setiap pembelian Robux membentuk batch persediaan baru secara transparan dengan modal per unitnya sendiri (FIFO).
         </p>
       </div>
@@ -104,10 +104,10 @@ export const RestockView: React.FC<RestockViewProps> = ({
         {/* Form Restock */}
         <form
           onSubmit={handleSubmit}
-          className="lg:col-span-2 bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4"
+          className="lg:col-span-2 theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4"
         >
-          <div className="flex items-center justify-between border-b border-white/10 pb-3">
-            <h3 className="font-heading font-bold text-white text-sm">Formulir Pembelian / Restock</h3>
+          <div className="flex items-center justify-between border-b theme-border pb-3">
+            <h3 className="font-heading font-bold theme-text-primary text-sm">Formulir Pembelian / Restock</h3>
             <span className="text-[10px] text-zinc-300 font-mono bg-white/10 px-2 py-0.5 rounded border border-white/15">
               Batch Baru Otomatis
             </span>

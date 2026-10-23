@@ -117,20 +117,20 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-4 sm:p-5 rounded-2xl border border-white/10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border">
         <div>
-          <h2 className="text-base sm:text-lg font-poppins font-bold text-white flex items-center gap-2">
-            <Wallet className="text-white" size={20} />
+          <h2 className="text-base sm:text-lg font-heading font-bold theme-text-primary flex items-center gap-2">
+            <Wallet size={20} />
             <span>Buku Kas & Manajemen Saldo</span>
           </h2>
-          <p className="text-xs text-neutral-400 mt-1">
+          <p className="text-xs theme-text-secondary mt-1">
             Pemisahan tegas antara Saldo Kas, Nilai Aset Persediaan, Piutang Pelanggan, dan Laba Bersih.
           </p>
         </div>
 
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition shadow-sm w-full sm:w-auto"
+          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition shadow-sm w-full sm:w-auto active:scale-95"
         >
           <Plus size={14} />
           <span>+ Catat Kas Masuk / Keluar</span>
@@ -138,87 +138,87 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       </div>
 
       {/* Balance Sheet Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Real Cash Balance */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-            <span className="font-medium uppercase tracking-wider text-[11px]">Saldo Kas Riil</span>
-            <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-white">
-              <Wallet size={15} />
+        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="font-medium uppercase tracking-wider text-[11px] theme-text-secondary truncate">Saldo Kas Riil</span>
+            <span className="p-1.5 rounded-xl theme-bg-card border theme-border theme-text-primary shrink-0">
+              <Wallet size={14} />
             </span>
           </div>
-          <div className="text-2xl font-bold font-mono text-white">{formatRupiah(cashBalance)}</div>
-          <div className="text-[11px] text-zinc-400 mt-2 flex justify-between font-mono">
+          <div className="text-xl sm:text-2xl font-bold font-mono theme-text-primary tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">{formatRupiah(cashBalance)}</div>
+          <div className="text-[10px] theme-text-secondary mt-2 flex justify-between font-mono">
             <span className="text-emerald-400">Masuk: {formatRupiah(totalCashIn)}</span>
             <span className="text-rose-400">Keluar: {formatRupiah(totalCashOut)}</span>
           </div>
         </div>
 
         {/* Inventory Value */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-            <span className="font-medium uppercase tracking-wider text-[11px]">Nilai Persediaan</span>
-            <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-zinc-300">
-              <Layers size={15} />
+        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="font-medium uppercase tracking-wider text-[11px] theme-text-secondary truncate">Nilai Persediaan</span>
+            <span className="p-1.5 rounded-xl theme-bg-card border theme-border theme-text-secondary shrink-0">
+              <Layers size={14} />
             </span>
           </div>
-          <div className="text-2xl font-bold font-mono text-zinc-200">
+          <div className="text-xl sm:text-2xl font-bold font-mono theme-text-primary tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatRupiah(totalInventoryValue)}
           </div>
-          <div className="text-[11px] text-zinc-500 mt-2">
+          <div className="text-[10px] theme-text-muted mt-2 truncate">
             Aset modal persediaan belum terjual
           </div>
         </div>
 
         {/* Accounts Receivable (Piutang) */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-            <span className="font-medium uppercase tracking-wider text-[11px]">Piutang Pelanggan</span>
-            <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-white">
-              <CreditCard size={15} />
+        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="font-medium uppercase tracking-wider text-[11px] theme-text-secondary truncate">Piutang Pelanggan</span>
+            <span className="p-1.5 rounded-xl theme-bg-card border theme-border theme-text-primary shrink-0">
+              <CreditCard size={14} />
             </span>
           </div>
-          <div className="text-2xl font-bold font-mono text-white">
+          <div className="text-xl sm:text-2xl font-bold font-mono theme-text-primary tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatRupiah(totalReceivables)}
           </div>
-          <div className="text-[11px] text-zinc-500 mt-2">
+          <div className="text-[10px] theme-text-muted mt-2 truncate">
             Penjualan yang belum lunas
           </div>
         </div>
 
         {/* Total Net Business Asset */}
-        <div className="bg-[#09090b] p-5 rounded-2xl border border-white/10">
-          <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-            <span className="font-medium uppercase tracking-wider text-[11px]">Total Aset Bisnis</span>
-            <span className="p-2 rounded-xl bg-white/5 border border-white/10 text-emerald-400">
-              <ShieldCheck size={15} />
+        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="font-medium uppercase tracking-wider text-[11px] theme-text-secondary truncate">Total Aset Bisnis</span>
+            <span className="p-1.5 rounded-xl theme-bg-card border theme-border text-emerald-400 shrink-0">
+              <ShieldCheck size={14} />
             </span>
           </div>
-          <div className="text-2xl font-bold font-mono text-emerald-400">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-emerald-400 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatRupiah(totalBusinessAssets)}
           </div>
-          <div className="text-[11px] text-zinc-500 mt-2 font-mono">
+          <div className="text-[10px] theme-text-muted mt-2 font-mono truncate">
             Kas + Stok + Piutang − Utang
           </div>
         </div>
       </div>
 
       {/* Cashflow Table */}
-      <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+      <div className="theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b theme-border pb-4">
           <div>
-            <h3 className="font-heading font-bold text-white text-sm">Buku Kas & Riwayat Arus Kas</h3>
-            <p className="text-xs text-zinc-400">
+            <h3 className="font-heading font-bold theme-text-primary text-sm">Buku Kas & Riwayat Arus Kas</h3>
+            <p className="text-xs theme-text-secondary">
               Semua mutasi uang masuk dan keluar
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400">Filter Kategori:</span>
+            <span className="text-xs theme-text-secondary">Filter Kategori:</span>
             <select
               value={selectedCatFilter}
               onChange={e => setSelectedCatFilter(e.target.value)}
-              className="bg-[#111114] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white"
+              className="theme-bg-card border theme-border rounded-xl px-3 py-1.5 text-xs theme-text-primary focus:outline-none"
             >
               <option value="ALL">Semua Kategori</option>
               <option value="PENDAPATAN_PENJUALAN">Pendapatan Penjualan</option>
@@ -233,9 +233,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           </div>
         </div>
 
-        <div className="overflow-x-auto border border-white/10 rounded-xl">
+        <div className="overflow-x-auto border theme-border rounded-xl">
           <table className="w-full text-left text-xs min-w-[750px]">
-            <thead className="bg-[#111114] text-zinc-400 border-b border-white/10">
+            <thead className="theme-bg-card theme-text-secondary border-b theme-border">
               <tr>
                 <th className="p-3">Waktu</th>
                 <th className="p-3">Arah Kas</th>
@@ -245,17 +245,17 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 <th className="p-3">Keterangan</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y theme-border-subtle">
               {filteredCashflows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-zinc-500">
+                  <td colSpan={6} className="py-8 text-center theme-text-muted">
                     Belum ada catatan arus kas.
                   </td>
                 </tr>
               ) : (
                 filteredCashflows.map(cf => (
-                  <tr key={cf.id} className="hover:bg-white/5 transition font-mono">
-                    <td className="p-3 text-zinc-400 font-sans">{cf.date.slice(0, 16).replace('T', ' ')}</td>
+                  <tr key={cf.id} className="theme-bg-card-hover transition font-mono">
+                    <td className="p-3 theme-text-secondary font-sans">{cf.date.slice(0, 16).replace('T', ' ')}</td>
                     <td className="p-3 font-semibold font-sans">
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${

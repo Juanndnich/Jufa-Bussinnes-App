@@ -1,43 +1,45 @@
 export type ThemeMode = 'dark' | 'light' | 'system';
 
-export interface ColorPreset {
-  id: string;
-  name: string;
-  colorHex: string;
-}
+let systemListenerAttached = false;
 
-export const COLOR_PRESETS: ColorPreset[] = [
-  { id: 'obsidian', name: 'Obsidian Minimalis', colorHex: '#ffffff' },
-  { id: 'gold', name: 'Golden Robux', colorHex: '#f59e0b' },
-  { id: 'cyan', name: 'Cyber Neon Cyan', colorHex: '#06b6d4' },
-  { id: 'emerald', name: 'Emerald Profit', colorHex: '#10b981' },
-  { id: 'violet', name: 'Royal Violet', colorHex: '#8b5cf6' },
-  { id: 'rose', name: 'Rose Crimson', colorHex: '#f43f5e' },
-];
-
-export function applyTheme(
-  mode: ThemeMode = 'dark',
-  accentColor?: string
-) {
+export function applyTheme(mode: ThemeMode = 'dark') {
   const root = document.documentElement;
 
-  // Resolve Dark vs Light
-  let isDark = true;
-  if (mode === 'light') {
-    isDark = false;
-  } else if (mode === 'system') {
-    isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  }
+  const updateClasses = () => {
+    let isDark = true;
+    if (mode === 'light') {
+      isDark = false;
+    } else if (mode === 'system') {
+      isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
 
-  if (isDark) {
-    root.classList.add('dark');
-    root.classList.remove('light');
-  } else {
-    root.classList.remove('dark');
-    root.classList.add('light');
-  }
+    if (isDark) {
+      root.classList.add('dark');
+      root.classList.remove('light');
+    } else {
+      root.classList.remove('dark');
+      root.classList.add('light');
+    }
+  };
 
-  // Accent Color
-  const activeColor = accentColor || '#ffffff';
-  root.style.setProperty('--theme-accent', activeColor);
+  updateClasses();
+
+  // Listen to system changes if in 'system' mode
+  if (typeof window !== 'undefined' && window.matchMedia && !systemListenerAttached) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      // Re-apply if system mode is currently active
+      const currentStored = localStorage.getItem('jufa_theme_mode');
+      if (currentStored === 'system') {
+        const isDarkNow = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (isDarkNow) {
+          root.classList.add('dark');
+          root.classList.remove('light');
+        } else {
+          root.classList.remove('dark');
+          root.classList.add('light');
+        }
+      }
+    });
+    systemListenerAttached = true;
+  }
 }

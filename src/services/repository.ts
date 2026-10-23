@@ -1,4 +1,4 @@
-import { AppSettings, BatchAllocation, Cashflow, StockBatch, StockMovement, Transaction } from '../types';
+import { AppSettings, BatchAllocation, Cashflow, Investor, StockBatch, StockMovement, Transaction } from '../types';
 import { allocateStockFIFO, calculateTransactionFinancials } from '../utils/calculations';
 import { generateBatchCode, generateTransactionCode, getJakartaCurrentDate } from '../utils/formatters';
 import { getDatabase, persistDatabase } from './db';
@@ -11,7 +11,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   small_pack_rate: 170,
   large_pack_rate: 160,
   min_stock_alert: 500,
-  payment_methods: ['BCA', 'Dana', 'GoPay', 'OVO', 'QRIS', 'Mandiri', 'Tunai'],
+  payment_methods: [], // Kosongkan agar pengguna menambah manual
   expense_categories: [
     'Biaya Admin Bank',
     'Biaya Marketplace',
@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     'Promosi & Iklan',
     'Operasional Lainnya',
   ],
-  suppliers: ['Supplier Utama', 'Supplier Grosir', 'Robux Direct Supplier'],
+  suppliers: [], // Kosongkan agar pengguna menambah manual
   sales_sources: ['WhatsApp', 'Itemku', 'Shopee', 'Discord', 'Langsung/COD', 'Instagram'],
   stock_method: 'FIFO',
 };
@@ -194,6 +194,7 @@ export interface TransactionInput {
   discount?: number;
   fee?: number;
   payment_method: string;
+  payment_status?: 'LUNAS' | 'BELUM_LUNAS' | 'SEBAGIAN';
   amount_paid?: number;
   delivery_status?: 'SELESAI' | 'SEBAGIAN' | 'BELUM_DIKIRIM';
   notes?: string;
@@ -237,7 +238,7 @@ export async function saveMultipleTransactions(inputs: TransactionInput[]): Prom
         if (b) b.remaining_quantity = up.newRemainingQuantity;
       });
 
-      const financials = calculateTransactionFinancials(
+      const calculated = calculateTransactionFinancials(
         input.quantity,
         input.sell_rate,
         input.discount || 0,
@@ -246,15 +247,24 @@ export async function saveMultipleTransactions(inputs: TransactionInput[]): Prom
         input.amount_paid
       );
 
+      // Pastikan status pembayaran dan delivery menghormati pilihan eksplisit pengguna
+      const payment_status = input.payment_status || (input.amount_paid !== undefined && input.amount_paid >= calculated.netRevenue ? 'LUNAS' : calculated.paymentStatus);
+      const delivery_status = input.delivery_status || 'SELESAI';
+      const actual_amount_paid = input.amount_paid !== undefined 
+        ? input.amount_paid 
+        : (payment_status === 'LUNAS' ? calculated.netRevenue : calculated.amountPaid);
+      const accounts_receivable = payment_status === 'LUNAS' 
+        ? 0 
+        : Math.max(0, calculated.netRevenue - actual_amount_paid);
+
       const id = 'trx_' + Date.now() + '_' + index + '_' + Math.random().toString(36).substr(2, 4);
       const transaction_code = generateTransactionCode(index);
       const created_at = getJakartaCurrentDate();
-      const delivery_status = input.delivery_status || 'SELESAI';
       const notes = input.notes || '';
       const source = input.source || 'Langsung';
       const customer_name = input.customer_name || 'Pelanggan Umum';
 
-      // Insert transaction
+      // Insert transaction dengan data yang presisi
       db.run(
         `INSERT INTO transactions (
           id, transaction_code, date, customer_name, quantity, sell_rate,
@@ -269,18 +279,18 @@ export async function saveMultipleTransactions(inputs: TransactionInput[]): Prom
           customer_name,
           input.quantity,
           input.sell_rate,
-          financials.grossRevenue,
-          financials.discount,
-          financials.netRevenue,
-          financials.cogs,
-          financials.fee,
-          financials.grossProfit,
-          financials.netProfit,
-          financials.marginPercentage,
+          calculated.grossRevenue,
+          calculated.discount,
+          calculated.netRevenue,
+          calculated.cogs,
+          calculated.fee,
+          calculated.grossProfit,
+          calculated.netProfit,
+          calculated.marginPercentage,
           input.payment_method,
-          financials.paymentStatus,
-          financials.amountPaid,
-          financials.accountsReceivable,
+          payment_status,
+          actual_amount_paid,
+          accounts_receivable,
           delivery_status,
           notes,
           source,
@@ -315,8 +325,8 @@ export async function saveMultipleTransactions(inputs: TransactionInput[]): Prom
         );
       }
 
-      // Record cashflow IN if amountPaid > 0
-      if (financials.amountPaid > 0) {
+      // Record cashflow IN if actual_amount_paid > 0
+      if (actual_amount_paid > 0) {
         const cfId = 'cf_' + Date.now() + '_' + index;
         db.run(
           `INSERT INTO cashflows (id, date, type, category, amount, payment_method, reference_id, notes, created_at)
@@ -324,7 +334,7 @@ export async function saveMultipleTransactions(inputs: TransactionInput[]): Prom
           [
             cfId,
             input.date,
-            financials.amountPaid,
+            actual_amount_paid,
             input.payment_method,
             id,
             `Penjualan ${input.quantity.toLocaleString('id-ID')} R$ (${transaction_code})`,
@@ -334,7 +344,7 @@ export async function saveMultipleTransactions(inputs: TransactionInput[]): Prom
       }
 
       // Record fee as cashflow OUT if fee > 0
-      if (financials.fee > 0) {
+      if (calculated.fee > 0) {
         const feeCfId = 'cf_fee_' + Date.now() + '_' + index;
         db.run(
           `INSERT INTO cashflows (id, date, type, category, amount, payment_method, reference_id, notes, created_at)
@@ -342,7 +352,7 @@ export async function saveMultipleTransactions(inputs: TransactionInput[]): Prom
           [
             feeCfId,
             input.date,
-            financials.fee,
+            calculated.fee,
             input.payment_method,
             id,
             `Biaya transaksi ${transaction_code}`,
@@ -358,18 +368,18 @@ export async function saveMultipleTransactions(inputs: TransactionInput[]): Prom
         customer_name,
         quantity: input.quantity,
         sell_rate: input.sell_rate,
-        gross_revenue: financials.grossRevenue,
-        discount: financials.discount,
-        net_revenue: financials.netRevenue,
-        cogs: financials.cogs,
-        fee: financials.fee,
-        gross_profit: financials.grossProfit,
-        net_profit: financials.netProfit,
-        margin_percentage: financials.marginPercentage,
+        gross_revenue: calculated.grossRevenue,
+        discount: calculated.discount,
+        net_revenue: calculated.netRevenue,
+        cogs: calculated.cogs,
+        fee: calculated.fee,
+        gross_profit: calculated.grossProfit,
+        net_profit: calculated.netProfit,
+        margin_percentage: calculated.marginPercentage,
         payment_method: input.payment_method,
-        payment_status: financials.paymentStatus,
-        amount_paid: financials.amountPaid,
-        accounts_receivable: financials.accountsReceivable,
+        payment_status,
+        amount_paid: actual_amount_paid,
+        accounts_receivable,
         delivery_status,
         notes,
         source,
@@ -690,4 +700,81 @@ export async function getAllStockMovements(): Promise<StockMovement[]> {
     });
     return obj as StockMovement;
   });
+}
+
+// ==========================================
+// INVESTORS & PROFIT SHARING
+// ==========================================
+export async function getAllInvestors(): Promise<Investor[]> {
+  const db = await getDatabase();
+  const res = db.exec('SELECT * FROM investors ORDER BY created_at DESC');
+  if (res.length === 0) return [];
+  const cols = res[0].columns;
+  return res[0].values.map(row => {
+    const obj: any = {};
+    cols.forEach((col, i) => {
+      obj[col] = row[i];
+    });
+    return obj as Investor;
+  });
+}
+
+export async function addInvestor(
+  data: Omit<Investor, 'id' | 'created_at'>
+): Promise<Investor> {
+  const db = await getDatabase();
+  const id = 'inv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+  const created_at = getJakartaCurrentDate();
+
+  db.run(
+    `INSERT INTO investors (
+      id, name, invested_amount, share_percentage, duration_months,
+      start_date, status, notes, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      data.name,
+      data.invested_amount,
+      data.share_percentage,
+      data.duration_months,
+      data.start_date,
+      data.status || 'AKTIF',
+      data.notes || '',
+      created_at,
+    ]
+  );
+
+  await persistDatabase();
+
+  return {
+    id,
+    created_at,
+    ...data,
+  };
+}
+
+export async function updateInvestor(
+  id: string,
+  data: Partial<Omit<Investor, 'id' | 'created_at'>>
+): Promise<void> {
+  const db = await getDatabase();
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  Object.entries(data).forEach(([key, val]) => {
+    fields.push(`${key} = ?`);
+    values.push(val);
+  });
+
+  if (fields.length === 0) return;
+
+  values.push(id);
+  db.run(`UPDATE investors SET ${fields.join(', ')} WHERE id = ?`, values);
+  await persistDatabase();
+}
+
+export async function deleteInvestor(id: string): Promise<void> {
+  const db = await getDatabase();
+  db.run('DELETE FROM investors WHERE id = ?', [id]);
+  await persistDatabase();
 }

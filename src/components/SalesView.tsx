@@ -10,6 +10,7 @@ import {
   ArrowUpDown,
   ShoppingBag,
   FileSpreadsheet,
+  AlertCircle,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { AppSettings, StockBatch, Transaction } from '../types';
@@ -38,11 +39,10 @@ interface MultiRowState {
   customer_name: string;
   quantity: number;
   sell_rate: number;
-  discount: number;
-  fee: number;
-  payment_method: string;
   amount_paid: number;
-  delivery_status: 'SELESAI' | 'SEBAGIAN' | 'BELUM_DIKIRIM';
+  payment_method: string;
+  payment_status: 'LUNAS' | 'BELUM_LUNAS';
+  delivery_status: 'SELESAI' | 'BELUM_DIKIRIM';
   source: string;
   notes: string;
 }
@@ -55,17 +55,20 @@ export const SalesView: React.FC<SalesViewProps> = ({
 }) => {
   const [activeMode, setActiveMode] = useState<'single' | 'multi'>('single');
 
-  // Single Transaction Form State (Clean Initial)
+  const defaultMethod = settings.payment_methods && settings.payment_methods.length > 0 
+    ? settings.payment_methods[0] 
+    : 'Tunai/Transfer';
+
+  // Single Transaction Form State (Clean & direct to the point)
   const [singleForm, setSingleForm] = useState<{
     date: string;
     customer_name: string;
     quantity: number;
     sell_rate: number;
-    discount: number;
-    fee: number;
-    payment_method: string;
     amount_paid: number;
-    delivery_status: 'SELESAI' | 'SEBAGIAN' | 'BELUM_DIKIRIM';
+    payment_method: string;
+    payment_status: 'LUNAS' | 'BELUM_LUNAS';
+    delivery_status: 'SELESAI' | 'BELUM_DIKIRIM';
     source: string;
     notes: string;
   }>({
@@ -73,31 +76,30 @@ export const SalesView: React.FC<SalesViewProps> = ({
     customer_name: '',
     quantity: 100,
     sell_rate: settings.default_rate || 165,
-    discount: 0,
-    fee: 0,
-    payment_method: settings.payment_methods[0] || 'BCA',
     amount_paid: 100 * (settings.default_rate || 165),
+    payment_method: defaultMethod,
+    payment_status: 'LUNAS',
     delivery_status: 'SELESAI',
-    source: settings.sales_sources[0] || 'WhatsApp',
+    source: settings.sales_sources?.[0] || 'WhatsApp',
     notes: '',
   });
 
-  // Multi Transaction Form State (Clean Blank Row)
+  // Multi Transaction Form State
   const [multiRows, setMultiRows] = useState<MultiRowState[]>([
     {
       id: 'row_' + Date.now(),
       customer_name: '',
       quantity: 100,
       sell_rate: settings.default_rate || 165,
-      discount: 0,
-      fee: 0,
-      payment_method: settings.payment_methods[0] || 'BCA',
       amount_paid: 100 * (settings.default_rate || 165),
+      payment_method: defaultMethod,
+      payment_status: 'LUNAS',
       delivery_status: 'SELESAI',
-      source: settings.sales_sources[0] || 'WhatsApp',
+      source: settings.sales_sources?.[0] || 'WhatsApp',
       notes: '',
     },
   ]);
+
   const [multiDate, setMultiDate] = useState<string>(new Date().toISOString().slice(0, 16));
 
   // Table Search and Filters
@@ -114,7 +116,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
     return batches.reduce((sum, b) => sum + b.remaining_quantity, 0);
   }, [batches]);
 
-  // Handle single form Robux quantity change to auto-suggest tiered rate
+  // Handle single form Robux quantity change
   const handleSingleQtyChange = (qty: number) => {
     let rate = singleForm.sell_rate;
     if (settings.small_pack_threshold > 0) {
@@ -124,13 +126,12 @@ export const SalesView: React.FC<SalesViewProps> = ({
         rate = settings.large_pack_rate;
       }
     }
-    const gross = qty * rate;
-    const net = Math.max(0, gross - singleForm.discount);
+    const total = qty * rate;
     setSingleForm(prev => ({
       ...prev,
       quantity: qty,
       sell_rate: rate,
-      amount_paid: net,
+      amount_paid: total,
     }));
   };
 
@@ -140,8 +141,8 @@ export const SalesView: React.FC<SalesViewProps> = ({
     const fin = calculateTransactionFinancials(
       singleForm.quantity,
       singleForm.sell_rate,
-      singleForm.discount,
-      singleForm.fee,
+      0, // no discount
+      0, // no fee
       fifo.totalCogs,
       singleForm.amount_paid
     );
@@ -151,10 +152,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
   // Aggregate Preview for Multi Rows
   const multiAggregate = useMemo(() => {
     let totalQty = 0;
-    let totalGross = 0;
-    let totalDiscount = 0;
     let totalNet = 0;
-    let totalFee = 0;
     let totalCogs = 0;
     let profitCount = 0;
     let breakEvenCount = 0;
@@ -164,15 +162,8 @@ export const SalesView: React.FC<SalesViewProps> = ({
 
     multiRows.forEach(row => {
       totalQty += row.quantity || 0;
-      const gross = (row.quantity || 0) * (row.sell_rate || 0);
-      const disc = row.discount || 0;
-      const net = gross - disc;
-      const fee = row.fee || 0;
-
-      totalGross += gross;
-      totalDiscount += disc;
+      const net = row.amount_paid > 0 ? row.amount_paid : (row.quantity || 0) * (row.sell_rate || 0);
       totalNet += net;
-      totalFee += fee;
 
       const fifo = allocateStockFIFO(row.quantity, batchesClone);
       totalCogs += fifo.totalCogs;
@@ -181,24 +172,21 @@ export const SalesView: React.FC<SalesViewProps> = ({
         if (b) b.remaining_quantity = u.newRemainingQuantity;
       });
 
-      const netProfit = net - fifo.totalCogs - fee;
+      const netProfit = net - fifo.totalCogs;
       if (netProfit > 0) profitCount++;
       else if (netProfit === 0) breakEvenCount++;
       else lossCount++;
     });
 
     const totalGrossProfit = totalNet - totalCogs;
-    const totalNetProfit = totalGrossProfit - totalFee;
+    const totalNetProfit = totalGrossProfit;
     const weightedAvgRate = calculateWeightedAverageRate(totalNet, totalQty);
     const avgRevenuePerTrx = safeDivide(totalNet, multiRows.length, 0);
     const avgProfitPerTrx = safeDivide(totalNetProfit, multiRows.length, 0);
 
     return {
       totalQty,
-      totalGross,
-      totalDiscount,
       totalNet,
-      totalFee,
       totalCogs,
       totalGrossProfit,
       totalNetProfit,
@@ -241,10 +229,11 @@ export const SalesView: React.FC<SalesViewProps> = ({
         customer_name: singleForm.customer_name.trim() || 'Pelanggan Umum',
         quantity: singleForm.quantity,
         sell_rate: singleForm.sell_rate,
-        discount: singleForm.discount,
-        fee: singleForm.fee,
-        payment_method: singleForm.payment_method,
+        discount: 0,
+        fee: 0,
+        payment_method: singleForm.payment_method || 'Tunai/Transfer',
         amount_paid: singleForm.amount_paid,
+        payment_status: singleForm.payment_status,
         delivery_status: singleForm.delivery_status,
         notes: singleForm.notes.trim(),
         source: singleForm.source,
@@ -255,8 +244,8 @@ export const SalesView: React.FC<SalesViewProps> = ({
 
       Swal.fire({
         icon: 'success',
-        title: 'Penjualan Dicatat!',
-        text: `Transaksi ${formatNumber(singleForm.quantity)} R$ berhasil disimpan ke database SQLite.`,
+        title: 'Penjualan Berhasil Dicatat!',
+        text: `${formatNumber(singleForm.quantity)} R$ telah dikurangkan dari stok dengan status ${singleForm.payment_status}.`,
         timer: 1600,
         showConfirmButton: false,
       });
@@ -294,7 +283,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
       html: `<div style="text-align:left; font-size: 13px; line-height: 1.6;">
         <p><strong>Total Pesanan:</strong> ${multiRows.length} transaksi</p>
         <p><strong>Total Robux:</strong> ${formatNumber(multiAggregate.totalQty)} R$</p>
-        <p><strong>Total Pendapatan:</strong> ${formatRupiah(multiAggregate.totalNet)}</p>
+        <p><strong>Total Uang Masuk:</strong> ${formatRupiah(multiAggregate.totalNet)}</p>
         <p><strong>Total Laba Bersih:</strong> ${formatRupiah(multiAggregate.totalNetProfit)}</p>
         <br/>
         <p style="color:#a1a1aa;">Semua transaksi akan dieksekusi secara atomik dalam 1 transaksi SQLite.</p>
@@ -312,10 +301,11 @@ export const SalesView: React.FC<SalesViewProps> = ({
         customer_name: r.customer_name.trim() || 'Pelanggan Umum',
         quantity: r.quantity,
         sell_rate: r.sell_rate,
-        discount: r.discount,
-        fee: r.fee,
-        payment_method: r.payment_method,
+        discount: 0,
+        fee: 0,
+        payment_method: r.payment_method || 'Tunai/Transfer',
         amount_paid: r.amount_paid,
+        payment_status: r.payment_status,
         delivery_status: r.delivery_status,
         source: r.source,
         notes: r.notes.trim(),
@@ -335,13 +325,12 @@ export const SalesView: React.FC<SalesViewProps> = ({
           id: 'row_' + Date.now(),
           customer_name: '',
           quantity: 100,
-          sell_rate: settings.default_rate,
-          discount: 0,
-          fee: 0,
-          payment_method: settings.payment_methods[0] || 'BCA',
-          amount_paid: 100 * settings.default_rate,
+          sell_rate: settings.default_rate || 165,
+          amount_paid: 100 * (settings.default_rate || 165),
+          payment_method: defaultMethod,
+          payment_status: 'LUNAS',
           delivery_status: 'SELESAI',
-          source: settings.sales_sources[0] || 'WhatsApp',
+          source: settings.sales_sources?.[0] || 'WhatsApp',
           notes: '',
         },
       ]);
@@ -412,24 +401,28 @@ export const SalesView: React.FC<SalesViewProps> = ({
       });
   }, [transactions, searchTerm, paymentFilter, statusFilter, sortBy, sortOrder]);
 
+  const hasPaymentMethods = settings.payment_methods && settings.payment_methods.length > 0;
+
   return (
     <div className="space-y-6">
       {/* Mode Selector Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b theme-border pb-4">
         <div>
-          <h2 className="text-base sm:text-lg font-poppins font-bold text-white">Modul Pencatatan Penjualan</h2>
-          <p className="text-xs text-neutral-400">
-            Pencatatan real-time dengan alokasi batch stok FIFO dan perhitungan laba akurat.
+          <h2 className="text-base sm:text-lg font-heading font-bold theme-text-primary">
+            Modul Pencatatan Penjualan
+          </h2>
+          <p className="text-xs theme-text-secondary">
+            Catat penjualan Robux secara presisi tanpa potongan sepihak. Data tersimpan murni sesuai input Anda.
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 bg-[#111114] p-1 rounded-xl border border-white/10 w-full sm:w-auto">
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 theme-bg-card p-1 rounded-xl border theme-border w-full sm:w-auto">
           <button
             onClick={() => setActiveMode('single')}
             className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition text-center ${
               activeMode === 'single'
-                ? 'bg-white text-black shadow-sm'
-                : 'text-neutral-400 hover:text-white'
+                ? 'theme-bg-surface theme-text-primary shadow-sm border theme-border'
+                : 'theme-text-muted hover:theme-text-primary'
             }`}
           >
             <ShoppingBag size={14} className="shrink-0" />
@@ -439,8 +432,8 @@ export const SalesView: React.FC<SalesViewProps> = ({
             onClick={() => setActiveMode('multi')}
             className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition text-center ${
               activeMode === 'multi'
-                ? 'bg-white text-black shadow-sm'
-                : 'text-neutral-400 hover:text-white'
+                ? 'theme-bg-surface theme-text-primary shadow-sm border theme-border'
+                : 'theme-text-muted hover:theme-text-primary'
             }`}
           >
             <FileSpreadsheet size={14} className="shrink-0" />
@@ -449,18 +442,33 @@ export const SalesView: React.FC<SalesViewProps> = ({
         </div>
       </div>
 
-      {/* MODE A: Single Transaction Form */}
+      {/* Warning jika Metode Pembayaran Belum Ditambahkan */}
+      {!hasPaymentMethods && (
+        <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-500 flex items-start gap-3 text-xs">
+          <AlertCircle size={18} className="shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <strong>Perhatian: Daftar metode pembayaran belum ditambahkan.</strong>
+            <p className="mt-0.5 opacity-90">
+              Anda dapat menambahkan metode pembayaran (misal BCA, Dana, QRIS, GoPay) di menu <strong>Pengaturan</strong> agar muncul rapi pada pilihan dropdown. Transaksi saat ini tetap dapat dicatat menggunakan opsi umum.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* MODE A: Single Transaction Clean Form */}
       {activeMode === 'single' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <form
             onSubmit={handleSaveSingle}
-            className="lg:col-span-2 bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4"
+            className="lg:col-span-2 theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4"
           >
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h3 className="font-heading font-bold text-white text-sm">Formulir Penjualan Satuan</h3>
-              <span className="text-xs text-zinc-400">
+            <div className="flex items-center justify-between border-b theme-border pb-3">
+              <span className="text-xs font-bold font-heading theme-text-primary flex items-center gap-2">
+                <ShoppingBag size={15} /> Formulir Penjualan Cepat
+              </span>
+              <span className="text-[11px] theme-text-muted">
                 Stok Tersedia:{' '}
-                <strong className="text-white font-mono">
+                <strong className="font-mono theme-text-primary">
                   {formatNumber(totalStockAvailable)} R$
                 </strong>
               </span>
@@ -468,47 +476,47 @@ export const SalesView: React.FC<SalesViewProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
-                  Tanggal & Waktu
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
+                  Waktu Transaksi
                 </label>
                 <input
                   type="datetime-local"
                   value={singleForm.date}
                   onChange={e => setSingleForm({ ...singleForm, date: e.target.value })}
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary focus:outline-none"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
-                  Nama / Kontak Pelanggan
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
+                  Nama Pelanggan (Opsional)
                 </label>
                 <input
                   type="text"
-                  placeholder="Contoh: Budi (WA / Discord)"
+                  placeholder="Misal: Kevin / Pelanggan Umum"
                   value={singleForm.customer_name}
                   onChange={e => setSingleForm({ ...singleForm, customer_name: e.target.value })}
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-white/30"
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
-                  Jumlah Robux (R$)
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
+                  Jumlah Robux Terjual (R$)
                 </label>
                 <input
                   type="number"
                   min="1"
                   value={singleForm.quantity || ''}
                   onChange={e => handleSingleQtyChange(Number(e.target.value))}
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-white/30"
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs font-mono font-bold theme-text-primary focus:outline-none"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
                   Rate Jual per Robux (Rp)
                 </label>
                 <input
@@ -519,68 +527,16 @@ export const SalesView: React.FC<SalesViewProps> = ({
                   onChange={e => {
                     const r = Number(e.target.value);
                     const gross = singleForm.quantity * r;
-                    const net = Math.max(0, gross - singleForm.discount);
-                    setSingleForm({ ...singleForm, sell_rate: r, amount_paid: net });
+                    setSingleForm({ ...singleForm, sell_rate: r, amount_paid: gross });
                   }}
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-white/30"
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs font-mono font-bold theme-text-primary focus:outline-none"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
-                  Diskon Penjualan (Rp)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={singleForm.discount || ''}
-                  placeholder="0"
-                  onChange={e => {
-                    const disc = Number(e.target.value);
-                    const gross = singleForm.quantity * singleForm.sell_rate;
-                    const net = Math.max(0, gross - disc);
-                    setSingleForm({ ...singleForm, discount: disc, amount_paid: net });
-                  }}
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
-                  Biaya Layanan / Fee Transaksi (Rp)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={singleForm.fee || ''}
-                  placeholder="0"
-                  onChange={e => setSingleForm({ ...singleForm, fee: Number(e.target.value) })}
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
-                />
-                <span className="text-[10px] text-zinc-500">Biaya yang ditanggung penjual</span>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
-                  Metode Pembayaran
-                </label>
-                <select
-                  value={singleForm.payment_method}
-                  onChange={e => setSingleForm({ ...singleForm, payment_method: e.target.value })}
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
-                >
-                  {settings.payment_methods.map(m => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
-                  Uang Diterima / Dibayar (Rp)
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
+                  Total Uang Masuk / Diterima (Rp)
                 </label>
                 <input
                   type="number"
@@ -589,29 +545,60 @@ export const SalesView: React.FC<SalesViewProps> = ({
                   onChange={e =>
                     setSingleForm({ ...singleForm, amount_paid: Number(e.target.value) })
                   }
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white/30"
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs font-mono font-bold theme-text-primary focus:outline-none"
+                  required
                 />
+                <span className="text-[10px] theme-text-muted">
+                  Bisa diedit bebas jika ada pembulatan harga
+                </span>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
-                  Sumber Penjualan
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
+                  Metode Pembayaran
                 </label>
                 <select
-                  value={singleForm.source}
-                  onChange={e => setSingleForm({ ...singleForm, source: e.target.value })}
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                  value={singleForm.payment_method}
+                  onChange={e => setSingleForm({ ...singleForm, payment_method: e.target.value })}
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary focus:outline-none"
                 >
-                  {settings.sales_sources.map(s => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
+                  {hasPaymentMethods ? (
+                    settings.payment_methods.map(m => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="Tunai/Transfer">Tunai / Transfer Bank</option>
+                      <option value="E-Wallet">E-Wallet (Dana/GoPay/OVO)</option>
+                      <option value="QRIS">QRIS</option>
+                    </>
+                  )}
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
+                  Status Pembayaran
+                </label>
+                <select
+                  value={singleForm.payment_status}
+                  onChange={e =>
+                    setSingleForm({
+                      ...singleForm,
+                      payment_status: e.target.value as any,
+                    })
+                  }
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary font-bold focus:outline-none"
+                >
+                  <option value="LUNAS">LUNAS (Sudah Diterima Penuh)</option>
+                  <option value="BELUM_LUNAS">BELUM LUNAS (Piutang)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
                   Status Pengiriman Robux
                 </label>
                 <select
@@ -622,33 +609,53 @@ export const SalesView: React.FC<SalesViewProps> = ({
                       delivery_status: e.target.value as any,
                     })
                   }
-                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary font-bold focus:outline-none"
                 >
-                  <option value="SELESAI">Selesai (Sudah Dikirim)</option>
-                  <option value="SEBAGIAN">Sebagian</option>
-                  <option value="BELUM_DIKIRIM">Belum Dikirim</option>
+                  <option value="SELESAI">SELESAI (Sudah Dikirim)</option>
+                  <option value="BELUM_DIKIRIM">BELUM DIKIRIM (Proses Antrian)</option>
                 </select>
               </div>
-            </div>
 
-            <div>
-              <label className="text-xs font-medium text-zinc-300 block mb-1">
-                Catatan Transaksi
-              </label>
-              <textarea
-                rows={2}
-                placeholder="Catatan pesanan, username Roblox pembeli..."
-                value={singleForm.notes}
-                onChange={e => setSingleForm({ ...singleForm, notes: e.target.value })}
-                className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-white/30"
-              />
+              <div>
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
+                  Sumber Penjualan
+                </label>
+                <select
+                  value={singleForm.source}
+                  onChange={e => setSingleForm({ ...singleForm, source: e.target.value })}
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary focus:outline-none"
+                >
+                  {settings.sales_sources && settings.sales_sources.length > 0 ? (
+                    settings.sales_sources.map(s => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="WhatsApp">WhatsApp</option>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium theme-text-secondary block mb-1">
+                  Catatan / Username Roblox (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Username pembeli atau no HP..."
+                  value={singleForm.notes}
+                  onChange={e => setSingleForm({ ...singleForm, notes: e.target.value })}
+                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary focus:outline-none"
+                />
+              </div>
             </div>
 
             <div className="pt-2 flex justify-end">
               <button
                 type="submit"
                 disabled={!singlePreview.fifo.success && totalStockAvailable === 0}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-black font-bold text-xs shadow-sm disabled:opacity-40 transition"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-black font-bold text-xs shadow-sm disabled:opacity-40 transition"
               >
                 <Save size={14} />
                 <span>Simpan Transaksi Penjualan</span>
@@ -657,9 +664,9 @@ export const SalesView: React.FC<SalesViewProps> = ({
           </form>
 
           {/* Real-time Financial Breakdown for Single Mode */}
-          <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4 flex flex-col justify-between">
+          <div className="theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4 flex flex-col justify-between">
             <div>
-              <h3 className="font-heading font-bold text-white text-sm border-b border-white/10 pb-3 flex items-center justify-between">
+              <h3 className="font-heading font-bold theme-text-primary text-sm border-b theme-border pb-3 flex items-center justify-between">
                 <span>Kalkulasi Otomatis</span>
                 <span
                   className={`text-[10px] font-bold px-2 py-0.5 rounded ${
@@ -673,37 +680,19 @@ export const SalesView: React.FC<SalesViewProps> = ({
               </h3>
 
               <div className="space-y-2.5 text-xs mt-4">
-                <div className="flex justify-between text-zinc-300">
-                  <span>Pendapatan Kotor:</span>
-                  <span className="font-mono">{formatRupiah(singlePreview.fin.grossRevenue)}</span>
-                </div>
-                {singlePreview.fin.discount > 0 && (
-                  <div className="flex justify-between text-amber-300">
-                    <span>Diskon:</span>
-                    <span className="font-mono">-{formatRupiah(singlePreview.fin.discount)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-white border-t border-white/10 pt-1.5">
-                  <span>Pendapatan Bersih:</span>
-                  <span className="font-mono text-white">
-                    {formatRupiah(singlePreview.fin.netRevenue)}
+                <div className="flex justify-between theme-text-secondary">
+                  <span>Uang Diterima:</span>
+                  <span className="font-mono font-bold theme-text-primary">
+                    {formatRupiah(singleForm.amount_paid)}
                   </span>
                 </div>
-                <div className="flex justify-between text-zinc-400">
+                <div className="flex justify-between theme-text-secondary">
                   <span>Modal HPP (FIFO):</span>
-                  <span className="font-mono">-{formatRupiah(singlePreview.fin.cogs)}</span>
+                  <span className="font-mono text-rose-400">
+                    -{formatRupiah(singlePreview.fin.cogs)}
+                  </span>
                 </div>
-                <div className="flex justify-between font-medium text-zinc-300">
-                  <span>Laba Kotor:</span>
-                  <span className="font-mono">{formatRupiah(singlePreview.fin.grossProfit)}</span>
-                </div>
-                {singlePreview.fin.fee > 0 && (
-                  <div className="flex justify-between text-zinc-400">
-                    <span>Biaya Fee:</span>
-                    <span className="font-mono">-{formatRupiah(singlePreview.fin.fee)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-base font-bold border-t border-white/10 pt-2 text-white">
+                <div className="flex justify-between font-bold border-t theme-border pt-2 theme-text-primary text-sm">
                   <span>Laba Bersih:</span>
                   <span
                     className={`font-mono ${
@@ -713,40 +702,34 @@ export const SalesView: React.FC<SalesViewProps> = ({
                     {formatRupiah(singlePreview.fin.netProfit)}
                   </span>
                 </div>
-                <div className="flex justify-between text-zinc-400 text-[11px] font-mono">
-                  <span>Margin:</span>
-                  <span className="font-bold text-white">
+                <div className="flex justify-between theme-text-secondary text-[11px] font-mono">
+                  <span>Margin Keuntungan:</span>
+                  <span className="font-bold theme-text-primary">
                     {singlePreview.fin.marginPercentage}%
                   </span>
                 </div>
               </div>
 
               {/* FIFO Batch allocation details */}
-              <div className="mt-5 p-3.5 rounded-xl bg-[#111114] border border-white/10 text-[11px] space-y-1.5">
-                <span className="font-bold text-zinc-300 block">Alokasi Batch FIFO:</span>
+              <div className="mt-5 p-3.5 rounded-xl theme-bg-card border theme-border text-[11px] space-y-1.5">
+                <span className="font-bold theme-text-secondary block">Alokasi Stok (FIFO):</span>
                 {singlePreview.fifo.allocations.length === 0 ? (
-                  <span className="text-zinc-500">Belum ada alokasi batch stok.</span>
+                  <span className="theme-text-muted">Belum ada alokasi batch stok.</span>
                 ) : (
                   singlePreview.fifo.allocations.map((a, idx) => (
-                    <div key={idx} className="flex justify-between text-zinc-400 font-mono">
+                    <div key={idx} className="flex justify-between theme-text-secondary font-mono">
                       <span>
-                        {a.batch_code} ({formatNumber(a.quantity)} R$ @ Rp{a.cost_per_unit}):
+                        {a.batch_code} ({formatNumber(a.quantity)} R$):
                       </span>
-                      <span className="text-white">{formatRupiah(a.subtotal_cost)}</span>
+                      <span className="theme-text-primary">{formatRupiah(a.subtotal_cost)}</span>
                     </div>
                   ))
                 )}
               </div>
+            </div>
 
-              {/* Receivables notice */}
-              {singlePreview.fin.accountsReceivable > 0 && (
-                <div className="mt-3 p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/30 text-amber-300 text-[11px]">
-                  <strong>Piutang:</strong> Sisa belum dibayar{' '}
-                  <span className="font-mono font-bold">
-                    {formatRupiah(singlePreview.fin.accountsReceivable)}
-                  </span>
-                </div>
-              )}
+            <div className="text-[11px] theme-text-muted p-3 rounded-xl theme-bg-card border theme-border">
+              Data yang Anda simpan akan masuk ke buku kas dan mengurangi stok secara otomatis sesuai tanggal yang dipilih.
             </div>
           </div>
         </div>
@@ -754,22 +737,24 @@ export const SalesView: React.FC<SalesViewProps> = ({
 
       {/* MODE B: Multi-Transaction Spreadsheet Form */}
       {activeMode === 'multi' && (
-        <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+        <div className="theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b theme-border pb-4">
             <div>
-              <h3 className="font-heading font-bold text-white text-sm">Pencatatan Banyak Transaksi Sekaligus</h3>
-              <p className="text-xs text-zinc-400">
-                Merekap pesanan harian dalam format tabel cepat.
+              <h3 className="font-heading font-bold theme-text-primary text-sm">
+                Pencatatan Banyak Transaksi Sekaligus
+              </h3>
+              <p className="text-xs theme-text-secondary">
+                Merekap daftar pesanan pelanggan dalam tabel spreadsheet yang cepat dan ringkas.
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-400">Tanggal:</span>
+                <span className="text-xs theme-text-secondary">Waktu:</span>
                 <input
                   type="datetime-local"
                   value={multiDate}
                   onChange={e => setMultiDate(e.target.value)}
-                  className="bg-[#111114] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white"
+                  className="theme-bg-input border theme-border rounded-lg px-2.5 py-1 text-xs theme-text-primary"
                 />
               </div>
               <button
@@ -781,18 +766,17 @@ export const SalesView: React.FC<SalesViewProps> = ({
                       id: 'row_' + Date.now(),
                       customer_name: '',
                       quantity: 100,
-                      sell_rate: settings.default_rate,
-                      discount: 0,
-                      fee: 0,
-                      payment_method: settings.payment_methods[0] || 'BCA',
-                      amount_paid: 100 * settings.default_rate,
+                      sell_rate: settings.default_rate || 165,
+                      amount_paid: 100 * (settings.default_rate || 165),
+                      payment_method: defaultMethod,
+                      payment_status: 'LUNAS',
                       delivery_status: 'SELESAI',
-                      source: settings.sales_sources[0] || 'WhatsApp',
+                      source: settings.sales_sources?.[0] || 'WhatsApp',
                       notes: '',
                     },
                   ]);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-black font-bold text-xs hover:bg-zinc-200 transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition"
               >
                 <Plus size={14} /> + Tambah Baris
               </button>
@@ -800,465 +784,350 @@ export const SalesView: React.FC<SalesViewProps> = ({
           </div>
 
           {/* Rows Table */}
-          <div className="overflow-x-auto border border-white/10 rounded-xl">
-            <table className="w-full text-left text-xs min-w-[850px]">
-              <thead className="bg-[#111114] text-zinc-400 border-b border-white/10">
+          <div className="overflow-x-auto border theme-border rounded-xl">
+            <table className="w-full text-left text-xs min-w-[700px]">
+              <thead className="theme-bg-card theme-text-secondary border-b theme-border">
                 <tr>
                   <th className="p-2.5 w-10 text-center font-mono">#</th>
                   <th className="p-2.5">Pelanggan</th>
                   <th className="p-2.5 w-24">Robux (R$)</th>
                   <th className="p-2.5 w-24">Rate (Rp)</th>
-                  <th className="p-2.5 w-24">Diskon (Rp)</th>
-                  <th className="p-2.5 w-24">Fee (Rp)</th>
+                  <th className="p-2.5 w-28">Uang Masuk</th>
                   <th className="p-2.5 w-28">Metode</th>
-                  <th className="p-2.5 w-28">Kas Diterima</th>
-                  <th className="p-2.5 text-right">Subtotal</th>
-                  <th className="p-2.5 w-20 text-center">Aksi</th>
+                  <th className="p-2.5 w-24">Status Bayar</th>
+                  <th className="p-2.5 w-24">Status Kirim</th>
+                  <th className="p-2.5 w-16 text-center">Aksi</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
-                {multiRows.map((row, idx) => {
-                  const gross = (row.quantity || 0) * (row.sell_rate || 0);
-                  const net = Math.max(0, gross - (row.discount || 0));
-
-                  return (
-                    <tr key={row.id} className="hover:bg-white/5">
-                      <td className="p-2 text-center text-zinc-500 font-mono">{idx + 1}</td>
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={row.customer_name}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setMultiRows(
-                              multiRows.map(r => (r.id === row.id ? { ...r, customer_name: val } : r))
-                            );
-                          }}
-                          className="w-full bg-[#111114] border border-white/10 rounded px-2 py-1 text-white placeholder-zinc-600"
-                          placeholder="Nama pembeli"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="number"
-                          min="1"
-                          value={row.quantity || ''}
-                          onChange={e => {
-                            const q = Number(e.target.value);
-                            const r = row.sell_rate;
-                            const sub = Math.max(0, q * r - row.discount);
-                            setMultiRows(
-                              multiRows.map(item =>
-                                item.id === row.id
-                                  ? { ...item, quantity: q, amount_paid: sub }
-                                  : item
-                              )
-                            );
-                          }}
-                          className="w-full bg-[#111114] border border-white/10 rounded px-2 py-1 text-white font-mono font-bold"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={row.sell_rate || ''}
-                          onChange={e => {
-                            const rate = Number(e.target.value);
-                            const sub = Math.max(0, row.quantity * rate - row.discount);
-                            setMultiRows(
-                              multiRows.map(item =>
-                                item.id === row.id
-                                  ? { ...item, sell_rate: rate, amount_paid: sub }
-                                  : item
-                              )
-                            );
-                          }}
-                          className="w-full bg-[#111114] border border-white/10 rounded px-2 py-1 text-white font-mono font-bold"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="number"
-                          value={row.discount || ''}
-                          placeholder="0"
-                          onChange={e => {
-                            const d = Number(e.target.value);
-                            const sub = Math.max(0, row.quantity * row.sell_rate - d);
-                            setMultiRows(
-                              multiRows.map(item =>
-                                item.id === row.id ? { ...item, discount: d, amount_paid: sub } : item
-                              )
-                            );
-                          }}
-                          className="w-full bg-[#111114] border border-white/10 rounded px-2 py-1 text-white font-mono"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="number"
-                          value={row.fee || ''}
-                          placeholder="0"
-                          onChange={e => {
-                            const f = Number(e.target.value);
-                            setMultiRows(
-                              multiRows.map(item => (item.id === row.id ? { ...item, fee: f } : item))
-                            );
-                          }}
-                          className="w-full bg-[#111114] border border-white/10 rounded px-2 py-1 text-white font-mono"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <select
-                          value={row.payment_method}
-                          onChange={e => {
-                            const m = e.target.value;
-                            setMultiRows(
-                              multiRows.map(item =>
-                                item.id === row.id ? { ...item, payment_method: m } : item
-                              )
-                            );
-                          }}
-                          className="w-full bg-[#111114] border border-white/10 rounded px-1.5 py-1 text-white"
-                        >
-                          {settings.payment_methods.map(pm => (
+              <tbody className="divide-y theme-border-subtle">
+                {multiRows.map((row, idx) => (
+                  <tr key={row.id} className="theme-bg-card-hover">
+                    <td className="p-2 text-center theme-text-muted font-mono">{idx + 1}</td>
+                    <td className="p-2">
+                      <input
+                        type="text"
+                        value={row.customer_name}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setMultiRows(
+                            multiRows.map(r => (r.id === row.id ? { ...r, customer_name: val } : r))
+                          );
+                        }}
+                        className="w-full theme-bg-input border theme-border rounded px-2 py-1 theme-text-primary"
+                        placeholder="Nama pembeli"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        min="1"
+                        value={row.quantity || ''}
+                        onChange={e => {
+                          const q = Number(e.target.value);
+                          const r = row.sell_rate;
+                          const sub = q * r;
+                          setMultiRows(
+                            multiRows.map(item =>
+                              item.id === row.id
+                                ? { ...item, quantity: q, amount_paid: sub }
+                                : item
+                            )
+                          );
+                        }}
+                        className="w-full theme-bg-input border theme-border rounded px-2 py-1 theme-text-primary font-mono font-bold"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={row.sell_rate || ''}
+                        onChange={e => {
+                          const rate = Number(e.target.value);
+                          const sub = row.quantity * rate;
+                          setMultiRows(
+                            multiRows.map(item =>
+                              item.id === row.id
+                                ? { ...item, sell_rate: rate, amount_paid: sub }
+                                : item
+                            )
+                          );
+                        }}
+                        className="w-full theme-bg-input border theme-border rounded px-2 py-1 theme-text-primary font-mono font-bold"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        value={row.amount_paid}
+                        onChange={e => {
+                          const a = Number(e.target.value);
+                          setMultiRows(
+                            multiRows.map(item =>
+                              item.id === row.id ? { ...item, amount_paid: a } : item
+                            )
+                          );
+                        }}
+                        className="w-full theme-bg-input border theme-border rounded px-2 py-1 theme-text-primary font-mono font-bold"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <select
+                        value={row.payment_method}
+                        onChange={e => {
+                          const m = e.target.value;
+                          setMultiRows(
+                            multiRows.map(item =>
+                              item.id === row.id ? { ...item, payment_method: m } : item
+                            )
+                          );
+                        }}
+                        className="w-full theme-bg-input border theme-border rounded px-1.5 py-1 theme-text-primary"
+                      >
+                        {hasPaymentMethods ? (
+                          settings.payment_methods.map(pm => (
                             <option key={pm} value={pm}>
                               {pm}
                             </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="number"
-                          value={row.amount_paid}
-                          onChange={e => {
-                            const a = Number(e.target.value);
-                            setMultiRows(
-                              multiRows.map(item =>
-                                item.id === row.id ? { ...item, amount_paid: a } : item
-                              )
-                            );
+                          ))
+                        ) : (
+                          <option value="Tunai/Transfer">Tunai/Transfer</option>
+                        )}
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <select
+                        value={row.payment_status}
+                        onChange={e => {
+                          const ps = e.target.value as any;
+                          setMultiRows(
+                            multiRows.map(item =>
+                              item.id === row.id ? { ...item, payment_status: ps } : item
+                            )
+                          );
+                        }}
+                        className="w-full theme-bg-input border theme-border rounded px-1.5 py-1 theme-text-primary font-bold text-[11px]"
+                      >
+                        <option value="LUNAS">LUNAS</option>
+                        <option value="BELUM_LUNAS">BELUM LUNAS</option>
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <select
+                        value={row.delivery_status}
+                        onChange={e => {
+                          const ds = e.target.value as any;
+                          setMultiRows(
+                            multiRows.map(item =>
+                              item.id === row.id ? { ...item, delivery_status: ds } : item
+                            )
+                          );
+                        }}
+                        className="w-full theme-bg-input border theme-border rounded px-1.5 py-1 theme-text-primary text-[11px]"
+                      >
+                        <option value="SELESAI">SELESAI</option>
+                        <option value="BELUM_DIKIRIM">BELUM</option>
+                      </select>
+                    </td>
+                    <td className="p-2 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMultiRows([
+                              ...multiRows,
+                              {
+                                ...row,
+                                id: 'row_' + Date.now() + Math.random(),
+                              },
+                            ]);
                           }}
-                          className="w-full bg-[#111114] border border-white/10 rounded px-2 py-1 text-white font-mono"
-                        />
-                      </td>
-                      <td className="p-2 text-right font-mono font-bold text-white">
-                        {formatRupiah(net)}
-                      </td>
-                      <td className="p-2 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            title="Gandakan Baris"
-                            onClick={() => {
-                              setMultiRows([
-                                ...multiRows,
-                                {
-                                  ...row,
-                                  id: 'row_' + Date.now() + Math.random(),
-                                },
-                              ]);
-                            }}
-                            className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white"
-                          >
-                            <Copy size={13} />
-                          </button>
-                          {multiRows.length > 1 && (
-                            <button
-                              type="button"
-                              title="Hapus Baris"
-                              onClick={() => {
-                                setMultiRows(multiRows.filter(r => r.id !== row.id));
-                              }}
-                              className="p-1 hover:bg-rose-950/40 rounded text-zinc-400 hover:text-rose-400"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                          className="p-1 theme-text-muted hover:theme-text-primary rounded"
+                          title="Duplikat baris"
+                        >
+                          <Copy size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={multiRows.length === 1}
+                          onClick={() => {
+                            setMultiRows(multiRows.filter(r => r.id !== row.id));
+                          }}
+                          className="p-1 theme-text-muted hover:text-rose-400 rounded disabled:opacity-20"
+                          title="Hapus baris"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
-          {/* Multi-mode Aggregate Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-            <div className="p-3 bg-[#111114] rounded-xl border border-white/10">
-              <span className="text-[11px] text-zinc-400 block">Total Robux</span>
-              <span className="text-sm font-bold font-mono text-white">
+          {/* Aggregate Summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-xl theme-bg-card border theme-border text-xs">
+            <div>
+              <span className="theme-text-muted block text-[11px]">Total Transaksi</span>
+              <strong className="font-mono text-sm theme-text-primary">
+                {multiRows.length} Baris
+              </strong>
+            </div>
+            <div>
+              <span className="theme-text-muted block text-[11px]">Total Robux</span>
+              <strong className="font-mono text-sm theme-text-primary">
                 {formatNumber(multiAggregate.totalQty)} R$
-              </span>
+              </strong>
             </div>
-            <div className="p-3 bg-[#111114] rounded-xl border border-white/10">
-              <span className="text-[11px] text-zinc-400 block">Total Pendapatan</span>
-              <span className="text-sm font-bold font-mono text-white">
+            <div>
+              <span className="theme-text-muted block text-[11px]">Total Uang Diterima</span>
+              <strong className="font-mono text-sm theme-text-primary">
                 {formatRupiah(multiAggregate.totalNet)}
-              </span>
+              </strong>
             </div>
-            <div className="p-3 bg-[#111114] rounded-xl border border-white/10">
-              <span className="text-[11px] text-zinc-400 block">Total HPP (FIFO)</span>
-              <span className="text-sm font-bold font-mono text-zinc-400">
-                {formatRupiah(multiAggregate.totalCogs)}
-              </span>
-            </div>
-            <div className="p-3 bg-[#111114] rounded-xl border border-white/10">
-              <span className="text-[11px] text-zinc-400 block">Total Laba Bersih</span>
-              <span
-                className={`text-sm font-bold font-mono ${
-                  multiAggregate.totalNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                }`}
-              >
+            <div>
+              <span className="theme-text-muted block text-[11px]">Estimasi Laba Bersih</span>
+              <strong className="font-mono text-sm text-emerald-400">
                 {formatRupiah(multiAggregate.totalNetProfit)}
-              </span>
-            </div>
-            <div className="p-3 bg-[#111114] rounded-xl border border-white/10">
-              <span className="text-[11px] text-zinc-400 block">Rate Rata-rata</span>
-              <span className="text-sm font-bold font-mono text-white">
-                Rp{multiAggregate.weightedAvgRate}
-              </span>
-            </div>
-            <div className="p-3 bg-[#111114] rounded-xl border border-white/10">
-              <span className="text-[11px] text-zinc-400 block">Rata-rata Laba/Trx</span>
-              <span className="text-sm font-bold font-mono text-white">
-                {formatRupiah(multiAggregate.avgProfitPerTrx)}
-              </span>
+              </strong>
             </div>
           </div>
 
-          {/* Action Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-zinc-400">Status:</span>
-              <span className="px-2 py-0.5 rounded bg-white/10 text-white font-bold">
-                {multiAggregate.profitCount} Untung
-              </span>
-              <span className="px-2 py-0.5 rounded bg-[#111114] text-zinc-400 font-bold border border-white/10">
-                {multiAggregate.breakEvenCount} Impas
-              </span>
-              {multiAggregate.lossCount > 0 && (
-                <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-bold">
-                  {multiAggregate.lossCount} Rugi
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={async () => {
-                  const res = await Swal.fire({
-                    title: 'Kosongkan Formulir?',
-                    text: 'Semua baris transaksi yang belum disimpan akan direset.',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonText: 'Ya, Kosongkan',
-                    cancelButtonText: 'Batal',
-                  });
-                  if (res.isConfirmed) {
-                    setMultiRows([
-                      {
-                        id: 'row_' + Date.now(),
-                        customer_name: '',
-                        quantity: 100,
-                        sell_rate: settings.default_rate,
-                        discount: 0,
-                        fee: 0,
-                        payment_method: settings.payment_methods[0] || 'BCA',
-                        amount_paid: 100 * settings.default_rate,
-                        delivery_status: 'SELESAI',
-                        source: settings.sales_sources[0] || 'WhatsApp',
-                        notes: '',
-                      },
-                    ]);
-                  }
-                }}
-                className="px-4 py-2 rounded-xl bg-[#111114] hover:bg-[#18181b] text-zinc-300 font-medium text-xs border border-white/10 transition"
-              >
-                Kosongkan
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveMulti}
-                disabled={!multiAggregate.hasEnoughStock && totalStockAvailable === 0}
-                className="flex items-center gap-2 px-6 py-2 rounded-xl bg-white hover:bg-zinc-200 text-black font-bold text-xs shadow-sm disabled:opacity-40 transition"
-              >
-                <Save size={14} />
-                <span>Simpan Semua ({multiRows.length} Transaksi)</span>
-              </button>
-            </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveMulti}
+              disabled={!multiAggregate.hasEnoughStock || multiRows.length === 0}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-black font-bold text-xs shadow-sm disabled:opacity-40 transition"
+            >
+              <Save size={14} />
+              <span>Simpan Sekaligus ({multiRows.length} Transaksi)</span>
+            </button>
           </div>
         </div>
       )}
 
-      {/* Transactions History Table */}
-      <div className="bg-[#09090b] p-6 rounded-2xl border border-white/10 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Filter and Transaction History Section */}
+      <div className="theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="font-heading font-bold text-white text-sm">Riwayat Transaksi Penjualan</h3>
-            <p className="text-xs text-zinc-400">
-              Total {filteredTransactions.length} transaksi tercatat di SQLite
+            <h3 className="font-heading font-bold theme-text-primary text-sm">
+              Riwayat Transaksi Penjualan
+            </h3>
+            <p className="text-xs theme-text-secondary">
+              Total {transactions.length} transaksi tercatat di database SQLite lokal.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full md:w-auto">
-            <div className="relative col-span-2 sm:w-56">
-              <Search
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"
-              />
+          {/* Quick Filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-2.5 theme-text-muted" />
               <input
                 type="text"
-                placeholder="Cari transaksi..."
+                placeholder="Cari kode / pelanggan..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                className="w-full bg-[#111114] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-white/30"
+                className="pl-8 pr-3 py-1.5 text-xs theme-bg-card border theme-border rounded-xl theme-text-primary focus:outline-none w-44 sm:w-56"
               />
             </div>
-
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="bg-[#111114] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white"
-            >
-              <option value="ALL">Semua Status</option>
-              <option value="ACTIVE">Aktif</option>
-              <option value="CANCELLED">Dibatalkan</option>
-              <option value="REFUNDED">Refund</option>
-            </select>
 
             <select
               value={paymentFilter}
               onChange={e => setPaymentFilter(e.target.value)}
-              className="bg-[#111114] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white"
+              className="px-2.5 py-1.5 text-xs theme-bg-card border theme-border rounded-xl theme-text-primary focus:outline-none"
             >
-              <option value="ALL">Semua Bayar</option>
+              <option value="ALL">Semua Pembayaran</option>
               <option value="LUNAS">Lunas</option>
-              <option value="SEBAGIAN">Sebagian</option>
               <option value="BELUM_LUNAS">Belum Lunas</option>
             </select>
 
-            <div className="col-span-2 sm:col-span-1 flex items-center gap-1.5">
-              <select
-                value={sortBy}
-                onChange={e => setSortBy(e.target.value as any)}
-                className="flex-1 bg-[#111114] border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white"
-              >
-                <option value="date">Urut Tanggal</option>
-                <option value="revenue">Urut Nilai</option>
-                <option value="profit">Urut Laba</option>
-              </select>
-
-              <button
-                onClick={() => setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
-                className="p-1.5 bg-[#111114] border border-white/10 rounded-xl text-neutral-300 hover:text-white shrink-0"
-                title="Balik Urutan"
-              >
-                <ArrowUpDown size={14} />
-              </button>
-            </div>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="px-2.5 py-1.5 text-xs theme-bg-card border theme-border rounded-xl theme-text-primary focus:outline-none"
+            >
+              <option value="ACTIVE">Aktif</option>
+              <option value="CANCELLED">Dibatalkan</option>
+              <option value="ALL">Semua Status</option>
+            </select>
           </div>
         </div>
 
         {/* Transactions Table */}
-        <div className="overflow-x-auto border border-white/10 rounded-xl">
-          <table className="w-full text-left text-xs min-w-[900px]">
-            <thead className="bg-[#111114] text-zinc-400 border-b border-white/10">
+        <div className="overflow-x-auto border theme-border rounded-xl">
+          <table className="w-full text-left text-xs min-w-[750px]">
+            <thead className="theme-bg-card theme-text-secondary border-b theme-border">
               <tr>
                 <th className="p-3">Kode Transaksi</th>
-                <th className="p-3">Tanggal</th>
+                <th className="p-3">Waktu</th>
                 <th className="p-3">Pelanggan</th>
-                <th className="p-3 text-right">Robux</th>
-                <th className="p-3 text-right">Rate</th>
-                <th className="p-3 text-right">Total Nilai</th>
-                <th className="p-3 text-right">HPP (Modal)</th>
+                <th className="p-3 text-right">Robux (R$)</th>
+                <th className="p-3 text-right">Uang Masuk</th>
                 <th className="p-3 text-right">Laba Bersih</th>
-                <th className="p-3 text-center">Bayar</th>
                 <th className="p-3 text-center">Status</th>
                 <th className="p-3 text-center">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y theme-border-subtle">
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-8 text-center text-zinc-500">
-                    Tidak ada transaksi yang cocok dengan filter atau database masih bersih.
+                  <td colSpan={8} className="p-8 text-center theme-text-muted">
+                    Tidak ada transaksi yang sesuai kriteria pencarian.
                   </td>
                 </tr>
               ) : (
-                filteredTransactions.map(trx => (
-                  <tr
-                    key={trx.id}
-                    className={`hover:bg-white/5 transition ${
-                      trx.status === 'CANCELLED' ? 'opacity-40 line-through' : ''
-                    }`}
-                  >
-                    <td className="p-3 font-mono text-zinc-300 font-semibold">
-                      {trx.transaction_code}
+                filteredTransactions.map(t => (
+                  <tr key={t.id} className="theme-bg-card-hover">
+                    <td className="p-3 font-mono font-bold theme-text-primary">
+                      {t.transaction_code}
                     </td>
-                    <td className="p-3 text-zinc-400">{trx.date.slice(0, 16).replace('T', ' ')}</td>
-                    <td className="p-3 font-medium text-white">{trx.customer_name}</td>
-                    <td className="p-3 text-right font-mono font-bold text-white">
-                      {formatNumber(trx.quantity)} R$
+                    <td className="p-3 theme-text-secondary whitespace-nowrap">
+                      {new Date(t.date).toLocaleDateString('id-ID', {
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </td>
-                    <td className="p-3 text-right font-mono text-zinc-300">Rp{trx.sell_rate}</td>
-                    <td className="p-3 text-right font-mono font-bold text-white">
-                      {formatRupiah(trx.net_revenue)}
+                    <td className="p-3 theme-text-primary font-medium">{t.customer_name}</td>
+                    <td className="p-3 text-right font-mono font-bold theme-text-primary">
+                      {formatNumber(t.quantity)} R$
                     </td>
-                    <td className="p-3 text-right font-mono text-zinc-400">
-                      {formatRupiah(trx.cogs)}
+                    <td className="p-3 text-right font-mono theme-text-primary">
+                      {formatRupiah(t.amount_paid)}
                     </td>
-                    <td
-                      className={`p-3 text-right font-mono font-bold ${
-                        trx.net_profit >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {formatRupiah(trx.net_profit)}
+                    <td className="p-3 text-right font-mono font-bold text-emerald-400">
+                      {formatRupiah(t.net_profit)}
                     </td>
                     <td className="p-3 text-center">
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          trx.payment_status === 'LUNAS'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                        }`}
-                      >
-                        {trx.payment_status}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          trx.status === 'ACTIVE'
-                            ? 'bg-white/10 text-white'
-                            : trx.status === 'CANCELLED'
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          t.status === 'CANCELLED'
                             ? 'bg-rose-500/20 text-rose-400'
-                            : 'bg-indigo-500/20 text-indigo-400'
+                            : t.payment_status === 'LUNAS'
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : 'bg-amber-500/20 text-amber-400'
                         }`}
                       >
-                        {trx.status}
+                        {t.status === 'CANCELLED' ? 'DIBATALKAN' : t.payment_status}
                       </span>
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
-                          type="button"
-                          onClick={() => setSelectedTrx(trx)}
-                          title="Lihat Detail Transaksi & Alokasi FIFO"
-                          className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white"
+                          onClick={() => setSelectedTrx(t)}
+                          className="p-1 theme-text-muted hover:theme-text-primary rounded"
+                          title="Lihat Detail Transaksi"
                         >
                           <Eye size={14} />
                         </button>
-                        {trx.status === 'ACTIVE' && (
+                        {t.status === 'ACTIVE' && (
                           <button
-                            type="button"
-                            onClick={() => handleCancelTrx(trx)}
+                            onClick={() => handleCancelTrx(t)}
+                            className="p-1 theme-text-muted hover:text-rose-400 rounded"
                             title="Batalkan Transaksi & Pulihkan Stok"
-                            className="p-1 hover:bg-rose-950/40 rounded text-zinc-400 hover:text-rose-400"
                           >
                             <XCircle size={14} />
                           </button>
@@ -1273,89 +1142,74 @@ export const SalesView: React.FC<SalesViewProps> = ({
         </div>
       </div>
 
-      {/* Transaction Details Modal */}
+      {/* Detail Modal */}
       {selectedTrx && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-[#09090b] border border-white/15 rounded-2xl max-w-lg w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="theme-bg-surface border theme-border rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b theme-border pb-3">
               <div>
-                <h3 className="text-sm font-heading font-bold text-white">Detail Transaksi</h3>
-                <span className="text-xs font-mono text-zinc-400">
-                  {selectedTrx.transaction_code}
-                </span>
+                <h4 className="font-heading font-bold theme-text-primary text-base">
+                  Detail Transaksi {selectedTrx.transaction_code}
+                </h4>
+                <p className="text-xs theme-text-muted">{selectedTrx.date}</p>
               </div>
               <button
                 onClick={() => setSelectedTrx(null)}
-                className="text-zinc-400 hover:text-white text-base font-bold"
+                className="p-1.5 rounded-lg theme-text-muted hover:theme-text-primary theme-bg-card"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-white/5">
-                <span className="text-zinc-400">Pelanggan:</span>
-                <span className="text-white font-medium">{selectedTrx.customer_name}</span>
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between py-1 border-b theme-border-subtle">
+                <span className="theme-text-secondary">Pelanggan:</span>
+                <span className="font-bold theme-text-primary">{selectedTrx.customer_name}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-white/5 font-mono">
-                <span className="text-zinc-400 font-sans">Tanggal:</span>
-                <span className="text-white">{selectedTrx.date}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-white/5 font-mono">
-                <span className="text-zinc-400 font-sans">Robux:</span>
-                <span className="text-white font-bold">
+              <div className="flex justify-between py-1 border-b theme-border-subtle">
+                <span className="theme-text-secondary">Robux Dikirim:</span>
+                <span className="font-mono font-bold theme-text-primary">
                   {formatNumber(selectedTrx.quantity)} R$
                 </span>
               </div>
-              <div className="flex justify-between py-1 border-b border-white/5 font-mono">
-                <span className="text-zinc-400 font-sans">Rate Jual:</span>
-                <span className="text-white">Rp{selectedTrx.sell_rate}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-white/5 font-mono">
-                <span className="text-zinc-400 font-sans">Pendapatan Bersih:</span>
-                <span className="text-white font-bold">
-                  {formatRupiah(selectedTrx.net_revenue)}
+              <div className="flex justify-between py-1 border-b theme-border-subtle">
+                <span className="theme-text-secondary">Rate Jual:</span>
+                <span className="font-mono theme-text-primary">
+                  Rp{formatDecimal(selectedTrx.sell_rate)}/R$
                 </span>
               </div>
-              <div className="flex justify-between py-1 border-b border-white/5 font-mono">
-                <span className="text-zinc-400 font-sans">Modal HPP (COGS):</span>
-                <span className="text-zinc-300">{formatRupiah(selectedTrx.cogs)}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-white/5 font-mono">
-                <span className="text-zinc-400 font-sans">Laba Bersih:</span>
-                <span
-                  className={`font-bold ${
-                    selectedTrx.net_profit >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                  }`}
-                >
-                  {formatRupiah(selectedTrx.net_profit)} ({selectedTrx.margin_percentage}%)
+              <div className="flex justify-between py-1 border-b theme-border-subtle">
+                <span className="theme-text-secondary">Uang Diterima:</span>
+                <span className="font-mono font-bold theme-text-primary">
+                  {formatRupiah(selectedTrx.amount_paid)}
                 </span>
               </div>
-              <div className="flex justify-between py-1 border-b border-white/5">
-                <span className="text-zinc-400">Metode & Kas:</span>
-                <span className="text-white font-mono">
-                  {selectedTrx.payment_method} — {formatRupiah(selectedTrx.amount_paid)}
+              <div className="flex justify-between py-1 border-b theme-border-subtle">
+                <span className="theme-text-secondary">Metode Bayar:</span>
+                <span className="theme-text-primary">{selectedTrx.payment_method}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b theme-border-subtle">
+                <span className="theme-text-secondary">Modal HPP (FIFO):</span>
+                <span className="font-mono text-rose-400">-{formatRupiah(selectedTrx.cogs)}</span>
+              </div>
+              <div className="flex justify-between py-1.5 border-t theme-border font-bold text-sm">
+                <span className="theme-text-primary">Laba Bersih:</span>
+                <span className="font-mono text-emerald-400">
+                  {formatRupiah(selectedTrx.net_profit)}
                 </span>
               </div>
-            </div>
-
-            {/* FIFO Batch breakdown */}
-            <div className="p-3 bg-[#111114] rounded-xl border border-white/10 text-xs space-y-1.5 font-mono">
-              <span className="font-bold text-zinc-300 block font-sans">Rincian Batch Stok FIFO:</span>
-              {selectedTrx.batch_allocations.map((a, i) => (
-                <div key={i} className="flex justify-between text-zinc-400 text-[11px]">
-                  <span>
-                    Batch {a.batch_code} ({formatNumber(a.quantity)} R$ @ Rp{a.cost_per_unit}):
-                  </span>
-                  <span className="text-white">{formatRupiah(a.subtotal_cost)}</span>
+              {selectedTrx.notes && (
+                <div className="p-3 rounded-xl theme-bg-card border theme-border">
+                  <span className="theme-text-muted block text-[11px] mb-1">Catatan:</span>
+                  <p className="theme-text-primary">{selectedTrx.notes}</p>
                 </div>
-              ))}
+              )}
             </div>
 
             <div className="pt-2 flex justify-end">
               <button
                 onClick={() => setSelectedTrx(null)}
-                className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-semibold rounded-xl border border-white/10"
+                className="px-4 py-2 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition"
               >
                 Tutup
               </button>

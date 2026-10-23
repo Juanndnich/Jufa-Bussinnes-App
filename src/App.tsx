@@ -7,17 +7,20 @@ import { CalculatorView } from './components/CalculatorView';
 import { StockView } from './components/StockView';
 import { RestockView } from './components/RestockView';
 import { FinanceView } from './components/FinanceView';
+import { InvestorView } from './components/InvestorView';
 import { AnalysisView } from './components/AnalysisView';
 import { PriceSimulatorView } from './components/PriceSimulatorView';
 import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
-import { AppSettings, Cashflow, StockBatch, StockMovement, Transaction } from './types';
+import { AppSettings, Cashflow, Investor, StockBatch, StockMovement, Transaction } from './types';
 import {
   getAllBatches,
   getAllCashflows,
+  getAllInvestors,
   getAllStockMovements,
   getAllTransactions,
   getSettings,
+  saveSettings,
 } from './services/repository';
 import { clearIndexedDB, getDatabase } from './services/db';
 import { applyTheme } from './utils/theme';
@@ -43,25 +46,28 @@ export const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cashflows, setCashflows] = useState<Cashflow[]>([]);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [investors, setInvestors] = useState<Investor[]>([]);
 
   // Refresh all state from SQLite
   const refreshAllData = useCallback(async () => {
     try {
-      const [s, b, t, c, m] = await Promise.all([
+      const [s, b, t, c, m, inv] = await Promise.all([
         getSettings(),
         getAllBatches(),
         getAllTransactions(),
         getAllCashflows(),
         getAllStockMovements(),
+        getAllInvestors(),
       ]);
       setSettings(s);
       setBatches(b);
       setTransactions(t);
       setCashflows(c);
       setStockMovements(m);
+      setInvestors(inv);
 
       // Apply User's Active Theme
-      applyTheme(s.theme_mode, s.custom_accent_color);
+      applyTheme(s.theme_mode);
     } catch (err: any) {
       console.error('Error loading data from SQLite:', err);
       setDbError(err.message || 'Gagal memuat database');
@@ -100,14 +106,14 @@ export const App: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#000000] text-white flex flex-col items-center justify-center gap-4 p-4">
-        <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-white animate-pulse">
+      <div className="min-h-screen theme-bg-main theme-text-primary flex flex-col items-center justify-center gap-4 p-4">
+        <div className="w-14 h-14 rounded-2xl theme-bg-card border theme-border flex items-center justify-center theme-text-primary animate-pulse">
           <Coins size={32} />
         </div>
         <div className="text-center space-y-1">
-          <h2 className="text-lg font-poppins font-bold">JUFA STORE Business Manager</h2>
-          <p className="text-xs text-neutral-400 flex items-center justify-center gap-2">
-            <Loader2 size={14} className="animate-spin text-white" />
+          <h2 className="text-lg font-heading font-bold">JUFA STORE Business Manager</h2>
+          <p className="text-xs theme-text-secondary flex items-center justify-center gap-2">
+            <Loader2 size={14} className="animate-spin" />
             <span>Memuat Database SQLite Persisten...</span>
           </p>
         </div>
@@ -117,7 +123,7 @@ export const App: React.FC = () => {
 
   if (dbError || !settings) {
     return (
-      <div className="min-h-screen bg-[#000000] text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen theme-bg-main theme-text-primary flex flex-col items-center justify-center p-6 text-center">
         <div className="max-w-md p-6 rounded-2xl bg-rose-950/20 border border-rose-500/30 space-y-3">
           <h2 className="text-base font-bold text-rose-400">Gagal Membuka Database</h2>
           <p className="text-xs text-neutral-300">{dbError}</p>
@@ -148,7 +154,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-[#000000] text-neutral-100 overflow-hidden relative">
+    <div className="flex h-screen theme-bg-main theme-text-primary overflow-hidden relative">
       {/* Sidebar Navigation (Desktop persistent, Mobile drawer slide-in) */}
       <Sidebar
         currentTab={currentTab}
@@ -156,7 +162,6 @@ export const App: React.FC = () => {
         totalRobuxStock={totalRobuxStock}
         stockAssetValue={stockAssetValue}
         minStockAlert={settings.min_stock_alert ?? settings.minStockAlert ?? 500}
-        customLogo={settings.custom_logo}
         storeName={settings.store_name}
         isOpenMobile={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
@@ -167,7 +172,6 @@ export const App: React.FC = () => {
         {/* Top Header */}
         <Header
           storeName={settings.store_name}
-          customLogo={settings.custom_logo}
           transactions={transactions}
           cashflows={cashflows}
           onQuickSale={() => setCurrentTab('sales')}
@@ -177,7 +181,7 @@ export const App: React.FC = () => {
 
         {/* Scrollable View Container */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6 pb-24 lg:pb-10">
-          <div className="max-w-7xl mx-auto">
+          <div key={currentTab} className="max-w-7xl mx-auto animate-tab-content">
             {currentTab === 'dashboard' && (
               <DashboardView
                 transactions={transactions}
@@ -226,11 +230,28 @@ export const App: React.FC = () => {
               />
             )}
 
+            {currentTab === 'investors' && (
+              <InvestorView
+                investors={investors}
+                transactions={transactions}
+                onRefreshData={refreshAllData}
+              />
+            )}
+
             {currentTab === 'analysis' && (
               <AnalysisView transactions={transactions} settings={settings} />
             )}
 
-            {currentTab === 'simulator' && <PriceSimulatorView batches={batches} />}
+            {currentTab === 'simulator' && (
+              <PriceSimulatorView
+                batches={batches}
+                settings={settings}
+                onUpdateSettings={async (newSet) => {
+                  await saveSettings(newSet);
+                  await refreshAllData();
+                }}
+              />
+            )}
 
             {currentTab === 'reports' && (
               <ReportsView
@@ -254,11 +275,11 @@ export const App: React.FC = () => {
         </main>
 
         {/* Mobile Bottom Navigation Bar (Android/iOS standard) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#09090b]/95 backdrop-blur-md border-t border-white/10 px-2 py-1.5 flex items-center justify-around">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 theme-bg-surface/95 backdrop-blur-md border-t theme-border px-2 py-1.5 flex items-center justify-around">
           <button
             onClick={() => setCurrentTab('dashboard')}
             className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-              currentTab === 'dashboard' ? 'text-white font-bold' : 'text-neutral-400 hover:text-neutral-200'
+              currentTab === 'dashboard' ? 'theme-text-primary font-bold' : 'theme-text-muted hover:theme-text-secondary'
             }`}
           >
             <LayoutDashboard size={18} />
@@ -268,7 +289,7 @@ export const App: React.FC = () => {
           <button
             onClick={() => setCurrentTab('sales')}
             className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-              currentTab === 'sales' ? 'text-white font-bold' : 'text-neutral-400 hover:text-neutral-200'
+              currentTab === 'sales' ? 'theme-text-primary font-bold' : 'theme-text-muted hover:theme-text-secondary'
             }`}
           >
             <ShoppingCart size={18} />
@@ -278,7 +299,7 @@ export const App: React.FC = () => {
           <button
             onClick={() => setCurrentTab('stock')}
             className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-              currentTab === 'stock' ? 'text-white font-bold' : 'text-neutral-400 hover:text-neutral-200'
+              currentTab === 'stock' ? 'theme-text-primary font-bold' : 'theme-text-muted hover:theme-text-secondary'
             }`}
           >
             <Package size={18} />
@@ -288,7 +309,7 @@ export const App: React.FC = () => {
           <button
             onClick={() => setCurrentTab('finance')}
             className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
-              currentTab === 'finance' ? 'text-white font-bold' : 'text-neutral-400 hover:text-neutral-200'
+              currentTab === 'finance' ? 'theme-text-primary font-bold' : 'theme-text-muted hover:theme-text-secondary'
             }`}
           >
             <Wallet size={18} />
@@ -297,7 +318,7 @@ export const App: React.FC = () => {
 
           <button
             onClick={() => setIsMobileMenuOpen(true)}
-            className="flex flex-col items-center justify-center py-1 px-2 rounded-xl text-neutral-400 hover:text-white transition"
+            className="flex flex-col items-center justify-center py-1 px-2 rounded-xl theme-text-muted hover:theme-text-primary transition"
           >
             <Menu size={18} />
             <span className="text-[10px] mt-0.5">Menu</span>
