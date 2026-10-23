@@ -65,14 +65,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: latest
-          name: JUFA STORE Latest Release
+          tag_name: v1.0.${{ github.run_number }}
+          name: JUFA STORE v1.0.${{ github.run_number }} (Update Otomatis)
           body: |
             ## Pembaruan Otomatis JUFA STORE Robux Manager
+            - Versi Rilis: v1.0.${{ github.run_number }}
             - Build otomatis dari commit: ${{ github.sha }}
             - File APK siap dipasang langsung di HP Android.
           draft: false
           prerelease: false
+          make_latest: true
           files: JUFA-STORE.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

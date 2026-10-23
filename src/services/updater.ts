@@ -27,7 +27,11 @@ export async function checkAppUpdate(manual: boolean = false): Promise<UpdateInf
 
     if (!res.ok) {
       if (manual) {
-        showToast('Belum ada rilis APK di GitHub atau repositori privat', 'info');
+        if (res.status === 404) {
+          showToast('Repositori belum memiliki rilis atau masih disetel Private (harus Public).', 'warning');
+        } else {
+          showToast(`Gagal memeriksa update (HTTP ${res.status})`, 'warning');
+        }
       }
       return null;
     }
