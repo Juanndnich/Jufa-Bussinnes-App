@@ -19,8 +19,9 @@ import {
   AlertCircle,
   Smartphone,
   HardDrive,
-  Rocket,
-  RefreshCw,
+  Flame,
+  Ghost,
+  Sparkles,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { AppSettings, Cashflow, StockBatch, Transaction } from '../types';
@@ -28,7 +29,6 @@ import { exportSqliteBinary, getDatabase, importSqliteBinary } from '../services
 import { resetAllDataToEmpty, saveSettings } from '../services/repository';
 import { applyTheme, ThemeMode } from '../utils/theme';
 import { showToast, showConfirm, showAlert, cleanupSwalLocks } from '../utils/alert';
-import { checkAppUpdate, APK_DOWNLOAD_URL } from '../services/updater';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -49,16 +49,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newPaymentMethod, setNewPaymentMethod] = useState('');
   const [newSupplier, setNewSupplier] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
-
-  const handleManualCheckUpdate = async () => {
-    setIsCheckingUpdate(true);
-    try {
-      await checkAppUpdate(true);
-    } finally {
-      setIsCheckingUpdate(false);
-    }
-  };
 
   // Bersihkan data sampah icon base64 lama dari localStorage jika ada
   React.useEffect(() => {
@@ -69,7 +59,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, []);
 
-  // Handle Theme Mode Change (Dark, Light, System)
+  // Handle Theme Mode Change (Dark, Light, System, Halloween)
   const handleThemeModeChange = (mode: ThemeMode) => {
     setFormData(prev => ({ ...prev, theme_mode: mode }));
     localStorage.setItem('jufa_theme_mode', mode);
@@ -350,7 +340,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <label className="text-xs font-medium theme-text-secondary block mb-2">
                 Pilih Mode Tampilan
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <button
                   type="button"
                   onClick={() => handleThemeModeChange('dark')}
@@ -387,11 +377,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   }`}
                 >
                   <Monitor size={16} />
-                  <span>Otomatis (Sistem)</span>
+                  <span>Otomatis</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleThemeModeChange('halloween')}
+                  className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border transition-all duration-150 active:scale-95 text-xs font-bold ${
+                    formData.theme_mode === 'halloween'
+                      ? 'bg-gradient-to-br from-orange-950/80 to-purple-950/80 border-orange-500 text-orange-200 ring-2 ring-orange-500/50 shadow-lg'
+                      : 'theme-bg-input border-orange-500/30 text-orange-400 hover:text-orange-200 hover:border-orange-500/60'
+                  }`}
+                >
+                  <Flame size={16} className="text-orange-500 animate-pulse" />
+                  <span>🎃 Halloween</span>
                 </button>
               </div>
               <span className="text-[11px] theme-text-muted mt-2 block">
-                Mode Otomatis akan menyelaraskan tampilan dengan tema gelap/terang pada perangkat Anda.
+                Pilih tema tampilan favorit Anda: Mode Gelap, Mode Terang, Otomatis, atau Edisi Spesial Halloween.
               </span>
             </div>
           </div>
@@ -602,58 +605,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <p className="text-[11px] theme-text-muted">
               Penyimpanan 100% offline di harddisk Anda tanpa mengirim data apapun ke server eksternal (Zero Leakage).
             </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Auto-Update & Rilis APK GitHub */}
-      <div className="theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b theme-border pb-3">
-          <div>
-            <h3 className="font-heading font-bold theme-text-primary text-base flex items-center gap-2">
-              <Rocket size={18} className="text-amber-400" />
-              <span>Sistem Pembaruan Otomatis (Auto-Update APK)</span>
-            </h3>
-            <p className="text-xs theme-text-secondary mt-0.5">
-              Setiap kali Anda push kode ke GitHub, GitHub Actions otomatis merilis APK baru dan aplikasi akan memberi notifikasi unduh 1-klik.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleManualCheckUpdate}
-              disabled={isCheckingUpdate}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 text-black font-bold text-xs transition disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={isCheckingUpdate ? 'animate-spin' : ''} />
-              <span>{isCheckingUpdate ? 'Memeriksa...' : 'Cek Pembaruan'}</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-          <div className="p-3.5 rounded-xl theme-bg-card border theme-border">
-            <span className="text-[11px] theme-text-muted block">Repositori GitHub</span>
-            <span className="font-mono font-bold theme-text-primary text-xs mt-0.5 block truncate">
-              Juanndnich/Jufa-Bussinnes-App
-            </span>
-          </div>
-          <div className="p-3.5 rounded-xl theme-bg-card border theme-border">
-            <span className="text-[11px] theme-text-muted block">File Rilis Siap Pasang</span>
-            <span className="font-mono font-bold text-emerald-400 text-xs mt-0.5 block">
-              JUFA-STORE.apk
-            </span>
-          </div>
-          <div className="p-3.5 rounded-xl theme-bg-card border theme-border">
-            <span className="text-[11px] theme-text-muted block">Tautan Langsung</span>
-            <a
-              href={APK_DOWNLOAD_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="font-bold text-sky-400 hover:underline text-xs mt-0.5 block truncate"
-            >
-              Unduh APK Rilis Terbaru ↗
-            </a>
           </div>
         </div>
       </div>

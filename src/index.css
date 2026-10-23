@@ -34,6 +34,22 @@ html.light {
   color-scheme: light;
 }
 
+html.halloween {
+  --bg-main: #0c0714;
+  --bg-surface: #140d22;
+  --bg-card: #1c122e;
+  --bg-card-hover: #291b42;
+  --bg-input: #180e28;
+  --border-color: rgba(249, 115, 22, 0.28);
+  --border-subtle: rgba(249, 115, 22, 0.14);
+  --text-primary: #fff7ed;
+  --text-secondary: #fdba74;
+  --text-muted: #c084fc;
+  --btn-primary-bg: #ea580c;
+  --btn-primary-text: #ffffff;
+  color-scheme: dark;
+}
+
 @layer base {
   body {
     background-color: var(--bg-main);
@@ -109,6 +125,56 @@ html.light {
 
 .animate-backdrop {
   animation: backdropFade 0.2s ease-out forwards;
+}
+
+/* Halloween Spooky Animations */
+@keyframes pumpkinGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.65));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 26px rgba(249, 115, 22, 0.95)) drop-shadow(0 0 12px rgba(168, 85, 247, 0.5));
+    transform: scale(1.03);
+  }
+}
+
+@keyframes floatBat {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate3d(-12px, -8px, 0) rotate(-6deg);
+  }
+  75% {
+    transform: translate3d(12px, -5px, 0) rotate(6deg);
+  }
+}
+
+@keyframes floatEmbers {
+  0% {
+    transform: translateY(0) scale(0.8);
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-80px) scale(1.2);
+    opacity: 0;
+  }
+}
+
+.animate-pumpkin-glow {
+  animation: pumpkinGlow 3s ease-in-out infinite;
+}
+
+.animate-float-bat {
+  animation: floatBat 4s ease-in-out infinite;
+}
+
+.animate-float-embers {
+  animation: floatEmbers 3s ease-in infinite;
 }
 
 /* Dynamic theme helper classes */

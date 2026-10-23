@@ -1,23 +1,30 @@
-export type ThemeMode = 'dark' | 'light' | 'system';
+export type ThemeMode = 'dark' | 'light' | 'system' | 'halloween';
 
 let systemListenerAttached = false;
 
-export function applyTheme(mode: ThemeMode = 'dark') {
+export function applyTheme(mode: ThemeMode = 'halloween') {
   const root = document.documentElement;
 
   const updateClasses = () => {
     let isDark = true;
+    let isHalloween = false;
+
     if (mode === 'light') {
       isDark = false;
+    } else if (mode === 'halloween') {
+      isHalloween = true;
+      isDark = true;
     } else if (mode === 'system') {
       isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
 
-    if (isDark) {
+    root.classList.remove('dark', 'light', 'halloween');
+
+    if (isHalloween) {
+      root.classList.add('dark', 'halloween');
+    } else if (isDark) {
       root.classList.add('dark');
-      root.classList.remove('light');
     } else {
-      root.classList.remove('dark');
       root.classList.add('light');
     }
   };

@@ -1,53 +1,66 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
-  Info,
-  Rocket,
-  RefreshCw,
   Download,
   ShieldCheck,
   Smartphone,
   Database,
   ExternalLink,
-  CheckCircle2,
   Sparkles,
-  Heart,
   Coins,
+  CheckCircle2,
 } from 'lucide-react';
-import { checkAppUpdate, APK_DOWNLOAD_URL, RELEASES_PAGE_URL } from '../services/updater';
 
-export const CURRENT_APP_VERSION = 'v1.0.7';
+export const CURRENT_APP_VERSION = 'v1.0.10';
+export const GITHUB_RELEASES_URL = 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/latest';
+export const DIRECT_APK_DOWNLOAD_URL = 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/latest/download/JUFA-STORE.apk';
 
 export const AboutView: React.FC = () => {
-  const [isChecking, setIsChecking] = useState(false);
-
-  const handleCheckUpdate = async () => {
-    setIsChecking(true);
-    try {
-      await checkAppUpdate(true);
-    } finally {
-      setIsChecking(false);
-    }
-  };
-
   const changelog = [
     {
-      version: 'v1.0.7 (Rilis Terbaru)',
+      version: 'v1.0.10 (Versi Terkini)',
       date: 'Oktober 2026',
       items: [
-        'Menu baru "Tentang Aplikasi" berisi info versi, status rilis, dan tombol pembaruan.',
-        'Sistem notifikasi pembaruan otomatis (Auto-Update APK) 1-klik langsung dari server GitHub.',
-        'Penggabungan kalkulasi stok Robux lama yang belum terjual saat melakukan restock baru.',
-        'Pencatatan pemakaian Robux pribadi untuk game/item avatar dengan pengurangan stok rapi.',
-        'Penyederhanaan bahasa menu Simulasi & Tier Harga dengan kalkulator laba kasir instan.',
+        '🎃 Edisi Spesial Halloween: Tema tampilan Halloween langsung aktif dengan nuansa labu mistis dan palet ungu-oranye.',
+        '🎃 Ikon aplikasi edisi Halloween (Labu Jack-o\'-Lantern & Koin Emas Robux) untuk Android dan web.',
+        '🎃 Layar pembuka (Loading Screen) animasi masuk bertema Halloween yang cepat, mulus, dan responsif.',
+        'Penyatuan laporan penjualan, laba rugi, arus kas, persediaan stok, dan piutang ke dalam 1 dropdown filter rapi.',
+        'Penghapusan kolom sumber penjualan di menu pencatatan penjualan agar lebih ringkas dan mudah dipahami.',
+        'Penghapusan kolom diskon pembelian dan biaya admin di formulir restock supplier agar perhitungan modal murni.',
+        'Penyempurnaan CRUD lengkap: pratinjau detail dan edit data untuk transaksi penjualan serta riwayat batch restock.',
+        'Penyederhanaan sistem update: tombol langsung menuju halaman rilis GitHub resmi untuk unduh APK terbaru secara andal.',
+      ],
+    },
+    {
+      version: 'v1.0.9',
+      date: 'Oktober 2026',
+      items: [
+        'Header bersih minimalis dengan dropdown menu aksi cepat (notifikasi, restock cepat, jual cepat).',
+        'Pemindahan informasi status SQLite lokal dan teknis sistem ke menu Tentang Aplikasi.',
+      ],
+    },
+    {
+      version: 'v1.0.8',
+      date: 'Oktober 2026',
+      items: [
+        'Penetapan nama aplikasi menjadi JufaStore pada Android dan web.',
+        'Pemeriksaan dan optimalisasi integritas basis data.',
+      ],
+    },
+    {
+      version: 'v1.0.7',
+      date: 'Oktober 2026',
+      items: [
+        'Menu baru "Tentang Aplikasi" yang memuat informasi versi, status rilis, dan keamanan database.',
+        'Penggabungan kalkulasi sisa stok Robux lama saat melakukan restock pembelian baru.',
+        'Pencatatan pemakaian Robux pribadi untuk game/avatar dengan pengurangan stok otomatis.',
       ],
     },
     {
       version: 'v1.0.6',
       date: 'Oktober 2026',
       items: [
-        'Integrasi workflow rilis GitHub Actions otomatis untuk pembuatan file JUFA-STORE.apk.',
-        'Optimasi transisi animasi menu yang halus dan responsif.',
-        'Perbaikan rasio dan pembatasan border grafik dasbor.',
+        'Konfigurasi rilis otomatis GitHub Actions untuk kompilasi APK Android.',
+        'Perbaikan rasio diagram statistik dasbor agar pas dalam batas kartu.',
       ],
     },
   ];
@@ -77,90 +90,75 @@ export const AboutView: React.FC = () => {
                 Aplikasi Manajemen Keuangan & Inventaris Robux Profesional (Offline-First)
               </p>
               <p className="text-[11px] theme-text-muted mt-0.5">
-                Dikembangkan khusus untuk operasional toko JUFA STORE dengan pembukuan akuntansi baku (FIFO).
+                Solusi pembukuan kas, stok FIFO, dan rekap keuangan resmi tanpa ketergantungan internet.
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleCheckUpdate}
-            disabled={isChecking}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-black font-bold text-xs shadow transition active:scale-95 disabled:opacity-50 shrink-0"
+          <a
+            href={GITHUB_RELEASES_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-neutral-200 text-black font-bold text-xs shadow transition active:scale-95 shrink-0"
           >
-            <RefreshCw size={14} className={isChecking ? 'animate-spin' : ''} />
-            <span>{isChecking ? 'Memeriksa...' : 'Periksa Pembaruan'}</span>
-          </button>
+            <Download size={14} />
+            <span>Download Versi Terbaru ↗</span>
+          </a>
         </div>
       </div>
 
-      {/* Auto-Update & Rilis Status Card */}
-      <div className="theme-bg-surface p-6 rounded-3xl border theme-border space-y-5">
+      {/* Rilis & Unduhan APK Resmi */}
+      <div className="theme-bg-surface p-6 rounded-3xl border theme-border space-y-4">
         <div className="flex items-center justify-between border-b theme-border pb-3">
           <h2 className="text-base font-heading font-bold theme-text-primary flex items-center gap-2">
-            <Rocket size={18} className="text-amber-400" />
-            <span>Pusat Pembaruan Aplikasi (Auto-Update APK)</span>
+            <Download size={18} className="text-emerald-400" />
+            <span>Unduh & Pembaruan APK Resmi</span>
           </h2>
           <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-            Status: Terkoneksi
+            GitHub Releases
           </span>
         </div>
 
         <p className="text-xs theme-text-secondary leading-relaxed">
-          Aplikasi JUFA STORE dilengkapi sistem pembaruan otomatis. Setiap kali ada update kode yang di-push ke repositori GitHub,
-          sistem GitHub Actions akan membuatkan file APK baru. Aplikasi Anda di HP akan otomatis mendeteksi dan menampilkan notifikasi
-          unduh pembaruan langsung tanpa kehilangan catatan transaksi yang sudah Anda buat.
+          Setiap pembaruan fitur atau perbaikan kode diunggah langsung ke GitHub Releases resmi toko.
+          Anda dapat mengunduh file APK versi terbaru kapan saja melalui tautan langsung di bawah ini.
+          Memasang APK versi baru tidak akan menghapus data transaksi dan stok yang tersimpan di HP Anda.
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="p-4 rounded-2xl theme-bg-card border theme-border space-y-1">
-            <span className="text-[11px] theme-text-muted block">Versi Terpasang Saat Ini</span>
-            <span className="text-sm font-mono font-bold theme-text-primary">{CURRENT_APP_VERSION}</span>
-            <p className="text-[10px] theme-text-muted">Siap menerima notifikasi update otomatis</p>
-          </div>
-
-          <div className="p-4 rounded-2xl theme-bg-card border theme-border space-y-1">
-            <span className="text-[11px] theme-text-muted block">Repositori GitHub</span>
-            <a
-              href="https://github.com/Juanndnich/Jufa-Bussinnes-App"
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs font-mono font-bold text-sky-400 hover:underline flex items-center gap-1 truncate"
-            >
-              <span>Juanndnich/Jufa-Bussinnes-App</span>
-              <ExternalLink size={11} className="shrink-0" />
-            </a>
-            <p className="text-[10px] theme-text-muted">Status: Repositori Publik & Rilis Aktif</p>
-          </div>
-
-          <div className="p-4 rounded-2xl theme-bg-card border theme-border space-y-1 flex flex-col justify-between">
-            <div>
-              <span className="text-[11px] theme-text-muted block">File Rilis APK</span>
-              <span className="text-xs font-mono font-bold text-emerald-400">JUFA-STORE.apk</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+          <a
+            href={GITHUB_RELEASES_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="p-4 rounded-2xl theme-bg-card hover:theme-bg-card-hover border theme-border flex items-center justify-between transition group"
+          >
+            <div className="space-y-0.5">
+              <span className="text-xs font-bold theme-text-primary group-hover:text-emerald-400 flex items-center gap-1.5 transition">
+                <span>Halaman Rilis GitHub Resmi</span>
+                <ExternalLink size={12} />
+              </span>
+              <p className="text-[11px] theme-text-muted">
+                Lihat daftar seluruh rilis dan catatan perbaikan terbaru
+              </p>
             </div>
-            <a
-              href={APK_DOWNLOAD_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded-lg border border-white/20 transition mt-2 justify-center"
-            >
-              <Download size={13} />
-              <span>Unduh APK Langsung</span>
-            </a>
-          </div>
-        </div>
+          </a>
 
-        <div className="p-4 rounded-2xl bg-[#111114] border border-white/10 text-xs text-zinc-300 space-y-2">
-          <div className="flex items-center gap-2 font-bold text-white">
-            <CheckCircle2 size={15} className="text-emerald-400" />
-            <span>Bagaimana Cara Kerja Update Otomatis?</span>
-          </div>
-          <ol className="list-decimal list-inside space-y-1 text-zinc-400 text-[11px] pl-1">
-            <li>Saat ada rilis versi baru di GitHub, aplikasi di HP Anda akan mendeteksinya saat dibuka.</li>
-            <li>Pop-up notifikasi pembaruan akan muncul secara instan di layar.</li>
-            <li>Tekan tombol <strong>"Unduh & Pasang APK"</strong>. Browser/HP Anda akan langsung mengunduh dan memperbarui aplikasi.</li>
-            <li>Seluruh database SQLite lokal (transaksi, batch stok, saldo kas) tetap <strong>100% aman dan tidak terhapus</strong>.</li>
-          </ol>
+          <a
+            href={DIRECT_APK_DOWNLOAD_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="p-4 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-between transition group"
+          >
+            <div className="space-y-0.5">
+              <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                <Download size={13} />
+                <span>Unduh File JUFA-STORE.apk Langsung</span>
+              </span>
+              <p className="text-[11px] text-emerald-300/70">
+                Tautan unduh langsung file instalasi APK Android
+              </p>
+            </div>
+          </a>
         </div>
       </div>
 
@@ -168,7 +166,7 @@ export const AboutView: React.FC = () => {
       <div className="theme-bg-surface p-6 rounded-3xl border theme-border space-y-4">
         <h2 className="text-base font-heading font-bold theme-text-primary flex items-center gap-2 border-b theme-border pb-3">
           <Sparkles size={18} className="text-cyan-400" />
-          <span>Catatan Pembaruan & Riwayat Fitur</span>
+          <span>Daftar Fitur & Riwayat Pembaruan</span>
         </h2>
 
         <div className="space-y-4">
@@ -234,9 +232,9 @@ export const AboutView: React.FC = () => {
       {/* Footer Info */}
       <div className="text-center py-4 space-y-1 text-xs theme-text-muted">
         <p className="flex items-center justify-center gap-1">
-          Dibuat khusus untuk <strong className="theme-text-primary">JUFA STORE</strong>
+          Dibuat khusus untuk <strong className="theme-text-primary">JufaStore</strong>
         </p>
-        <p className="text-[11px]">© 2026 JUFA STORE. Seluruh Hak Cipta Dilindungi.</p>
+        <p className="text-[11px]">© 2026 JufaStore. Seluruh Hak Cipta Dilindungi.</p>
       </div>
     </div>
   );

@@ -41,6 +41,9 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
+      - name: Apply Halloween Edition App Icons
+        run: node scripts/apply-halloween-icons.mjs
+
       - name: Grant Execute Permission for Gradle
         run: chmod +x android/gradlew
 

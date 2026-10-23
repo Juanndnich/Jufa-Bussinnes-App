@@ -14,6 +14,7 @@ import { PriceSimulatorView } from './components/PriceSimulatorView';
 import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
 import { AboutView } from './components/AboutView';
+import { HalloweenSplashScreen } from './components/HalloweenSplashScreen';
 import { AppSettings, Cashflow, Investor, StockBatch, StockMovement, Transaction } from './types';
 import {
   getAllBatches,
@@ -26,7 +27,6 @@ import {
 } from './services/repository';
 import { clearIndexedDB, getDatabase } from './services/db';
 import { applyTheme } from './utils/theme';
-import { checkAppUpdate } from './services/updater';
 import {
   Coins,
   Loader2,
@@ -42,6 +42,7 @@ export const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [showSplash, setShowSplash] = useState(true);
 
   // Global Business State
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -87,10 +88,6 @@ export const App: React.FC = () => {
         if (mounted) {
           await refreshAllData();
           setLoading(false);
-          // Periksa pembaruan APK dari GitHub Actions secara otomatis di background
-          setTimeout(() => {
-            checkAppUpdate(false).catch(() => {});
-          }, 2000);
         }
       } catch (err: any) {
         if (mounted) {
@@ -110,6 +107,15 @@ export const App: React.FC = () => {
     (sum, b) => sum + (b.remaining_quantity || 0) * (b.cost_per_unit || 0),
     0
   );
+
+  if (showSplash) {
+    return (
+      <HalloweenSplashScreen
+        durationSeconds={50}
+        onFinish={() => setShowSplash(false)}
+      />
+    );
+  }
 
   if (loading) {
     return (

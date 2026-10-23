@@ -164,92 +164,86 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#09090b] p-5 rounded-2xl border border-white/10">
-        <div>
-          <h2 className="text-xl font-poppins font-bold text-white flex items-center gap-2">
-            <FileText className="text-white" size={22} />
-            <span>Laporan Keuangan & Ekspor Data</span>
-          </h2>
-          <p className="text-xs text-neutral-400 mt-1">
-            Pembukuan resmi, ringkasan laba rugi, ekspor CSV, backup SQLite, dan cetak PDF.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#111114] hover:bg-neutral-800 text-neutral-200 text-xs font-semibold border border-white/10 hover:border-white/20 transition"
-          >
-            <FileSpreadsheet size={14} className="text-emerald-400" />
-            <span>Ekspor CSV</span>
-          </button>
-          <button
-            onClick={handleExportSQLite}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#111114] hover:bg-neutral-800 text-neutral-200 text-xs font-semibold border border-white/10 hover:border-white/20 transition"
-          >
-            <Database size={14} className="text-white" />
-            <span>Unduh File .SQLite</span>
-          </button>
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition"
-          >
-            <Printer size={15} />
-            <span>Cetak / PDF</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Report Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#09090b] p-3 rounded-2xl border border-white/10">
-        <div className="flex items-center gap-1.5 overflow-x-auto max-w-full no-scrollbar pb-1 sm:pb-0">
-          {[
-            ['sales', 'Laporan Penjualan'],
-            ['profit_loss', 'Laba Rugi'],
-            ['cashflow', 'Arus Kas'],
-            ['inventory', 'Persediaan Stok'],
-            ['receivables', 'Piutang & Utang'],
-          ].map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setReportType(k as any)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
-                reportType === k
-                  ? 'bg-white text-black font-bold'
-                  : 'text-neutral-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-neutral-400">Periode:</span>
+      {/* Unified Report Selector & Filter Controls */}
+      <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+          <div className="flex items-center gap-2">
+            <Layers size={17} className="text-emerald-400 shrink-0" />
+            <label className="text-xs font-bold theme-text-primary whitespace-nowrap">
+              Pilih Laporan:
+            </label>
+          </div>
           <select
-            value={dateFilter}
-            onChange={e => setDateFilter(e.target.value as any)}
-            className="bg-[#111114] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-white/30"
+            value={reportType}
+            onChange={e => setReportType(e.target.value as any)}
+            className="w-full sm:w-auto min-w-[240px] theme-bg-input border theme-border rounded-xl px-3.5 py-2 text-xs font-bold theme-text-primary focus:outline-none"
           >
-            <option value="thisMonth">Bulan Ini</option>
-            <option value="30days">30 Hari Terakhir</option>
-            <option value="all">Semua Data</option>
+            <option value="sales">📊 Laporan Riwayat Penjualan</option>
+            <option value="profit_loss">📈 Laporan Laba Rugi Komprehensif</option>
+            <option value="cashflow">💵 Laporan Buku Arus Kas</option>
+            <option value="inventory">📦 Laporan Persediaan Stok (FIFO)</option>
+            <option value="receivables">📑 Laporan Piutang & Utang</option>
           </select>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1.5">
+            <Calendar size={14} className="theme-text-muted" />
+            <span className="text-xs theme-text-secondary">Periode:</span>
+            <select
+              value={dateFilter}
+              onChange={e => setDateFilter(e.target.value as any)}
+              className="theme-bg-input border theme-border rounded-xl px-3 py-1.5 text-xs font-semibold theme-text-primary focus:outline-none"
+            >
+              <option value="thisMonth">Bulan Ini</option>
+              <option value="30days">30 Hari Terakhir</option>
+              <option value="all">Semua Waktu (All Data)</option>
+            </select>
+          </div>
+
+          <div className="h-5 w-px theme-border hidden sm:block" />
+
+          {/* Export Action Buttons */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl theme-bg-card hover:theme-bg-card-hover text-xs font-semibold theme-text-primary border theme-border transition"
+              title="Ekspor format CSV"
+            >
+              <FileSpreadsheet size={13} className="text-emerald-400" />
+              <span>Ekspor CSV</span>
+            </button>
+            <button
+              onClick={handleExportSQLite}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl theme-bg-card hover:theme-bg-card-hover text-xs font-semibold theme-text-primary border theme-border transition"
+              title="Unduh File Database SQLite"
+            >
+              <Database size={13} />
+              <span>Unduh .SQLite</span>
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition shadow-sm"
+              title="Cetak atau Simpan sebagai PDF"
+            >
+              <Printer size={13} />
+              <span>Cetak / PDF</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Main Report Printable Content */}
-      <div className="bg-[#09090b] p-8 rounded-2xl border border-white/10 space-y-6 print:bg-white print:text-black">
+      <div className="theme-bg-surface p-6 sm:p-8 rounded-2xl border theme-border space-y-6 print:bg-white print:text-black">
         {/* Printable Header */}
-        <div className="border-b border-white/10 pb-5 flex items-center justify-between">
+        <div className="border-b theme-border pb-5 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-poppins font-black text-white print:text-black">{settings.store_name}</h1>
-            <p className="text-xs text-neutral-400 print:text-neutral-700 font-semibold uppercase tracking-wider mt-0.5">
+            <h1 className="text-xl sm:text-2xl font-poppins font-black theme-text-primary print:text-black">{settings.store_name}</h1>
+            <p className="text-xs theme-text-muted print:text-neutral-700 font-semibold uppercase tracking-wider mt-0.5">
               Laporan Keuangan & Operasional — Robux Business
             </p>
           </div>
-          <div className="text-right text-xs text-neutral-400 print:text-neutral-600 font-mono">
+          <div className="text-right text-xs theme-text-muted print:text-neutral-600 font-mono">
             <div>Dicetak: {new Date().toLocaleString('id-ID')} WIB</div>
             <div>Mata Uang: IDR (Rupiah)</div>
           </div>

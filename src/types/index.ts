@@ -131,8 +131,8 @@ export interface AppSettings {
   suppliers: string[];
   sales_sources: string[];
   stock_method: 'FIFO';
-  // Theme Mode (Dark, Light, System)
-  theme_mode?: 'dark' | 'light' | 'system';
+  // Theme Mode (Dark, Light, System, Halloween)
+  theme_mode?: 'dark' | 'light' | 'system' | 'halloween';
 }
 
 export interface DailyBreakdown {

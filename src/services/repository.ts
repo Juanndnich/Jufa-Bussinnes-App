@@ -1,4 +1,4 @@
-import { AppSettings, BatchAllocation, Cashflow, Investor, StockBatch, StockMovement, Transaction } from '../types';
+import { AppSettings, BatchAllocation, Cashflow, DeliveryStatus, Investor, PaymentStatus, StockBatch, StockMovement, Transaction } from '../types';
 import { allocateStockFIFO, calculateTransactionFinancials } from '../utils/calculations';
 import { generateBatchCode, generateTransactionCode, getJakartaCurrentDate } from '../utils/formatters';
 import { getDatabase, persistDatabase } from './db';
@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   suppliers: [], // Kosongkan agar pengguna menambah manual
   sales_sources: ['WhatsApp', 'Itemku', 'Shopee', 'Discord', 'Langsung/COD', 'Instagram'],
   stock_method: 'FIFO',
+  theme_mode: 'halloween',
 };
 
 // ==========================================
@@ -832,4 +833,79 @@ export async function recordPersonalRobuxUsage(
   }
 
   await persistDatabase();
+}
+
+
+/**
+ * Update Transaction metadata (Customer Name, Notes, Payment Status, Delivery Status)
+ */
+export async function updateTransaction(
+  id: string,
+  updates: {
+    customer_name?: string;
+    notes?: string;
+    payment_status?: PaymentStatus;
+    delivery_status?: DeliveryStatus;
+  }
+): Promise<void> {
+  const db = await getDatabase();
+  const now = getJakartaCurrentDate();
+  const fields: string[] = ['updated_at = ?'];
+  const values: any[] = [now];
+
+  if (updates.customer_name !== undefined) {
+    fields.push('customer_name = ?');
+    values.push(updates.customer_name.trim());
+  }
+  if (updates.notes !== undefined) {
+    fields.push('notes = ?');
+    values.push(updates.notes.trim());
+  }
+  if (updates.payment_status !== undefined) {
+    fields.push('payment_status = ?');
+    values.push(updates.payment_status);
+  }
+  if (updates.delivery_status !== undefined) {
+    fields.push('delivery_status = ?');
+    values.push(updates.delivery_status);
+  }
+
+  values.push(id);
+  db.run(`UPDATE transactions SET ${fields.join(', ')} WHERE id = ?`, values);
+  await persistDatabase();
+}
+
+/**
+ * Update Batch metadata (Supplier, Notes, Payment Status)
+ */
+export async function updateBatch(
+  id: string,
+  updates: {
+    supplier?: string;
+    notes?: string;
+    payment_status?: 'LUNAS' | 'BELUM_LUNAS';
+  }
+): Promise<void> {
+  const db = await getDatabase();
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (updates.supplier !== undefined) {
+    fields.push('supplier = ?');
+    values.push(updates.supplier.trim());
+  }
+  if (updates.notes !== undefined) {
+    fields.push('notes = ?');
+    values.push(updates.notes.trim());
+  }
+  if (updates.payment_status !== undefined) {
+    fields.push('payment_status = ?');
+    values.push(updates.payment_status);
+  }
+
+  if (fields.length > 0) {
+    values.push(id);
+    db.run(`UPDATE batches SET ${fields.join(', ')} WHERE id = ?`, values);
+    await persistDatabase();
+  }
 }

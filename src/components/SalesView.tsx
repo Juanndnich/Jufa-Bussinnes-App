@@ -11,14 +11,16 @@ import {
   ShoppingBag,
   FileSpreadsheet,
   AlertCircle,
+  Edit3,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { showToast, showAlert, cleanupSwalLocks } from '../utils/alert';
-import { AppSettings, StockBatch, Transaction } from '../types';
+import { AppSettings, DeliveryStatus, PaymentStatus, StockBatch, Transaction } from '../types';
 import {
   cancelTransaction,
   saveMultipleTransactions,
   TransactionInput,
+  updateTransaction,
 } from '../services/repository';
 import { formatDecimal, formatNumber, formatRupiah } from '../utils/formatters';
 import {
@@ -110,8 +112,46 @@ export const SalesView: React.FC<SalesViewProps> = ({
   const [sortBy, setSortBy] = useState<'date' | 'revenue' | 'profit'>('date');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
 
-  // Detail Modal State
+  // Detail & Edit Modal State
   const [selectedTrx, setSelectedTrx] = useState<Transaction | null>(null);
+  const [isEditingTrx, setIsEditingTrx] = useState(false);
+  const [editTrxForm, setEditTrxForm] = useState<{
+    customer_name: string;
+    payment_status: PaymentStatus;
+    delivery_status: DeliveryStatus;
+    notes: string;
+  }>({
+    customer_name: '',
+    payment_status: 'LUNAS',
+    delivery_status: 'SELESAI',
+    notes: '',
+  });
+
+  const openDetailTrx = (t: Transaction, editMode = false) => {
+    setSelectedTrx(t);
+    setIsEditingTrx(editMode);
+    setEditTrxForm({
+      customer_name: t.customer_name,
+      payment_status: t.payment_status,
+      delivery_status: t.delivery_status,
+      notes: t.notes || '',
+    });
+  };
+
+  const handleSaveTrxEdit = async () => {
+    if (!selectedTrx) return;
+    try {
+      await updateTransaction(selectedTrx.id, editTrxForm);
+      await onRefreshData();
+      showToast('Perubahan transaksi berhasil disimpan!', 'success');
+      setSelectedTrx(null);
+      setIsEditingTrx(false);
+    } catch (err: any) {
+      showAlert('Gagal Menyimpan Perubahan', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
+    }
+  };
 
   const totalStockAvailable = useMemo(() => {
     return batches.reduce((sum, b) => sum + b.remaining_quantity, 0);
@@ -605,27 +645,6 @@ export const SalesView: React.FC<SalesViewProps> = ({
 
               <div>
                 <label className="text-xs font-medium theme-text-secondary block mb-1">
-                  Sumber Penjualan
-                </label>
-                <select
-                  value={singleForm.source}
-                  onChange={e => setSingleForm({ ...singleForm, source: e.target.value })}
-                  className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary focus:outline-none"
-                >
-                  {settings.sales_sources && settings.sales_sources.length > 0 ? (
-                    settings.sales_sources.map(s => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="WhatsApp">WhatsApp</option>
-                  )}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium theme-text-secondary block mb-1">
                   Catatan / Username Roblox (Opsional)
                 </label>
                 <input
@@ -1104,12 +1123,21 @@ export const SalesView: React.FC<SalesViewProps> = ({
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
-                          onClick={() => setSelectedTrx(t)}
+                          onClick={() => openDetailTrx(t, false)}
                           className="p-1 theme-text-muted hover:theme-text-primary rounded"
                           title="Lihat Detail Transaksi"
                         >
                           <Eye size={14} />
                         </button>
+                        {t.status === 'ACTIVE' && (
+                          <button
+                            onClick={() => openDetailTrx(t, true)}
+                            className="p-1 theme-text-muted hover:text-sky-400 rounded"
+                            title="Edit Data Transaksi"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                        )}
                         {t.status === 'ACTIVE' && (
                           <button
                             onClick={() => handleCancelTrx(t)}
@@ -1135,72 +1163,182 @@ export const SalesView: React.FC<SalesViewProps> = ({
           <div className="theme-bg-surface border theme-border rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b theme-border pb-3">
               <div>
-                <h4 className="font-heading font-bold theme-text-primary text-base">
-                  Detail Transaksi {selectedTrx.transaction_code}
+                <h4 className="font-heading font-bold theme-text-primary text-base flex items-center gap-2">
+                  <span>{isEditingTrx ? 'Edit Transaksi' : 'Detail Transaksi'}</span>
+                  <span className="font-mono text-xs px-2 py-0.5 rounded bg-white/10 text-zinc-300">
+                    {selectedTrx.transaction_code}
+                  </span>
                 </h4>
-                <p className="text-xs theme-text-muted">{selectedTrx.date}</p>
+                <p className="text-xs theme-text-muted mt-0.5">{selectedTrx.date}</p>
               </div>
               <button
-                onClick={() => setSelectedTrx(null)}
+                onClick={() => {
+                  setSelectedTrx(null);
+                  setIsEditingTrx(false);
+                }}
                 className="p-1.5 rounded-lg theme-text-muted hover:theme-text-primary theme-bg-card"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="flex justify-between py-1 border-b theme-border-subtle">
-                <span className="theme-text-secondary">Pelanggan:</span>
-                <span className="font-bold theme-text-primary">{selectedTrx.customer_name}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b theme-border-subtle">
-                <span className="theme-text-secondary">Robux Dikirim:</span>
-                <span className="font-mono font-bold theme-text-primary">
-                  {formatNumber(selectedTrx.quantity)} R$
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b theme-border-subtle">
-                <span className="theme-text-secondary">Rate Jual:</span>
-                <span className="font-mono theme-text-primary">
-                  Rp{formatDecimal(selectedTrx.sell_rate)}/R$
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b theme-border-subtle">
-                <span className="theme-text-secondary">Uang Diterima:</span>
-                <span className="font-mono font-bold theme-text-primary">
-                  {formatRupiah(selectedTrx.amount_paid)}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b theme-border-subtle">
-                <span className="theme-text-secondary">Metode Bayar:</span>
-                <span className="theme-text-primary">{selectedTrx.payment_method}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b theme-border-subtle">
-                <span className="theme-text-secondary">Modal HPP (FIFO):</span>
-                <span className="font-mono text-rose-400">-{formatRupiah(selectedTrx.cogs)}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-t theme-border font-bold text-sm">
-                <span className="theme-text-primary">Laba Bersih:</span>
-                <span className="font-mono text-emerald-400">
-                  {formatRupiah(selectedTrx.net_profit)}
-                </span>
-              </div>
-              {selectedTrx.notes && (
-                <div className="p-3 rounded-xl theme-bg-card border theme-border">
-                  <span className="theme-text-muted block text-[11px] mb-1">Catatan:</span>
-                  <p className="theme-text-primary">{selectedTrx.notes}</p>
+            {isEditingTrx ? (
+              /* Mode Edit Transaksi */
+              <div className="space-y-3.5 text-xs">
+                <div>
+                  <label className="text-xs font-medium theme-text-secondary block mb-1">
+                    Nama Pelanggan
+                  </label>
+                  <input
+                    type="text"
+                    value={editTrxForm.customer_name}
+                    onChange={e => setEditTrxForm({ ...editTrxForm, customer_name: e.target.value })}
+                    className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary font-bold focus:outline-none"
+                    placeholder="Nama pelanggan..."
+                  />
                 </div>
-              )}
-            </div>
 
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => setSelectedTrx(null)}
-                className="px-4 py-2 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition"
-              >
-                Tutup
-              </button>
-            </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium theme-text-secondary block mb-1">
+                      Status Pembayaran
+                    </label>
+                    <select
+                      value={editTrxForm.payment_status}
+                      onChange={e => setEditTrxForm({ ...editTrxForm, payment_status: e.target.value as any })}
+                      className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary font-bold focus:outline-none"
+                    >
+                      <option value="LUNAS">LUNAS</option>
+                      <option value="BELUM_LUNAS">BELUM LUNAS (Utang)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium theme-text-secondary block mb-1">
+                      Status Pengiriman
+                    </label>
+                    <select
+                      value={editTrxForm.delivery_status}
+                      onChange={e => setEditTrxForm({ ...editTrxForm, delivery_status: e.target.value as any })}
+                      className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary font-bold focus:outline-none"
+                    >
+                      <option value="SELESAI">SELESAI</option>
+                      <option value="BELUM_DIKIRIM">BELUM DIKIRIM</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium theme-text-secondary block mb-1">
+                    Catatan / Username Roblox
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={editTrxForm.notes}
+                    onChange={e => setEditTrxForm({ ...editTrxForm, notes: e.target.value })}
+                    className="w-full theme-bg-input border theme-border rounded-xl px-3 py-2 text-xs theme-text-primary focus:outline-none"
+                    placeholder="Catatan transaksi..."
+                  />
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingTrx(false)}
+                    className="px-4 py-2 rounded-xl border theme-border theme-text-secondary hover:theme-text-primary text-xs font-semibold transition"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveTrxEdit}
+                    className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition"
+                  >
+                    <Save size={13} />
+                    <span>Simpan Perubahan</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Mode Pratinjau Transaksi */
+              <div className="space-y-3 text-xs">
+                <div className="flex justify-between py-1 border-b theme-border-subtle">
+                  <span className="theme-text-secondary">Pelanggan:</span>
+                  <span className="font-bold theme-text-primary">{selectedTrx.customer_name}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b theme-border-subtle">
+                  <span className="theme-text-secondary">Robux Dikirim:</span>
+                  <span className="font-mono font-bold theme-text-primary">
+                    {formatNumber(selectedTrx.quantity)} R$
+                  </span>
+                </div>
+                <div className="flex justify-between py-1 border-b theme-border-subtle">
+                  <span className="theme-text-secondary">Rate Jual:</span>
+                  <span className="font-mono theme-text-primary">
+                    Rp{formatDecimal(selectedTrx.sell_rate)}/R$
+                  </span>
+                </div>
+                <div className="flex justify-between py-1 border-b theme-border-subtle">
+                  <span className="theme-text-secondary">Uang Diterima:</span>
+                  <span className="font-mono font-bold theme-text-primary">
+                    {formatRupiah(selectedTrx.amount_paid)}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1 border-b theme-border-subtle">
+                  <span className="theme-text-secondary">Status Pembayaran:</span>
+                  <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${
+                    selectedTrx.payment_status === 'LUNAS' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                  }`}>
+                    {selectedTrx.payment_status}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1 border-b theme-border-subtle">
+                  <span className="theme-text-secondary">Status Pengiriman:</span>
+                  <span className="font-bold theme-text-primary">{selectedTrx.delivery_status}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b theme-border-subtle">
+                  <span className="theme-text-secondary">Metode Bayar:</span>
+                  <span className="theme-text-primary">{selectedTrx.payment_method}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b theme-border-subtle">
+                  <span className="theme-text-secondary">Modal HPP (FIFO):</span>
+                  <span className="font-mono text-rose-400">-{formatRupiah(selectedTrx.cogs)}</span>
+                </div>
+                <div className="flex justify-between py-1.5 border-t theme-border font-bold text-sm">
+                  <span className="theme-text-primary">Laba Bersih:</span>
+                  <span className="font-mono text-emerald-400">
+                    {formatRupiah(selectedTrx.net_profit)}
+                  </span>
+                </div>
+                {selectedTrx.notes && (
+                  <div className="p-3 rounded-xl theme-bg-card border theme-border">
+                    <span className="theme-text-muted block text-[11px] mb-1">Catatan:</span>
+                    <p className="theme-text-primary">{selectedTrx.notes}</p>
+                  </div>
+                )}
+
+                <div className="pt-2 flex justify-end gap-2">
+                  {selectedTrx.status === 'ACTIVE' && (
+                    <button
+                      onClick={() => setIsEditingTrx(true)}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl theme-bg-card hover:theme-bg-card-hover border theme-border theme-text-primary font-bold text-xs transition"
+                    >
+                      <Edit3 size={13} />
+                      <span>Edit Data</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setSelectedTrx(null);
+                      setIsEditingTrx(false);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
