@@ -190,7 +190,6 @@ export const App: React.FC = () => {
           onQuickSale={() => handleSelectTab('sales')}
           onQuickRestock={() => handleSelectTab('restock')}
           onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
-          onNavigateToAbout={() => handleSelectTab('about')}
         />
 
         {/* Scrollable View Container */}

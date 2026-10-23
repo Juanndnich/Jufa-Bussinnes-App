@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ShieldCheck, Plus, ShoppingBag, Clock, Menu, Bell, Coins } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Menu, Coins, ChevronDown, ShoppingBag, Plus, Bell } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { cleanupSwalLocks } from '../utils/alert';
 import { Cashflow, Transaction } from '../types';
@@ -13,7 +13,6 @@ interface HeaderProps {
   transactions?: Transaction[];
   cashflows?: Cashflow[];
   onToggleMobileMenu?: () => void;
-  onNavigateToAbout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,32 +22,24 @@ export const Header: React.FC<HeaderProps> = ({
   transactions = [],
   cashflows = [],
   onToggleMobileMenu,
-  onNavigateToAbout,
 }) => {
-  const [currentTime, setCurrentTime] = useState<string>('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Tutup dropdown saat klik di luar area
   useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      const formatted = new Intl.DateTimeFormat('id-ID', {
-        timeZone: 'Asia/Jakarta',
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      }).format(now);
-      setCurrentTime(formatted + ' WIB');
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
     };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Show 24-Hours Daily Financial Summary Notification
+  // Tampilkan notifikasi rekap finansial 24 jam
   const handleShow24HoursSummary = () => {
+    setIsDropdownOpen(false);
     const summary = compute24HoursSummary(transactions, cashflows);
 
     Swal.fire({
@@ -102,78 +93,92 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-14 sm:h-16 px-3 sm:px-6 theme-bg-surface border-b theme-border flex items-center justify-between shrink-0 z-20">
-      <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
-        {/* Mobile Hamburger Menu Toggle */}
+    <header className="h-14 sm:h-16 px-4 sm:px-6 theme-bg-surface border-b theme-border flex items-center justify-between shrink-0 z-20">
+      {/* Sisi Kiri: Menu Mobile, Logo, dan Judul Aplikasi Saja */}
+      <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onToggleMobileMenu}
-          className="lg:hidden p-2 -ml-1 rounded-xl theme-text-secondary hover:theme-text-primary hover:theme-bg-card transition"
+          className="lg:hidden p-1.5 -ml-1 rounded-xl theme-text-secondary hover:theme-text-primary hover:theme-bg-card transition"
           aria-label="Buka Menu"
         >
           <Menu size={20} />
         </button>
 
-        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white text-black flex items-center justify-center shadow-sm shrink-0">
-          <Coins size={16} className="text-black" />
+        <div className="w-8 h-8 rounded-xl bg-white text-black flex items-center justify-center shadow-sm shrink-0">
+          <Coins size={18} className="text-black" />
         </div>
 
-        <div className="truncate">
-          <h2 className="text-sm sm:text-base font-heading font-bold theme-text-primary tracking-tight flex items-center gap-2 truncate">
-            <span className="truncate">{storeName}</span>
-            <button
-              onClick={onNavigateToAbout}
-              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 font-mono font-bold shrink-0 transition"
-              title="Lihat Info Tentang Aplikasi & Update"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              v1.0.7
-            </button>
-          </h2>
-        </div>
+        <h1 className="text-base sm:text-lg font-heading font-bold theme-text-primary tracking-tight truncate">
+          {storeName || 'JufaStore'}
+        </h1>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-        {/* Real-time Clock (Desktop only) */}
-        <div className="hidden xl:flex items-center gap-1.5 text-xs theme-text-secondary theme-bg-card px-3 py-1.5 rounded-xl border theme-border">
-          <Clock size={13} className="theme-text-muted" />
-          <span className="font-mono text-[11px]">{currentTime || 'Memuat...'}</span>
-        </div>
-
-        {/* Daily 24-Hours Summary Notification Pill */}
+      {/* Sisi Kanan: Satu Dropdown Ringkas & Rapi */}
+      <div className="relative" ref={dropdownRef}>
         <button
-          onClick={handleShow24HoursSummary}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl theme-bg-card hover:theme-bg-card-hover theme-text-primary text-xs font-semibold border theme-border transition"
-          title="Lihat Laporan Rekap 24 Jam"
+          onClick={() => setIsDropdownOpen(prev => !prev)}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl theme-bg-card hover:theme-bg-card-hover border theme-border text-xs font-bold theme-text-primary transition shadow-sm active:scale-95"
+          aria-expanded={isDropdownOpen}
         >
-          <Bell size={13} className="text-amber-400" />
-          <span className="hidden sm:inline">Rekap 24 Jam</span>
+          <span>Aksi Cepat</span>
+          <ChevronDown
+            size={14}
+            className={`theme-text-muted transition-transform duration-200 ${
+              isDropdownOpen ? 'rotate-180' : ''
+            }`}
+          />
         </button>
 
-        {/* Database Status */}
-        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl theme-bg-card border theme-border theme-text-primary text-[11px] sm:text-xs font-semibold">
-          <ShieldCheck size={13} />
-          <span>SQLite Lokal</span>
-        </div>
+        {isDropdownOpen && (
+          <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl theme-bg-surface border theme-border shadow-2xl p-1.5 space-y-1 z-50 animate-in fade-in zoom-in-95 duration-150">
+            <button
+              onClick={() => {
+                setIsDropdownOpen(false);
+                onQuickSale();
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:theme-bg-card text-left text-xs font-semibold theme-text-primary transition group"
+            >
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center group-hover:bg-emerald-500/25 transition">
+                <ShoppingBag size={14} />
+              </div>
+              <div className="truncate">
+                <div className="font-bold text-xs">+ Catat Penjualan</div>
+                <div className="text-[10px] theme-text-muted">Input transaksi pembeli</div>
+              </div>
+            </button>
 
-        {/* Quick Action Buttons */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <button
-            onClick={onQuickRestock}
-            className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl theme-bg-card hover:theme-bg-card-hover theme-text-primary text-xs font-medium border theme-border transition"
-            title="Tambah Restock"
-          >
-            <Plus size={13} />
-            <span className="hidden sm:inline">Restock</span>
-          </button>
-          <button
-            onClick={onQuickSale}
-            className="flex items-center gap-1 px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold transition shadow-sm"
-            title="Catat Penjualan"
-          >
-            <ShoppingBag size={13} />
-            <span className="text-xs">+ Jual</span>
-          </button>
-        </div>
+            <button
+              onClick={() => {
+                setIsDropdownOpen(false);
+                onQuickRestock();
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:theme-bg-card text-left text-xs font-semibold theme-text-primary transition group"
+            >
+              <div className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-400 flex items-center justify-center group-hover:bg-sky-500/25 transition">
+                <Plus size={14} />
+              </div>
+              <div className="truncate">
+                <div className="font-bold text-xs">+ Restock Pembelian</div>
+                <div className="text-[10px] theme-text-muted">Tambah stok dari supplier</div>
+              </div>
+            </button>
+
+            <div className="border-t theme-border my-1" />
+
+            <button
+              onClick={handleShow24HoursSummary}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:theme-bg-card text-left text-xs font-semibold theme-text-primary transition group"
+            >
+              <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center group-hover:bg-amber-500/25 transition">
+                <Bell size={14} />
+              </div>
+              <div className="truncate">
+                <div className="font-bold text-xs">Rekap 24 Jam</div>
+                <div className="text-[10px] theme-text-muted">Ringkasan harian toko</div>
+              </div>
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

@@ -193,25 +193,40 @@ export const AboutView: React.FC = () => {
         </div>
       </div>
 
-      {/* Technical & Offline Security Card */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="theme-bg-surface p-5 sm:p-6 rounded-3xl border theme-border space-y-3">
-          <div className="flex items-center gap-2 font-bold theme-text-primary text-sm">
-            <ShieldCheck size={18} className="text-emerald-400" />
-            <span>Keamanan & Privasi (Zero Leakage)</span>
+      {/* Technical, Database SQLite & Offline Security Card */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="theme-bg-surface p-5 rounded-3xl border theme-border space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-bold theme-text-primary text-xs sm:text-sm">
+              <Database size={16} className="text-emerald-400" />
+              <span>Database SQLite Lokal</span>
+            </div>
+            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">
+              Aktif
+            </span>
           </div>
           <p className="text-xs theme-text-secondary leading-relaxed">
-            Aplikasi ini dibangun dengan arsitektur <strong>Offline-First</strong>. Semua data keuangan, laba rugi, dan daftar supplier disimpan di database SQLite lokal perangkat Anda. Tidak ada data yang dikirim atau dibocorkan ke server eksternal.
+            Engine SQLite 3 WASM berjalan 100% offline di perangkat lokal Anda tanpa ketergantungan server cloud.
           </p>
         </div>
 
-        <div className="theme-bg-surface p-5 sm:p-6 rounded-3xl border theme-border space-y-3">
-          <div className="flex items-center gap-2 font-bold theme-text-primary text-sm">
-            <Smartphone size={18} className="text-sky-400" />
-            <span>Penyimpanan Sandboxed Android</span>
+        <div className="theme-bg-surface p-5 rounded-3xl border theme-border space-y-2.5">
+          <div className="flex items-center gap-2 font-bold theme-text-primary text-xs sm:text-sm">
+            <ShieldCheck size={16} className="text-cyan-400" />
+            <span>Privasi (Zero Leakage)</span>
           </div>
           <p className="text-xs theme-text-secondary leading-relaxed">
-            Di HP Android, database biner tersimpan di ruang penyimpanan privat aplikasi (<code className="font-mono text-[11px] text-zinc-300">/data/user/0/com.jufastore.app/</code>) yang terlindungi dari aplikasi lain dan persisten saat HP dimatikan.
+            Semua catatan keuangan, modal, dan laba Anda tersimpan privat tanpa risiko kebocoran ke pihak ketiga.
+          </p>
+        </div>
+
+        <div className="theme-bg-surface p-5 rounded-3xl border theme-border space-y-2.5">
+          <div className="flex items-center gap-2 font-bold theme-text-primary text-xs sm:text-sm">
+            <Smartphone size={16} className="text-amber-400" />
+            <span>Sandbox Android</span>
+          </div>
+          <p className="text-xs theme-text-secondary leading-relaxed">
+            Data tersimpan di direktori aman <code className="font-mono text-[10px] text-zinc-300">/data/user/0/com.jufastore.app/</code> dan persisten saat HP dimatikan.
           </p>
         </div>
       </div>
