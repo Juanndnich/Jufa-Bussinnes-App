@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Package, Plus, History, ArrowUpDown, Layers } from 'lucide-react';
+import { Package, Plus, History, ArrowUpDown, Layers, Gamepad2, AlertCircle, CheckCircle2, X } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { showToast, showAlert, cleanupSwalLocks } from '../utils/alert';
 import { StockBatch, StockMovement } from '../types';
-import { addStockAdjustment } from '../services/repository';
+import { addStockAdjustment, recordPersonalRobuxUsage } from '../services/repository';
 import { formatNumber, formatRupiah } from '../utils/formatters';
 
 interface StockViewProps {
@@ -21,10 +21,19 @@ export const StockView: React.FC<StockViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'batches' | 'movements'>('batches');
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+  const [showPersonalModal, setShowPersonalModal] = useState(false);
+
+  // Manual Adjustment State
   const [adjType, setAdjType] = useState<'ADJUSTMENT_ADD' | 'ADJUSTMENT_SUB'>('ADJUSTMENT_ADD');
   const [adjQty, setAdjQty] = useState<number>(100);
   const [adjReason, setAdjReason] = useState<string>('');
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+
+  // Personal Game Item Usage State
+  const [personalQty, setPersonalQty] = useState<number>(200);
+  const [personalItemName, setPersonalItemName] = useState<string>('');
+  const [personalNotes, setPersonalNotes] = useState<string>('');
+  const [personalDate, setPersonalDate] = useState<string>(new Date().toISOString().slice(0, 10));
 
   const totalAvailableStock = useMemo(() => {
     return batches.reduce((sum, b) => sum + (b.remaining_quantity || 0), 0);
@@ -44,22 +53,20 @@ export const StockView: React.FC<StockViewProps> = ({
     );
   }, [batches]);
 
+  const totalPersonalUsedStock = useMemo(() => {
+    return stockMovements
+      .filter(m => m.type === 'PERSONAL_USAGE')
+      .reduce((sum, m) => sum + (m.quantity || 0), 0);
+  }, [stockMovements]);
+
   const handleSaveAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (adjQty <= 0) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Jumlah Tidak Valid',
-        text: 'Jumlah penyesuaian harus lebih dari 0',
-      });
+      showAlert('Jumlah Tidak Valid', 'Jumlah penyesuaian harus lebih dari 0', 'error');
       return;
     }
     if (!adjReason.trim()) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Alasan Wajib Diisi',
-        text: 'Penyesuaian stok harus memiliki catatan alasan resmi!',
-      });
+      showAlert('Alasan Wajib Diisi', 'Penyesuaian stok harus memiliki catatan alasan resmi!', 'error');
       return;
     }
 
@@ -71,6 +78,35 @@ export const StockView: React.FC<StockViewProps> = ({
       showToast('Penyesuaian Stok Berhasil Disimpan!');
     } catch (err: any) {
       showAlert('Gagal Menyesuaikan Stok', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
+    }
+  };
+
+  const handleSavePersonalUsage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (personalQty <= 0) {
+      showAlert('Jumlah Tidak Valid', 'Jumlah Robux yang dipakai harus lebih dari 0!', 'warning');
+      return;
+    }
+    if (!personalItemName.trim()) {
+      showAlert('Nama Item Wajib Diisi', 'Masukkan nama item game atau keperluan (misal: Blox Fruits / Avatar)!', 'warning');
+      return;
+    }
+    if (personalQty > totalAvailableStock) {
+      showAlert('Stok Kurang', `Stok tersisa hanya ${formatNumber(totalAvailableStock)} R$, tidak cukup untuk pemakaian ${formatNumber(personalQty)} R$!`, 'error');
+      return;
+    }
+
+    try {
+      await recordPersonalRobuxUsage(personalQty, personalItemName.trim(), personalDate, personalNotes.trim());
+      await onRefreshData();
+      setShowPersonalModal(false);
+      setPersonalItemName('');
+      setPersonalNotes('');
+      showToast(`Pemakaian ${formatNumber(personalQty)} R$ untuk ${personalItemName} Berhasil Dicatat!`);
+    } catch (err: any) {
+      showAlert('Gagal Mencatat Pemakaian', err.message, 'error');
     } finally {
       cleanupSwalLocks();
     }
@@ -90,13 +126,21 @@ export const StockView: React.FC<StockViewProps> = ({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <button
+            onClick={() => setShowPersonalModal(true)}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition shadow-sm active:scale-95"
+            title="Catat pemakaian Robux untuk beli item game atau pakai sendiri"
+          >
+            <Gamepad2 size={14} />
+            <span>Pakai Pribadi (Game)</span>
+          </button>
           <button
             onClick={() => setShowAdjustmentModal(true)}
             className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl theme-bg-card hover:theme-bg-card-hover theme-text-primary text-xs font-semibold border theme-border transition active:scale-95"
           >
             <ArrowUpDown size={13} />
-            <span>Koreksi Stok</span>
+            <span>Koreksi</span>
           </button>
           <button
             onClick={onNavigateToRestock}
@@ -109,36 +153,49 @@ export const StockView: React.FC<StockViewProps> = ({
       </div>
 
       {/* Stock Metrics Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
-          <span className="text-[11px] theme-text-muted block mb-1 truncate">Stok Tersedia Saat Ini</span>
-          <div className="text-2xl sm:text-3xl font-bold font-mono theme-text-primary flex items-baseline gap-1 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="theme-bg-surface p-3.5 sm:p-4 rounded-2xl border theme-border overflow-hidden">
+          <span className="text-[11px] theme-text-muted block mb-1 truncate">Stok Siap Jual (Tersedia)</span>
+          <div className="text-xl sm:text-2xl lg:text-3xl font-bold font-mono text-emerald-400 flex items-baseline gap-1 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatNumber(totalAvailableStock)}
             <span className="text-xs font-normal theme-text-muted font-sans">R$</span>
           </div>
-          <span className="text-[10px] theme-text-muted mt-2 block truncate">
-            Stok aktif siap dijual
+          <span className="text-[10px] theme-text-muted mt-1.5 block truncate">
+            Stok aktif siap diproses
           </span>
         </div>
 
-        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
-          <span className="text-[11px] theme-text-muted block mb-1 truncate">Total Nilai Persediaan</span>
-          <div className="text-2xl sm:text-3xl font-bold font-mono theme-text-primary tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
+        <div className="theme-bg-surface p-3.5 sm:p-4 rounded-2xl border theme-border overflow-hidden">
+          <span className="text-[11px] theme-text-muted block mb-1 truncate">Total Nilai Modal Stok</span>
+          <div className="text-xl sm:text-2xl lg:text-3xl font-bold font-mono theme-text-primary tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatRupiah(totalAssetValue)}
           </div>
-          <span className="text-[10px] theme-text-muted mt-2 block truncate">
-            Aset modal persediaan buku riil
+          <span className="text-[10px] theme-text-muted mt-1.5 block truncate">
+            Nilai modal tersisa di toko
           </span>
         </div>
 
-        <div className="theme-bg-surface p-4 sm:p-5 rounded-2xl border theme-border overflow-hidden">
-          <span className="text-[11px] theme-text-muted block mb-1 truncate">Total Robux Terjual</span>
-          <div className="text-2xl sm:text-3xl font-bold font-mono theme-text-primary flex items-baseline gap-1 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
+        <div className="theme-bg-surface p-3.5 sm:p-4 rounded-2xl border theme-border overflow-hidden">
+          <span className="text-[11px] theme-text-muted block mb-1 truncate">Robux Terjual (Pembeli)</span>
+          <div className="text-xl sm:text-2xl lg:text-3xl font-bold font-mono theme-text-primary flex items-baseline gap-1 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
             {formatNumber(totalSoldStock)}
             <span className="text-xs font-normal theme-text-muted font-sans">R$</span>
           </div>
-          <span className="text-[10px] theme-text-muted mt-2 block truncate">
-            Akumulasi Robux keluar dari batch
+          <span className="text-[10px] theme-text-muted mt-1.5 block truncate">
+            Akumulasi terkirim ke customer
+          </span>
+        </div>
+
+        <div className="theme-bg-surface p-3.5 sm:p-4 rounded-2xl border border-purple-500/20 bg-purple-500/5 overflow-hidden">
+          <span className="text-[11px] text-purple-400 font-medium block mb-1 truncate flex items-center gap-1">
+            <Gamepad2 size={12} /> Robux Terpakai Pribadi
+          </span>
+          <div className="text-xl sm:text-2xl lg:text-3xl font-bold font-mono text-purple-300 flex items-baseline gap-1 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
+            {formatNumber(totalPersonalUsedStock)}
+            <span className="text-xs font-normal theme-text-muted font-sans">R$</span>
+          </div>
+          <span className="text-[10px] text-purple-400/80 mt-1.5 block truncate">
+            Dipakai sendiri / beli item game
           </span>
         </div>
       </div>
@@ -252,6 +309,7 @@ export const StockView: React.FC<StockViewProps> = ({
                   </tr>
                 ) : (
                   stockMovements.map(m => {
+                    const isPersonal = m.type === 'PERSONAL_USAGE';
                     const isPositive =
                       m.type === 'PURCHASE' ||
                       m.type === 'ADJUSTMENT_ADD' ||
@@ -264,17 +322,19 @@ export const StockView: React.FC<StockViewProps> = ({
                         <td className="p-3 font-semibold font-sans">
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              isPositive
+                              isPersonal
+                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                : isPositive
                                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                                 : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
                             }`}
                           >
-                            {m.type}
+                            {isPersonal ? '🎮 PAKAI PRIBADI' : m.type}
                           </span>
                         </td>
                         <td
                           className={`p-3 text-right font-bold ${
-                            isPositive ? 'text-emerald-400' : 'text-rose-400'
+                            isPersonal ? 'text-purple-400' : isPositive ? 'text-emerald-400' : 'text-rose-400'
                           }`}
                         >
                           {isPositive ? '+' : '-'}
@@ -404,6 +464,111 @@ export const StockView: React.FC<StockViewProps> = ({
                 className="px-4 py-2 bg-white text-black text-xs font-bold rounded-xl hover:bg-zinc-200 transition"
               >
                 Simpan Penyesuaian
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Catat Pemakaian Robux Pribadi (Game / Sendiri) */}
+      {showPersonalModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleSavePersonalUsage}
+            className="bg-[#09090b] border border-white/15 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-sm font-heading font-bold text-white flex items-center gap-2">
+                <Gamepad2 size={16} className="text-purple-400" />
+                <span>Catat Pemakaian Robux Pribadi / Game</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowPersonalModal(false)}
+                className="text-zinc-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Gunakan form ini jika Anda memakai Robux dari stok toko untuk beli item game, avatar, gamepass, atau keperluan pribadi. Stok toko akan berkurang dan tercatat rapi.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                  Jumlah Robux yang Anda Pakai (R$)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={totalAvailableStock}
+                  value={personalQty}
+                  onChange={e => setPersonalQty(Number(e.target.value))}
+                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-sm font-mono font-bold text-white focus:outline-none focus:border-purple-500"
+                  placeholder="Contoh: 250"
+                  required
+                />
+                <span className="text-[10.5px] text-zinc-400 mt-1 block">
+                  Sisa stok toko Anda saat ini: <strong className="text-emerald-400">{formatNumber(totalAvailableStock)} R$</strong>
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                  Dipakai Untuk Apa / Nama Game?
+                </label>
+                <input
+                  type="text"
+                  value={personalItemName}
+                  onChange={e => setPersonalItemName(e.target.value)}
+                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  placeholder="Contoh: Gamepass Blox Fruits / Beli Avatar / Pet Simulator"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                  Tanggal Pemakaian
+                </label>
+                <input
+                  type="date"
+                  value={personalDate}
+                  onChange={e => setPersonalDate(e.target.value)}
+                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-zinc-300 block mb-1">
+                  Catatan Tambahan (Opsional)
+                </label>
+                <input
+                  type="text"
+                  value={personalNotes}
+                  onChange={e => setPersonalNotes(e.target.value)}
+                  className="w-full bg-[#111114] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  placeholder="Misal: Buat akun sendiri"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setShowPersonalModal(false)}
+                className="px-4 py-2 rounded-xl text-xs text-zinc-400 hover:text-white"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-sm transition active:scale-95"
+              >
+                Kurangi Stok & Simpan
               </button>
             </div>
           </form>

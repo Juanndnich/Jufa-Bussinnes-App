@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Truck, Save, CheckCircle2 } from 'lucide-react';
+import { Truck, Save, CheckCircle2, Layers } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { showToast, showAlert, cleanupSwalLocks } from '../utils/alert';
 import { AppSettings, StockBatch } from '../types';
@@ -32,6 +32,19 @@ export const RestockView: React.FC<RestockViewProps> = ({
   const restockCalc = useMemo(() => {
     return calculateRestockCost(purchaseCost, extraCost, discount, quantity);
   }, [purchaseCost, extraCost, discount, quantity]);
+
+  // Hitung akumulasi sisa stok lama yang belum terjual dari batch sebelumnya
+  const currentAvailableStock = useMemo(() => {
+    return batches.reduce((acc, b) => acc + (b.remaining_quantity || 0), 0);
+  }, [batches]);
+
+  const currentAvailableAsset = useMemo(() => {
+    return batches.reduce((acc, b) => acc + ((b.remaining_quantity || 0) * (b.cost_per_unit || 0)), 0);
+  }, [batches]);
+
+  const combinedTotalStock = currentAvailableStock + (quantity || 0);
+  const combinedTotalAsset = currentAvailableAsset + (restockCalc.totalCost || 0);
+  const blendedCostPerUnit = combinedTotalStock > 0 ? (combinedTotalAsset / combinedTotalStock).toFixed(2) : '0';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,7 +312,33 @@ export const RestockView: React.FC<RestockViewProps> = ({
               </div>
             </div>
 
-            <div className="mt-5 p-3.5 rounded-xl bg-[#111114] border border-white/10 text-[11px] text-zinc-400 space-y-2">
+            {/* Gabungan Sisa Stok Lama & Restock Baru */}
+            <div className="mt-4 p-3.5 rounded-xl bg-gradient-to-br from-emerald-950/30 to-zinc-900 border border-emerald-500/20 space-y-2">
+              <div className="flex items-center gap-1.5 font-bold text-emerald-400 text-xs">
+                <Layers size={14} />
+                <span>Penggabungan Stok Toko</span>
+              </div>
+              <div className="text-[11px] space-y-1.5 text-zinc-300">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Sisa Stok Lama (Belum Terjual):</span>
+                  <span className="font-mono font-semibold text-zinc-200">{formatNumber(currentAvailableStock)} R$</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Restock Pembelian Baru:</span>
+                  <span className="font-mono font-semibold text-emerald-400">+{formatNumber(quantity || 0)} R$</span>
+                </div>
+                <div className="flex justify-between border-t border-emerald-500/20 pt-1.5 font-bold text-white text-xs">
+                  <span>Total Stok Siap Jual:</span>
+                  <span className="font-mono text-emerald-300">{formatNumber(combinedTotalStock)} R$</span>
+                </div>
+                <div className="flex justify-between text-[10px] text-zinc-400 pt-0.5">
+                  <span>Estimasi Rata-rata Modal Toko:</span>
+                  <span className="font-mono text-zinc-300">Rp{blendedCostPerUnit} / R$</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 p-3.5 rounded-xl bg-[#111114] border border-white/10 text-[11px] text-zinc-400 space-y-2">
               <div className="flex items-center gap-1.5 font-bold text-zinc-200">
                 <CheckCircle2 size={13} className="text-white" />
                 <span>Aturan Akuntansi Baku</span>

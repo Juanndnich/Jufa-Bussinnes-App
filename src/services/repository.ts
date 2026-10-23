@@ -778,3 +778,58 @@ export async function deleteInvestor(id: string): Promise<void> {
   db.run('DELETE FROM investors WHERE id = ?', [id]);
   await persistDatabase();
 }
+
+
+/**
+ * Record Personal Usage of Robux (e.g. buying in-game items, avatar items, gamepass)
+ */
+export async function recordPersonalRobuxUsage(
+  quantity: number,
+  itemName: string,
+  usageDate?: string,
+  notes?: string
+): Promise<void> {
+  if (quantity <= 0) {
+    throw new Error('Jumlah Robux yang digunakan harus lebih dari 0!');
+  }
+
+  const db = await getDatabase();
+  const batches = await getAllBatches();
+  const now = usageDate || getJakartaCurrentDate();
+  const totalAvail = batches.reduce((sum, b) => sum + b.remaining_quantity, 0);
+
+  if (quantity > totalAvail) {
+    throw new Error(`Robux tidak cukup! Stok tersisa ${totalAvail} R$, pemakaian ${quantity} R$`);
+  }
+
+  db.exec('BEGIN TRANSACTION;');
+  try {
+    let needed = quantity;
+    const sorted = batches.filter(b => b.remaining_quantity > 0).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    for (const b of sorted) {
+      if (needed <= 0) break;
+      const take = Math.min(b.remaining_quantity, needed);
+      db.run('UPDATE batches SET remaining_quantity = remaining_quantity - ? WHERE id = ?', [
+        take,
+        b.id,
+      ]);
+      needed -= take;
+
+      const movId = 'mov_game_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+      const combinedNotes = `Pakai Pribadi / Game: ${itemName}${notes ? ` (${notes})` : ''}`;
+      db.run(
+        `INSERT INTO stock_movements (id, date, type, quantity, batch_id, batch_code, reference_id, notes, created_at)
+         VALUES (?, ?, 'PERSONAL_USAGE', ?, ?, ?, 'GAME_USAGE', ?, ?)`,
+        [movId, now, take, b.id, b.batch_code, combinedNotes, now]
+      );
+    }
+
+    db.exec('COMMIT;');
+  } catch (err) {
+    db.exec('ROLLBACK;');
+    throw err;
+  }
+
+  await persistDatabase();
+}

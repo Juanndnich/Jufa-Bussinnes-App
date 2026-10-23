@@ -59,6 +59,7 @@ export interface Transaction {
 export type StockMovementType =
   | 'PURCHASE'
   | 'SALE'
+  | 'PERSONAL_USAGE'
   | 'ADJUSTMENT_ADD'
   | 'ADJUSTMENT_SUB'
   | 'REFUND_RESTORE'

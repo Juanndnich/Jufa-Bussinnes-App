@@ -25,6 +25,7 @@ import {
 } from './services/repository';
 import { clearIndexedDB, getDatabase } from './services/db';
 import { applyTheme } from './utils/theme';
+import { checkAppUpdate } from './services/updater';
 import {
   Coins,
   Loader2,
@@ -85,6 +86,10 @@ export const App: React.FC = () => {
         if (mounted) {
           await refreshAllData();
           setLoading(false);
+          // Periksa pembaruan APK dari GitHub Actions secara otomatis di background
+          setTimeout(() => {
+            checkAppUpdate(false).catch(() => {});
+          }, 2000);
         }
       } catch (err: any) {
         if (mounted) {
