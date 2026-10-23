@@ -14,6 +14,7 @@ import {
   Coins,
   X,
   Users,
+  Info,
 } from 'lucide-react';
 import { formatNumber, formatRupiah } from '../utils/formatters';
 
@@ -28,7 +29,8 @@ export type NavItem =
   | 'analysis'
   | 'simulator'
   | 'reports'
-  | 'settings';
+  | 'settings'
+  | 'about';
 
 interface SidebarProps {
   currentTab: NavItem;
@@ -84,6 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       groupTitle: 'SISTEM & KELOLA TOKO',
       items: [
         { id: 'settings' as NavItem, label: 'Pengaturan & Backup', icon: <Settings size={17} /> },
+        { id: 'about' as NavItem, label: 'Tentang Aplikasi', icon: <Info size={17} /> },
       ],
     },
   ];

@@ -13,6 +13,7 @@ import { AnalysisView } from './components/AnalysisView';
 import { PriceSimulatorView } from './components/PriceSimulatorView';
 import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
+import { AboutView } from './components/AboutView';
 import { AppSettings, Cashflow, Investor, StockBatch, StockMovement, Transaction } from './types';
 import {
   getAllBatches,
@@ -189,6 +190,7 @@ export const App: React.FC = () => {
           onQuickSale={() => handleSelectTab('sales')}
           onQuickRestock={() => handleSelectTab('restock')}
           onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
+          onNavigateToAbout={() => handleSelectTab('about')}
         />
 
         {/* Scrollable View Container */}
@@ -282,6 +284,10 @@ export const App: React.FC = () => {
                 cashflows={cashflows}
                 onRefreshData={refreshAllData}
               />
+            )}
+
+            {currentTab === 'about' && (
+              <AboutView />
             )}
           </div>
         </main>

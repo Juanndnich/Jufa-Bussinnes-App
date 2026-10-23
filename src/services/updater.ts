@@ -4,6 +4,7 @@ import { showToast, cleanupSwalLocks } from '../utils/alert';
 const GITHUB_REPO = 'Juanndnich/Jufa-Bussinnes-App';
 const LATEST_RELEASE_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 export const APK_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/JUFA-STORE.apk`;
+export const RELEASES_PAGE_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
 
 export interface UpdateInfo {
   available: boolean;
@@ -64,7 +65,29 @@ export async function checkAppUpdate(manual: boolean = false): Promise<UpdateInf
     return updateInfo;
   } catch (err: any) {
     if (manual) {
-      showToast('Tidak dapat terhubung ke server update', 'warning');
+      cleanupSwalLocks();
+      Swal.fire({
+        icon: 'warning',
+        title: 'Gagal Memeriksa Update',
+        html: `
+          <div style="font-size: 13px; text-align: left; line-height: 1.6;">
+            <p>Tidak dapat terhubung ke server GitHub. Pastikan HP Anda terhubung ke internet.</p>
+            <p style="opacity: 0.8; margin-top: 8px;">
+              Jika baru pertama kali memasang, Anda dapat mengunduh APK terbaru langsung dari halaman rilis resmi.
+            </p>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: '🌐 Buka Rilis GitHub',
+        cancelButtonText: 'Tutup',
+        confirmButtonColor: '#38bdf8',
+        didClose: () => cleanupSwalLocks(),
+      }).then(r => {
+        if (r.isConfirmed) {
+          window.open(`https://github.com/${GITHUB_REPO}/releases/latest`, '_system');
+        }
+        cleanupSwalLocks();
+      });
     }
     return null;
   }

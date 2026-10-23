@@ -13,6 +13,7 @@ interface HeaderProps {
   transactions?: Transaction[];
   cashflows?: Cashflow[];
   onToggleMobileMenu?: () => void;
+  onNavigateToAbout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   transactions = [],
   cashflows = [],
   onToggleMobileMenu,
+  onNavigateToAbout,
 }) => {
   const [currentTime, setCurrentTime] = useState<string>('');
 
@@ -118,10 +120,14 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="truncate">
           <h2 className="text-sm sm:text-base font-heading font-bold theme-text-primary tracking-tight flex items-center gap-2 truncate">
             <span className="truncate">{storeName}</span>
-            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono font-bold shrink-0">
+            <button
+              onClick={onNavigateToAbout}
+              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 font-mono font-bold shrink-0 transition"
+              title="Lihat Info Tentang Aplikasi & Update"
+            >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              v1.0.1
-            </span>
+              v1.0.7
+            </button>
           </h2>
         </div>
       </div>
