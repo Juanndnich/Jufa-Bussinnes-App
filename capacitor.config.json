@@ -1,6 +1,6 @@
 {
   "appId": "com.jufastore.app",
-  "appName": "JUFA STORE Business Manager",
+  "appName": "JufaStore",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

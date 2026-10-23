@@ -118,7 +118,7 @@ export const App: React.FC = () => {
           <Coins size={32} />
         </div>
         <div className="text-center space-y-1">
-          <h2 className="text-lg font-heading font-bold">JUFA STORE Business Manager</h2>
+          <h2 className="text-lg font-heading font-bold">JufaStore</h2>
           <p className="text-xs theme-text-secondary flex items-center justify-center gap-2">
             <Loader2 size={14} className="animate-spin" />
             <span>Memuat Database SQLite Persisten...</span>
