@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { NavItem, Sidebar } from './components/Sidebar';
+import { cleanupSwalLocks } from './utils/alert';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { SalesView } from './components/SalesView';
@@ -153,12 +154,18 @@ export const App: React.FC = () => {
     );
   }
 
+  const handleSelectTab = (tab: NavItem) => {
+    cleanupSwalLocks();
+    setCurrentTab(tab);
+    setIsMobileMenuOpen(false);
+  };
+
   return (
     <div className="flex h-screen theme-bg-main theme-text-primary overflow-hidden relative">
       {/* Sidebar Navigation (Desktop persistent, Mobile drawer slide-in) */}
       <Sidebar
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={handleSelectTab}
         totalRobuxStock={totalRobuxStock}
         stockAssetValue={stockAssetValue}
         minStockAlert={settings.min_stock_alert ?? settings.minStockAlert ?? 500}
@@ -174,8 +181,8 @@ export const App: React.FC = () => {
           storeName={settings.store_name}
           transactions={transactions}
           cashflows={cashflows}
-          onQuickSale={() => setCurrentTab('sales')}
-          onQuickRestock={() => setCurrentTab('restock')}
+          onQuickSale={() => handleSelectTab('sales')}
+          onQuickRestock={() => handleSelectTab('restock')}
           onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
         />
 
@@ -188,7 +195,7 @@ export const App: React.FC = () => {
                 batches={batches}
                 cashflows={cashflows}
                 settings={settings}
-                onNavigate={setCurrentTab}
+                onNavigate={handleSelectTab}
               />
             )}
 
@@ -277,7 +284,7 @@ export const App: React.FC = () => {
         {/* Mobile Bottom Navigation Bar (Android/iOS standard) */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 theme-bg-surface/95 backdrop-blur-md border-t theme-border px-2 py-1.5 flex items-center justify-around">
           <button
-            onClick={() => setCurrentTab('dashboard')}
+            onClick={() => handleSelectTab('dashboard')}
             className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
               currentTab === 'dashboard' ? 'theme-text-primary font-bold' : 'theme-text-muted hover:theme-text-secondary'
             }`}
@@ -287,7 +294,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setCurrentTab('sales')}
+            onClick={() => handleSelectTab('sales')}
             className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
               currentTab === 'sales' ? 'theme-text-primary font-bold' : 'theme-text-muted hover:theme-text-secondary'
             }`}
@@ -297,7 +304,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setCurrentTab('stock')}
+            onClick={() => handleSelectTab('stock')}
             className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
               currentTab === 'stock' ? 'theme-text-primary font-bold' : 'theme-text-muted hover:theme-text-secondary'
             }`}
@@ -307,7 +314,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setCurrentTab('finance')}
+            onClick={() => handleSelectTab('finance')}
             className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition ${
               currentTab === 'finance' ? 'theme-text-primary font-bold' : 'theme-text-muted hover:theme-text-secondary'
             }`}

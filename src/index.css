@@ -79,15 +79,15 @@ html.light {
   }
 }
 
-/* Smooth UI Animations */
-@keyframes fadeInScale {
-  0% {
+/* Ultra-Smooth 60fps GPU-Accelerated UI Animations */
+@keyframes tabFadeIn {
+  from {
     opacity: 0;
-    transform: translateY(8px) scale(0.99);
+    transform: translate3d(0, 5px, 0);
   }
-  100% {
+  to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -101,11 +101,14 @@ html.light {
 }
 
 .animate-tab-content {
-  animation: fadeInScale 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: tabFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .animate-backdrop {
-  animation: backdropFade 0.25s ease-out forwards;
+  animation: backdropFade 0.2s ease-out forwards;
 }
 
 /* Dynamic theme helper classes */
@@ -154,15 +157,35 @@ html.light {
   color: var(--btn-primary-text) !important;
 }
 
-/* SweetAlert2 Dynamic Theme */
+/* SweetAlert2 Dynamic Theme & Anti-Freeze Protections */
 .swal2-popup {
   background: var(--bg-surface) !important;
   border: 1px solid var(--border-color) !important;
   border-radius: 1rem !important;
   color: var(--text-primary) !important;
   font-family: 'Inter', sans-serif !important;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;
-  animation: fadeInScale 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Toast Notification Styling (Never blocks clicks or touch events) */
+.swal2-toast {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 0.85rem !important;
+  padding: 0.75rem 1rem !important;
+  pointer-events: auto !important;
+}
+
+.swal2-toast .swal2-title {
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
+}
+
+/* Safety override: never let background container lock interactions when not visible */
+.swal2-container:not(.swal2-shown):not(.swal2-backdrop-show) {
+  pointer-events: none !important;
 }
 
 .swal2-title {

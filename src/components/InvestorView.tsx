@@ -13,6 +13,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { showToast, showAlert, showConfirm, cleanupSwalLocks } from '../utils/alert';
 import { Investor, Transaction } from '../types';
 import { addInvestor, deleteInvestor, updateInvestor } from '../services/repository';
 import { formatNumber, formatRupiah } from '../utils/formatters';
@@ -143,38 +144,33 @@ export const InvestorView: React.FC<InvestorViewProps> = ({
         notes: '',
       });
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Investor Ditambahkan',
-        text: 'Data investasi dan pembagian hasil telah disimpan.',
-        timer: 1600,
-        showConfirmButton: false,
-      });
+      showToast(`Investor ${form.name} Berhasil Ditambahkan!`);
     } catch (err: any) {
-      Swal.fire({ icon: 'error', title: 'Gagal', text: err.message });
+      showAlert('Gagal Menyimpan Investor', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 
   // Handle Delete Investor
   const handleDeleteInvestor = async (id: string, name: string) => {
-    const confirm = await Swal.fire({
-      icon: 'warning',
-      title: `Hapus Investor ${name}?`,
-      text: 'Data kesepakatan investasi ini akan dihapus dari sistem.',
-      showCancelButton: true,
-      confirmButtonText: 'Ya, Hapus',
-      cancelButtonText: 'Batal',
-      confirmButtonColor: '#e11d48',
-    });
+    const confirmed = await showConfirm(
+      `Hapus Investor ${name}?`,
+      'Data kesepakatan investasi ini akan dihapus dari sistem.',
+      'Ya, Hapus',
+      true
+    );
 
-    if (!confirm.isConfirmed) return;
+    if (!confirmed) return;
 
     try {
       await deleteInvestor(id);
       await onRefreshData();
-      Swal.fire({ icon: 'success', title: 'Investor Dihapus', timer: 1400, showConfirmButton: false });
+      showToast('Data Investor Telah Dihapus');
     } catch (err: any) {
-      Swal.fire({ icon: 'error', title: 'Gagal Menghapus', text: err.message });
+      showAlert('Gagal Menghapus', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 

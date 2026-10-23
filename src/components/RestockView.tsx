@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Truck, Save, CheckCircle2 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { showToast, showAlert, cleanupSwalLocks } from '../utils/alert';
 import { AppSettings, StockBatch } from '../types';
 import { addBatch } from '../services/repository';
 import { calculateRestockCost } from '../utils/calculations';
@@ -70,21 +71,12 @@ export const RestockView: React.FC<RestockViewProps> = ({
 
       await onRefreshData();
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Restock Berhasil Disimpan!',
-        text: `Batch baru berhasil dibuat dengan HPP modal Rp${restockCalc.costPerUnit} / Robux.`,
-        timer: 1600,
-        showConfirmButton: false,
-      });
-
+      showToast(`Restock ${formatNumber(quantity)} R$ Berhasil Disimpan!`, 'success');
       setNotes('');
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal Menyimpan Restock',
-        text: err.message,
-      });
+      showAlert('Gagal Menyimpan Restock', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 

@@ -10,6 +10,7 @@ import {
   Package,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { showToast, showAlert, cleanupSwalLocks } from '../utils/alert';
 import { AppSettings, StockBatch } from '../types';
 import { formatDecimal, formatNumber, formatRupiah } from '../utils/formatters';
 
@@ -62,19 +63,11 @@ export const PriceSimulatorView: React.FC<PriceSimulatorViewProps> = ({
         min_stock_alert: policyForm.min_stock_alert,
       };
       await onUpdateSettings(updated);
-      Swal.fire({
-        icon: 'success',
-        title: 'Kebijakan Harga Disimpan',
-        text: 'Rate jual default dan ambang batas paket berhasil diperbarui untuk toko Anda.',
-        timer: 1600,
-        showConfirmButton: false,
-      });
+      showToast('Kebijakan Harga Berhasil Disimpan!');
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal Menyimpan',
-        text: err.message,
-      });
+      showAlert('Gagal Menyimpan', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 

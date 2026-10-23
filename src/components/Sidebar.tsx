@@ -101,13 +101,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {isOpenMobile && (
         <div
           onClick={onCloseMobile}
-          className="fixed inset-0 bg-black/75 backdrop-blur-sm z-40 lg:hidden animate-backdrop cursor-pointer"
+          className="fixed inset-0 bg-black/75 z-40 lg:hidden animate-backdrop cursor-pointer"
         />
       )}
 
       {/* Sidebar Drawer with ultra-smooth cubic-bezier transition */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 theme-bg-surface border-r theme-border flex flex-col justify-between select-none transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:static lg:translate-x-0 lg:w-64 lg:z-auto shadow-2xl lg:shadow-none ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 theme-bg-surface border-r theme-border flex flex-col justify-between select-none transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform lg:static lg:translate-x-0 lg:w-64 lg:z-auto shadow-2xl lg:shadow-none ${
           isOpenMobile ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >

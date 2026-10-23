@@ -9,6 +9,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { showToast, showAlert, cleanupSwalLocks } from '../utils/alert';
 import { AppSettings, Cashflow, StockBatch, Transaction } from '../types';
 import { addCashflow } from '../services/repository';
 import { formatNumber, formatRupiah } from '../utils/formatters';
@@ -93,19 +94,11 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       setShowModal(false);
       setCfNotes('');
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Arus Kas Dicatat',
-        text: 'Transaksi kas berhasil disimpan ke database SQLite.',
-        timer: 1600,
-        showConfirmButton: false,
-      });
+      showToast('Arus Kas Berhasil Dicatat!', 'success');
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal',
-        text: err.message,
-      });
+      showAlert('Gagal Mencatat Kas', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 

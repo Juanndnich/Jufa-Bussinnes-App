@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, Plus, ShoppingBag, Clock, Menu, Bell, Coins } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { cleanupSwalLocks } from '../utils/alert';
 import { Cashflow, Transaction } from '../types';
 import { compute24HoursSummary } from '../utils/dailyJournal';
 import { formatNumber, formatRupiah } from '../utils/formatters';
@@ -94,6 +95,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       `,
       confirmButtonText: 'Tutup Laporan',
+      didClose: () => cleanupSwalLocks(),
     });
   };
 

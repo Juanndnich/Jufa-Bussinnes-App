@@ -181,7 +181,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Compute 7-day chart data points
   const chartData = useMemo(() => {
-    const days: { label: string; dateStr: string; revenue: number; profit: number; robux: number }[] = [];
+    const days: { label: string; shortLabel: string; dateStr: string; revenue: number; profit: number; robux: number }[] = [];
     const now = new Date();
 
     for (let i = 6; i >= 0; i--) {
@@ -189,13 +189,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       d.setDate(now.getDate() - i);
       const dateStr = d.toISOString().slice(0, 10);
       const label = d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' });
+      const shortLabel = d.toLocaleDateString('id-ID', { weekday: 'short' });
 
       const dayTrxs = transactions.filter(t => t.status !== 'CANCELLED' && t.date.slice(0, 10) === dateStr);
       const rev = dayTrxs.reduce((s, t) => s + (t.net_revenue || 0), 0);
       const prof = dayTrxs.reduce((s, t) => s + (t.net_profit || 0), 0);
       const rbx = dayTrxs.reduce((s, t) => s + (t.quantity || 0), 0);
 
-      days.push({ label, dateStr, revenue: rev, profit: prof, robux: rbx });
+      days.push({ label, shortLabel, dateStr, revenue: rev, profit: prof, robux: rbx });
     }
 
     const maxRev = Math.max(1, ...days.map(d => d.revenue));
@@ -322,7 +323,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Statistical Interactive Chart Section */}
-      <div className="theme-bg-surface p-5 sm:p-6 rounded-2xl border theme-border space-y-4">
+      <div className="theme-bg-surface p-4 sm:p-6 rounded-2xl border theme-border space-y-4 overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b theme-border pb-3">
           <div>
             <h3 className="font-heading font-bold theme-text-primary text-sm flex items-center gap-2">
@@ -333,7 +334,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5 theme-bg-card p-1 rounded-xl border theme-border">
+          <div className="flex items-center gap-1.5 theme-bg-card p-1 rounded-xl border theme-border self-start sm:self-auto">
             <button
               onClick={() => setChartType('revenue_profit')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
@@ -357,18 +358,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Visual Bar/Line Chart */}
-        <div className="pt-2">
-          <div className="h-48 sm:h-56 flex items-end justify-between gap-2 sm:gap-4 px-2 pt-6">
+        {/* Visual Bar Chart - 100% Contained & Responsive */}
+        <div className="w-full overflow-hidden pt-2">
+          {/* Chart Bars Drawing Area with background grid */}
+          <div className="relative h-44 sm:h-52 w-full flex items-end justify-between gap-1 sm:gap-3 px-1 sm:px-2 pt-6 pb-1 border-b theme-border">
+            {/* Horizontal Grid Guidelines */}
+            <div className="absolute inset-x-0 top-6 border-b theme-border-subtle opacity-40 pointer-events-none" />
+            <div className="absolute inset-x-0 top-1/2 border-b theme-border-subtle opacity-40 pointer-events-none" />
+
             {chartData.days.map((item, idx) => {
-              const revHeight = Math.max(8, Math.round((item.revenue / chartData.maxRev) * 160));
-              const profHeight = Math.max(4, Math.round((Math.max(0, item.profit) / chartData.maxRev) * 160));
-              const robuxHeight = Math.max(8, Math.round((item.robux / chartData.maxRobux) * 160));
+              const revPercent = Math.max(4, Math.min(100, Math.round((item.revenue / chartData.maxRev) * 100)));
+              const profPercent = Math.max(3, Math.min(100, Math.round((Math.max(0, item.profit) / chartData.maxRev) * 100)));
+              const robuxPercent = Math.max(4, Math.min(100, Math.round((item.robux / chartData.maxRobux) * 100)));
 
               return (
-                <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative">
+                <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative z-10 min-w-0">
                   {/* Tooltip on Hover */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full mb-2 z-20 pointer-events-none theme-bg-card border theme-border rounded-lg p-2 text-[10px] shadow-lg whitespace-nowrap">
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute bottom-full mb-2 z-30 pointer-events-none theme-bg-card border theme-border rounded-lg p-2 text-[10px] shadow-xl whitespace-nowrap left-1/2 -translate-x-1/2">
                     <div className="font-bold theme-text-primary">{item.dateStr}</div>
                     <div className="theme-text-secondary">Omzet: {formatRupiah(item.revenue)}</div>
                     <div className="text-emerald-400">Laba: {formatRupiah(item.profit)}</div>
@@ -376,55 +382,61 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
 
                   {/* Bars Container */}
-                  <div className="w-full flex items-end justify-center gap-1 sm:gap-1.5 h-full">
+                  <div className="w-full flex items-end justify-center gap-0.5 sm:gap-1.5 h-full">
                     {chartType === 'revenue_profit' ? (
                       <>
                         <div
-                          style={{ height: `${revHeight}px` }}
-                          className="w-full max-w-[20px] rounded-t-md bg-zinc-400/80 group-hover:bg-white transition-all"
+                          style={{ height: `${revPercent}%` }}
+                          className="w-full max-w-[14px] sm:max-w-[22px] rounded-t-sm sm:rounded-t-md bg-zinc-400/80 group-hover:bg-white transition-all duration-200"
                           title={`Omzet: ${formatRupiah(item.revenue)}`}
                         />
                         <div
-                          style={{ height: `${profHeight}px` }}
-                          className="w-full max-w-[20px] rounded-t-md bg-emerald-500/80 group-hover:bg-emerald-400 transition-all"
+                          style={{ height: `${profPercent}%` }}
+                          className="w-full max-w-[14px] sm:max-w-[22px] rounded-t-sm sm:rounded-t-md bg-emerald-500/85 group-hover:bg-emerald-400 transition-all duration-200"
                           title={`Laba: ${formatRupiah(item.profit)}`}
                         />
                       </>
                     ) : (
                       <div
-                        style={{ height: `${robuxHeight}px` }}
-                        className="w-full max-w-[28px] rounded-t-md bg-amber-500/80 group-hover:bg-amber-400 transition-all"
+                        style={{ height: `${robuxPercent}%` }}
+                        className="w-full max-w-[22px] sm:max-w-[34px] rounded-t-sm sm:rounded-t-md bg-amber-500/85 group-hover:bg-amber-400 transition-all duration-200"
                         title={`Robux: ${formatNumber(item.robux)} R$`}
                       />
                     )}
                   </div>
-
-                  {/* X Axis Label */}
-                  <span className="text-[10px] theme-text-muted mt-2 font-mono whitespace-nowrap">
-                    {item.label}
-                  </span>
                 </div>
               );
             })}
           </div>
 
+          {/* X Axis Date Labels (Guaranteed contained, never stretches parent) */}
+          <div className="flex items-center justify-between gap-1 sm:gap-3 px-1 sm:px-2 pt-2">
+            {chartData.days.map((item, idx) => (
+              <div key={idx} className="flex-1 text-center min-w-0" title={item.label}>
+                <span className="text-[9px] sm:text-[10px] theme-text-muted font-mono block truncate">
+                  {item.shortLabel}
+                </span>
+              </div>
+            ))}
+          </div>
+
           {/* Chart Legend */}
-          <div className="flex items-center justify-center gap-6 mt-4 pt-3 border-t theme-border text-xs">
+          <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mt-4 pt-3 border-t theme-border text-xs">
             {chartType === 'revenue_profit' ? (
               <>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded bg-zinc-300 inline-block" />
-                  <span className="theme-text-secondary">Pendapatan Kotor / Omzet</span>
+                  <span className="w-3 h-3 rounded bg-zinc-400 inline-block shrink-0" />
+                  <span className="theme-text-secondary text-[11px] sm:text-xs">Omzet Penjualan</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded bg-emerald-500 inline-block" />
-                  <span className="theme-text-secondary">Laba Bersih</span>
+                  <span className="w-3 h-3 rounded bg-emerald-500 inline-block shrink-0" />
+                  <span className="theme-text-secondary text-[11px] sm:text-xs">Laba Bersih</span>
                 </div>
               </>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded bg-amber-500 inline-block" />
-                <span className="theme-text-secondary">Jumlah Robux Terjual (R$)</span>
+                <span className="w-3 h-3 rounded bg-amber-500 inline-block shrink-0" />
+                <span className="theme-text-secondary text-[11px] sm:text-xs">Volume Robux Terjual (R$)</span>
               </div>
             )}
           </div>

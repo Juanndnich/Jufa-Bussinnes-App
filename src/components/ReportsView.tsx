@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { showToast, showAlert, cleanupSwalLocks } from '../utils/alert';
 import { AppSettings, Cashflow, StockBatch, Transaction } from '../types';
 import { exportSqliteBinary } from '../services/db';
 import { formatNumber, formatRupiah } from '../utils/formatters';
@@ -153,19 +154,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       link.click();
       document.body.removeChild(link);
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Database SQLite Diekspor',
-        text: 'File binary database SQLite nyata berhasil diunduh.',
-        timer: 1600,
-        showConfirmButton: false,
-      });
+      showToast('Database SQLite Berhasil Diekspor!');
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Ekspor Gagal',
-        text: err.message,
-      });
+      showAlert('Ekspor Gagal', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 

@@ -25,6 +25,7 @@ import { AppSettings, Cashflow, StockBatch, Transaction } from '../types';
 import { exportSqliteBinary, getDatabase, importSqliteBinary } from '../services/db';
 import { resetAllDataToEmpty, saveSettings } from '../services/repository';
 import { applyTheme, ThemeMode } from '../utils/theme';
+import { showToast, showConfirm, showAlert, cleanupSwalLocks } from '../utils/alert';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -144,21 +145,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       applyTheme(cleanSettings.theme_mode);
       await onRefreshData();
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Pengaturan Disimpan',
-        text: 'Identitas toko, tema tampilan, dan daftar operasional berhasil diperbarui.',
-        timer: 1500,
-        showConfirmButton: false,
-      });
+      showToast('Pengaturan Toko Berhasil Disimpan!');
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal Menyimpan',
-        text: err.message,
-      });
+      showAlert('Gagal Menyimpan', err.message, 'error');
     } finally {
       setIsSaving(false);
+      cleanupSwalLocks();
     }
   };
 
@@ -186,13 +178,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     localStorage.setItem('jufa_last_backup_date', new Date().toISOString());
 
-    Swal.fire({
-      icon: 'success',
-      title: 'Pencadangan Berhasil',
-      text: 'File JSON backup terstruktur telah diunduh ke komputer Anda.',
-      timer: 1600,
-      showConfirmButton: false,
-    });
+    showToast('File backup JSON berhasil diunduh');
   };
 
   // Export SQLite Binary
@@ -210,19 +196,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       localStorage.setItem('jufa_last_backup_date', new Date().toISOString());
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Database Asli Berhasil Diunduh',
-        text: 'File database SQLite lokal (.sqlite) berhasil disimpan.',
-        timer: 1600,
-        showConfirmButton: false,
-      });
+      showToast('Database SQLite asli (.sqlite) berhasil diunduh');
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Ekspor Gagal',
-        text: err.message,
-      });
+      showAlert('Ekspor Gagal', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 
@@ -231,17 +209,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const confirm = await Swal.fire({
-      title: 'Timpa Database Aktif?',
-      text: 'Semua transaksi, stok, dan kas saat ini akan digantikan oleh file database cadangan yang diimpor.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Ya, Pulihkan Sekarang',
-      cancelButtonText: 'Batal',
-      confirmButtonColor: '#e11d48',
-    });
+    const confirmed = await showConfirm(
+      'Timpa Database Aktif?',
+      'Semua transaksi, stok, dan kas saat ini akan digantikan oleh file database cadangan yang diimpor.',
+      'Ya, Pulihkan Sekarang',
+      true
+    );
 
-    if (!confirm.isConfirmed) return;
+    if (!confirmed) return;
 
     try {
       const buffer = await file.arrayBuffer();
@@ -249,19 +224,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       await importSqliteBinary(binary);
       await onRefreshData();
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Pemulihan Sukses',
-        text: 'Database SQLite berhasil diimpor dan siap digunakan kembali.',
-      });
+      showToast('Database SQLite Berhasil Dipulihkan!');
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Impor Gagal',
-        text: err.message || 'File tidak valid',
-      });
+      showAlert('Impor Gagal', err.message || 'File tidak valid', 'error');
     } finally {
       e.target.value = '';
+      cleanupSwalLocks();
     }
   };
 
@@ -273,55 +241,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       const status = res[0]?.values[0]?.[0] || 'unknown';
 
       if (status === 'ok') {
-        Swal.fire({
-          icon: 'success',
-          title: 'Database Sangat Sehat',
-          text: 'Pemeriksaan integritas SQLite (PRAGMA integrity_check): Struktur tabel dan indeks 100% konsisten.',
-        });
+        showAlert('Database Sangat Sehat', 'Pemeriksaan integritas SQLite (PRAGMA integrity_check): Struktur tabel dan indeks 100% konsisten.', 'success');
       } else {
-        Swal.fire({
-          icon: 'warning',
-          title: 'Integritas Tidak Sesuai',
-          text: String(status),
-        });
+        showAlert('Integritas Tidak Sesuai', String(status), 'warning');
       }
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Uji Gagal',
-        text: err.message,
-      });
+      showAlert('Uji Gagal', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 
   // Reset / Clear All Database
   const handleResetDatabase = async () => {
-    const res = await Swal.fire({
-      title: 'Kosongkan Seluruh Data?',
-      text: 'Tindakan ini akan menghapus permanen seluruh transaksi penjualan, stok Robux, dan mutasi kas. Pengaturan toko tetap tersimpan.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Ya, Bersihkan Semua Data',
-      cancelButtonText: 'Batal',
-      confirmButtonColor: '#e11d48',
-    });
+    const confirmed = await showConfirm(
+      'Kosongkan Seluruh Data?',
+      'Tindakan ini akan menghapus permanen seluruh transaksi penjualan, stok Robux, dan mutasi kas. Pengaturan toko tetap tersimpan.',
+      'Ya, Bersihkan Semua Data',
+      true
+    );
 
-    if (!res.isConfirmed) return;
+    if (!confirmed) return;
 
     try {
       await resetAllDataToEmpty();
       await onRefreshData();
-      Swal.fire({
-        icon: 'success',
-        title: 'Data Berhasil Dikosongkan',
-        text: 'Aplikasi siap digunakan untuk transaksi bisnis yang baru.',
-      });
+      showToast('Data Berhasil Dikosongkan');
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal Mengosongkan Data',
-        text: err.message,
-      });
+      showAlert('Gagal Mengosongkan Data', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 

@@ -13,6 +13,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { showToast, showAlert, cleanupSwalLocks } from '../utils/alert';
 import { AppSettings, StockBatch, Transaction } from '../types';
 import {
   cancelTransaction,
@@ -242,13 +243,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
       await saveMultipleTransactions([input]);
       await onRefreshData();
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Penjualan Berhasil Dicatat!',
-        text: `${formatNumber(singleForm.quantity)} R$ telah dikurangkan dari stok dengan status ${singleForm.payment_status}.`,
-        timer: 1600,
-        showConfirmButton: false,
-      });
+      showToast(`Penjualan ${formatNumber(singleForm.quantity)} R$ Berhasil Dicatat!`, 'success');
 
       setSingleForm(prev => ({
         ...prev,
@@ -256,11 +251,9 @@ export const SalesView: React.FC<SalesViewProps> = ({
         notes: '',
       }));
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal Menyimpan',
-        text: err.message || 'Terjadi kesalahan sistem',
-      });
+      showAlert('Gagal Menyimpan', err.message || 'Terjadi kesalahan sistem', 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 
@@ -314,11 +307,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
       await saveMultipleTransactions(inputs);
       await onRefreshData();
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Semua Transaksi Tersimpan!',
-        text: `${inputs.length} transaksi berhasil dicatat dan stok dialokasikan secara FIFO.`,
-      });
+      showToast(`${inputs.length} Transaksi Berhasil Disimpan!`, 'success');
 
       setMultiRows([
         {
@@ -335,11 +324,9 @@ export const SalesView: React.FC<SalesViewProps> = ({
         },
       ]);
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Transaksi Gagal Disimpan',
-        text: err.message || 'Database rollback terjadi.',
-      });
+      showAlert('Transaksi Gagal Disimpan', err.message || 'Database rollback terjadi.', 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 

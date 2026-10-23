@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Package, Plus, History, ArrowUpDown, Layers } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { showToast, showAlert, cleanupSwalLocks } from '../utils/alert';
 import { StockBatch, StockMovement } from '../types';
 import { addStockAdjustment } from '../services/repository';
 import { formatNumber, formatRupiah } from '../utils/formatters';
@@ -67,17 +68,11 @@ export const StockView: React.FC<StockViewProps> = ({
       await onRefreshData();
       setShowAdjustmentModal(false);
       setAdjReason('');
-      Swal.fire({
-        icon: 'success',
-        title: 'Penyesuaian Berhasil',
-        text: `Stok telah diperbarui dan mutasi stok tercatat rapi.`,
-      });
+      showToast('Penyesuaian Stok Berhasil Disimpan!');
     } catch (err: any) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal Menyesuaikan Stok',
-        text: err.message,
-      });
+      showAlert('Gagal Menyesuaikan Stok', err.message, 'error');
+    } finally {
+      cleanupSwalLocks();
     }
   };
 
