@@ -12,6 +12,8 @@ import {
   AlertTriangle,
   RotateCcw,
   FileText,
+  FileSpreadsheet,
+  X,
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { Sale } from '../../db/schema';
@@ -23,11 +25,14 @@ import {
 } from '../../utils/formatters';
 import { showSuccessAlert, showErrorAlert, showConfirmDialog } from '../../utils/alert';
 import { playTapSound, playDeleteSound } from '../../utils/sound';
+import { exportSalesToCsv } from '../../utils/exportCsv';
 
 export const SalesView: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'VOID'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedSaleDetail, setSelectedSaleDetail] = useState<Sale | null>(null);
 
   const loadSales = async () => {
@@ -43,9 +48,12 @@ export const SalesView: React.FC = () => {
     loadSales();
   }, []);
 
-  // Filter sales
+  // Filter sales dengan status, rentang tanggal, & pencarian teks
   const filteredSales = sales.filter((s) => {
     if (filterStatus !== 'ALL' && s.status !== filterStatus) return false;
+    const saleDate = s.createdAt.substring(0, 10);
+    if (filterStartDate && saleDate < filterStartDate) return false;
+    if (filterEndDate && saleDate > filterEndDate) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchInv = s.invoiceNumber.toLowerCase().includes(q);
@@ -98,64 +106,121 @@ export const SalesView: React.FC = () => {
             </p>
           </div>
         </div>
+
+        {/* Quick CSV Export Button */}
+        <button
+          type="button"
+          onClick={() => {
+            playTapSound();
+            exportSalesToCsv(filteredSales);
+          }}
+          disabled={filteredSales.length === 0}
+          className="px-3.5 py-2 rounded-xl theme-bg-card border theme-border hover:theme-bg-card-hover disabled:opacity-40 disabled:cursor-not-allowed theme-text-primary text-xs font-semibold flex items-center gap-2 transition active:scale-98 self-start sm:self-auto shadow-sm"
+          title="Unduh laporan penjualan terfilter ke format CSV / Excel"
+        >
+          <FileSpreadsheet size={15} className="text-emerald-500" />
+          <span>Ekspor CSV ({filteredSales.length})</span>
+        </button>
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input
-            type="text"
-            placeholder="Cari invoice, nama pembeli, atau catatan..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-3 py-2 rounded-xl theme-bg-card border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
-          />
+      <div className="space-y-2.5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="relative flex-1">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="text"
+              placeholder="Cari invoice, nama pembeli, atau catatan..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 rounded-xl theme-bg-card border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-medium"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 p-1 rounded-xl theme-bg-surface border theme-border self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setFilterStatus('ALL');
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                filterStatus === 'ALL'
+                  ? 'theme-btn-primary shadow-sm'
+                  : 'theme-text-secondary hover:theme-text-primary'
+              }`}
+            >
+              Semua ({sales.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setFilterStatus('ACTIVE');
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                filterStatus === 'ACTIVE'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'theme-text-secondary hover:theme-text-primary'
+              }`}
+            >
+              Sukses ({sales.filter((s) => s.status === 'ACTIVE').length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setFilterStatus('VOID');
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                filterStatus === 'VOID'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'theme-text-secondary hover:theme-text-primary'
+              }`}
+            >
+              Batal ({sales.filter((s) => s.status === 'VOID').length})
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 p-1 rounded-xl theme-bg-surface border theme-border self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => {
-              playTapSound();
-              setFilterStatus('ALL');
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-              filterStatus === 'ALL'
-                ? 'theme-btn-primary shadow-sm'
-                : 'theme-text-secondary hover:theme-text-primary'
-            }`}
-          >
-            Semua ({sales.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              playTapSound();
-              setFilterStatus('ACTIVE');
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-              filterStatus === 'ACTIVE'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'theme-text-secondary hover:theme-text-primary'
-            }`}
-          >
-            Sukses ({sales.filter((s) => s.status === 'ACTIVE').length})
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              playTapSound();
-              setFilterStatus('VOID');
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-              filterStatus === 'VOID'
-                ? 'bg-red-600 text-white shadow-sm'
-                : 'theme-text-secondary hover:theme-text-primary'
-            }`}
-          >
-            Batal ({sales.filter((s) => s.status === 'VOID').length})
-          </button>
+        {/* Filter Rentang Tanggal */}
+        <div className="flex flex-wrap items-center gap-2 p-2 rounded-xl theme-bg-surface border theme-border-subtle text-xs">
+          <div className="flex items-center gap-1.5 theme-text-muted">
+            <Calendar size={13} />
+            <span className="font-medium text-[11px]">Rentang Tanggal:</span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="px-2.5 py-1 rounded-lg theme-bg-card border theme-border text-[11px] theme-text-primary focus:outline-none focus:border-emerald-500 font-mono"
+            />
+            <span className="theme-text-muted text-[11px]">s/d</span>
+            <input
+              type="date"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="px-2.5 py-1 rounded-lg theme-bg-card border theme-border text-[11px] theme-text-primary focus:outline-none focus:border-emerald-500 font-mono"
+            />
+          </div>
+
+          {(filterStartDate || filterEndDate || searchQuery) && (
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setFilterStartDate('');
+                setFilterEndDate('');
+                setSearchQuery('');
+              }}
+              className="ml-auto px-2 py-1 rounded-lg theme-bg-card hover:bg-red-500/10 text-red-500 dark:text-red-400 border theme-border text-[11px] font-medium flex items-center gap-1 transition"
+            >
+              <X size={12} />
+              <span>Reset Filter</span>
+            </button>
+          )}
         </div>
       </div>
 

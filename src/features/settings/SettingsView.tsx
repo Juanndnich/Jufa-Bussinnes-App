@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Settings,
   Moon,
@@ -13,6 +13,10 @@ import {
   ShieldCheck,
   Volume2,
   VolumeX,
+  FileSpreadsheet,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { z } from 'zod';
@@ -21,6 +25,8 @@ import { repository } from '../../db/repository';
 import { AppSettings } from '../../db/schema';
 import { applyTheme } from '../../utils/theme';
 import { isSoundEnabled, setSoundEnabled, playTapSound } from '../../utils/sound';
+import { exportSalesToCsv, exportCashLedgerToCsv } from '../../utils/exportCsv';
+import { formatDateJakarta } from '../../utils/formatters';
 import {
   showSuccessAlert,
   showErrorAlert,
@@ -79,6 +85,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
   useEffect(() => {
     loadSettings();
   }, []);
+
+  // Status & Indikator Pengingat Cadangan Terakhir
+  const backupStatus = useMemo(() => {
+    if (!settings?.lastBackupAt) {
+      return {
+        hasBackup: false,
+        isOutdated: true,
+        label: 'Belum Pernah Dicadangkan',
+        description:
+          'Seluruh data bisnis disimpan 100% di perangkat ini. Disarankan mengunduh cadangan JSON secara berkala agar pembukuan aman jika riwayat browser/HP dibersihkan.',
+      };
+    }
+    const diffDays = Math.floor(
+      (Date.now() - new Date(settings.lastBackupAt).getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const isOutdated = diffDays >= 7;
+    return {
+      hasBackup: true,
+      isOutdated,
+      label: isOutdated
+        ? `Sudah ${diffDays} Hari Belum Dicadangkan`
+        : 'Cadangan Data Terkini',
+      description: `Terakhir dicadangkan: ${formatDateJakarta(settings.lastBackupAt)}. ${
+        isOutdated
+          ? 'Sudah lebih dari seminggu sejak pencadangan terakhir. Unduh cadangan terbaru untuk mencegah risiko kehilangan data.'
+          : 'Data lokal Anda sudah dicadangkan dengan aman.'
+      }`,
+    };
+  }, [settings?.lastBackupAt]);
 
   // Update theme
   const handleThemeChange = async (mode: 'system' | 'light' | 'dark') => {
@@ -211,10 +246,48 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
       link.click();
       document.body.removeChild(link);
 
+      const nowIso = new Date().toISOString();
+      await repository.updateSettings({ lastBackupAt: nowIso });
+      setSettings((prev) => (prev ? { ...prev, lastBackupAt: nowIso } : null));
+      if (onSettingsChanged) onSettingsChanged();
+
       await showSuccessAlert('Cadangan Berhasil', 'File cadangan JSON berhasil diunduh ke perangkat Anda.');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal membuat file cadangan';
       await showErrorAlert('Gagal Cadangan', msg);
+    }
+  };
+
+  // Handler: Ekspor CSV Penjualan dari Pengaturan
+  const handleExportSalesCsv = async () => {
+    try {
+      playTapSound();
+      const allSales = await repository.getSales();
+      if (allSales.length === 0) {
+        await showWarningAlert('Data Kosong', 'Belum ada transaksi penjualan untuk diekspor.');
+        return;
+      }
+      exportSalesToCsv(allSales);
+    } catch (err: unknown) {
+      console.error('Failed to export sales csv:', err);
+    }
+  };
+
+  // Handler: Ekspor CSV Buku Kas dari Pengaturan
+  const handleExportCashCsv = async () => {
+    try {
+      playTapSound();
+      const [ledger, cats] = await Promise.all([
+        repository.getCashLedger(),
+        repository.getCategories(),
+      ]);
+      if (ledger.length === 0) {
+        await showWarningAlert('Data Kosong', 'Buku kas masih kosong, belum ada transaksi untuk diekspor.');
+        return;
+      }
+      exportCashLedgerToCsv(ledger, cats);
+    } catch (err: unknown) {
+      console.error('Failed to export cash csv:', err);
     }
   };
 
@@ -535,8 +608,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
           Seluruh data bisnis Anda disimpan 100% lokal di perangkat ini (IndexedDB).
         </p>
 
+        {/* Pengingat Status Cadangan Terakhir */}
+        <div
+          className={`p-3.5 rounded-xl border flex items-start gap-3 transition ${
+            !backupStatus.hasBackup
+              ? 'bg-amber-500/10 border-amber-500/25 text-amber-500 dark:text-amber-400'
+              : backupStatus.isOutdated
+              ? 'bg-red-500/10 border-red-500/25 text-red-500 dark:text-red-400'
+              : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400'
+          }`}
+        >
+          {!backupStatus.hasBackup ? (
+            <AlertCircle size={18} className="shrink-0 mt-0.5" />
+          ) : backupStatus.isOutdated ? (
+            <Clock size={18} className="shrink-0 mt-0.5" />
+          ) : (
+            <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
+          )}
+          <div className="space-y-0.5">
+            <span className="text-xs font-bold block">{backupStatus.label}</span>
+            <p className="text-[11px] opacity-90 leading-relaxed">
+              {backupStatus.description}
+            </p>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {/* Unduh Cadangan */}
+          {/* Unduh Cadangan JSON */}
           <button
             type="button"
             onClick={handleExportBackup}
@@ -550,12 +648,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 Unduh Cadangan JSON
               </span>
               <span className="text-[10px] theme-text-muted">
-                Ekspor seluruh data ke file
+                Backup full database sistem
               </span>
             </div>
           </button>
 
-          {/* Pulihkan Cadangan */}
+          {/* Pulihkan Cadangan JSON */}
           <div>
             <input
               type="file"
@@ -578,6 +676,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 </span>
                 <span className="text-[10px] theme-text-muted">
                   Validasi ketat skema Zod
+                </span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Ekspor Spreadsheet CSV (Excel) */}
+        <div className="space-y-2 pt-2 border-t theme-border">
+          <span className="text-xs font-semibold theme-text-secondary block">
+            Ekspor Laporan ke Spreadsheet (CSV / Excel)
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={handleExportSalesCsv}
+              className="p-3 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card flex items-center gap-3 transition text-left"
+            >
+              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                <FileSpreadsheet size={15} />
+              </div>
+              <div>
+                <span className="text-xs font-semibold theme-text-primary block">
+                  Ekspor Penjualan (.CSV)
+                </span>
+                <span className="text-[10px] theme-text-muted">
+                  Buka riwayat invoice di Excel
+                </span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportCashCsv}
+              className="p-3 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card flex items-center gap-3 transition text-left"
+            >
+              <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                <FileSpreadsheet size={15} />
+              </div>
+              <div>
+                <span className="text-xs font-semibold theme-text-primary block">
+                  Ekspor Buku Kas (.CSV)
+                </span>
+                <span className="text-[10px] theme-text-muted">
+                  Arus kas masuk & keluar
                 </span>
               </div>
             </button>

@@ -11,16 +11,23 @@ import {
   ChevronUp,
   Tag,
   CheckCircle2,
+  Search,
+  FileSpreadsheet,
+  X,
 } from 'lucide-react';
 import { repository, getTodayKey } from '../../db/repository';
 import { CashLedgerEntry, Category } from '../../db/schema';
 import { formatRupiah, formatNumber, formatDateJakarta } from '../../utils/formatters';
 import { showSuccessAlert, showErrorAlert, showWarningAlert, showConfirmDialog } from '../../utils/alert';
 import { playTapSound, playSuccessSound, playDeleteSound } from '../../utils/sound';
+import { exportCashLedgerToCsv } from '../../utils/exportCsv';
 
 export const FinanceView: React.FC = () => {
   const [entries, setEntries] = useState<CashLedgerEntry[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAddCatModal, setShowAddCatModal] = useState(false);
 
@@ -80,6 +87,31 @@ export const FinanceView: React.FC = () => {
     };
   }, [entries]);
 
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of categories) {
+      map.set(c.id, c.name.toLowerCase());
+    }
+    return map;
+  }, [categories]);
+
+  // Filter entri kas berdasarkan teks dan rentang tanggal
+  const filteredEntries = useMemo(() => {
+    return entries.filter((item) => {
+      const key = item.dateKey || item.createdAt.substring(0, 10);
+      if (filterStartDate && key < filterStartDate) return false;
+      if (filterEndDate && key > filterEndDate) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchNotes = item.notes?.toLowerCase().includes(q) || false;
+        const matchAmount = String(item.amountRupiah).includes(q);
+        const matchCat = item.categoryId ? categoryMap.get(item.categoryId)?.includes(q) || false : false;
+        return matchNotes || matchAmount || matchCat;
+      }
+      return true;
+    });
+  }, [entries, filterStartDate, filterEndDate, searchQuery, categoryMap]);
+
   // Grouping per tanggal (dateKey: YYYY-MM-DD)
   const groupedEntries = useMemo(() => {
     const groups: Record<
@@ -93,7 +125,7 @@ export const FinanceView: React.FC = () => {
       }
     > = {};
 
-    for (const item of entries) {
+    for (const item of filteredEntries) {
       const key = item.dateKey || item.createdAt.substring(0, 10);
       if (!groups[key]) {
         groups[key] = {
@@ -115,7 +147,7 @@ export const FinanceView: React.FC = () => {
 
     // Urutkan tanggal terbaru ke terlama
     return Object.values(groups).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
-  }, [entries]);
+  }, [filteredEntries]);
 
   const toggleDate = (dateKey: string) => {
     playTapSound();
@@ -220,14 +252,30 @@ export const FinanceView: React.FC = () => {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowAddModal(true)}
-          className="self-start sm:self-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-98 shadow-sm"
-        >
-          <Plus size={15} />
-          <span>Catat Kas Manual</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => {
+              playTapSound();
+              exportCashLedgerToCsv(filteredEntries, categories);
+            }}
+            disabled={filteredEntries.length === 0}
+            className="px-3 py-2 rounded-xl theme-bg-card border theme-border hover:theme-bg-card-hover disabled:opacity-40 disabled:cursor-not-allowed theme-text-primary text-xs font-semibold flex items-center gap-1.5 transition active:scale-98 shadow-sm"
+            title="Unduh catatan buku kas ke format CSV / Excel"
+          >
+            <FileSpreadsheet size={15} className="text-emerald-500" />
+            <span>Ekspor CSV ({filteredEntries.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-98 shadow-sm"
+          >
+            <Plus size={15} />
+            <span>Catat Kas Manual</span>
+          </button>
+        </div>
       </div>
 
       {/* Saldo Cards */}
@@ -284,9 +332,64 @@ export const FinanceView: React.FC = () => {
 
       {/* Accordion List Per Tanggal */}
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold theme-text-primary">
-          Catatan Harian (Dikelompokkan per Tanggal)
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <h2 className="text-sm font-semibold theme-text-primary">
+            Catatan Harian (Dikelompokkan per Tanggal)
+          </h2>
+        </div>
+
+        {/* Search & Date Filter Bar */}
+        <div className="space-y-2">
+          <div className="relative">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="text"
+              placeholder="Cari keterangan, nominal kas, atau nama kategori..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 rounded-xl theme-bg-card border theme-border text-xs theme-text-primary focus:outline-none focus:border-blue-500 font-medium"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 p-2 rounded-xl theme-bg-surface border theme-border-subtle text-xs">
+            <div className="flex items-center gap-1.5 theme-text-muted">
+              <Calendar size={13} />
+              <span className="font-medium text-[11px]">Rentang Tanggal:</span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                className="px-2.5 py-1 rounded-lg theme-bg-card border theme-border text-[11px] theme-text-primary focus:outline-none focus:border-blue-500 font-mono"
+              />
+              <span className="theme-text-muted text-[11px]">s/d</span>
+              <input
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                className="px-2.5 py-1 rounded-lg theme-bg-card border theme-border text-[11px] theme-text-primary focus:outline-none focus:border-blue-500 font-mono"
+              />
+            </div>
+
+            {(filterStartDate || filterEndDate || searchQuery) && (
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                  setSearchQuery('');
+                }}
+                className="ml-auto px-2 py-1 rounded-lg theme-bg-card hover:bg-red-500/10 text-red-500 dark:text-red-400 border theme-border text-[11px] font-medium flex items-center gap-1 transition"
+              >
+                <X size={12} />
+                <span>Reset Filter</span>
+              </button>
+            )}
+          </div>
+        </div>
 
         {groupedEntries.length === 0 ? (
           <div className="p-8 rounded-2xl theme-bg-card border theme-border text-center space-y-2">

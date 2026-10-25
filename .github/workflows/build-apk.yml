@@ -43,6 +43,8 @@ jobs:
 
       - name: Apply Custom Android App Icon
         run: |
+          # Hapus folder adaptive xml anydpi-v26 untuk mencegah error duplicate resource dengan file png
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
           for dir in android/app/src/main/res/mipmap-*; do
             if [ -d "$dir" ]; then
               cp public/app-icon.png "$dir/ic_launcher.png"

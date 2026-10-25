@@ -6,6 +6,7 @@ export interface AppSettings {
   textSize: 'sm' | 'base' | 'lg';
   customLogoUrl: string | null;
   schemaVersion: number;
+  lastBackupAt?: string;
 }
 
 export interface RatePreset {
