@@ -3,88 +3,62 @@
 @tailwind utilities;
 
 :root, html.dark {
-  --bg-main: #000000;
-  --bg-surface: #09090b;
-  --bg-card: #111114;
-  --bg-card-hover: #18181b;
-  --bg-input: #141417;
-  --border-color: rgba(255, 255, 255, 0.1);
-  --border-subtle: rgba(255, 255, 255, 0.05);
+  --bg-main: #09090b;
+  --bg-surface: #121215;
+  --bg-card: #18181b;
+  --bg-card-hover: #222226;
+  --bg-input: #151518;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.04);
   --text-primary: #ffffff;
   --text-secondary: #a1a1aa;
   --text-muted: #71717a;
   --btn-primary-bg: #ffffff;
-  --btn-primary-text: #000000;
+  --btn-primary-text: #09090b;
   color-scheme: dark;
 }
 
 html.light {
-  --bg-main: #f4f4f5;
+  --bg-main: #f8fafc;
   --bg-surface: #ffffff;
   --bg-card: #ffffff;
   --bg-card-hover: #f1f5f9;
   --bg-input: #f8fafc;
-  --border-color: rgba(0, 0, 0, 0.12);
-  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-color: rgba(0, 0, 0, 0.09);
+  --border-subtle: rgba(0, 0, 0, 0.05);
   --text-primary: #09090b;
-  --text-secondary: #52525b;
-  --text-muted: #71717a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
   --btn-primary-bg: #09090b;
   --btn-primary-text: #ffffff;
   color-scheme: light;
 }
 
-html.halloween {
-  --bg-main: #0c0714;
-  --bg-surface: #140d22;
-  --bg-card: #1c122e;
-  --bg-card-hover: #291b42;
-  --bg-input: #180e28;
-  --border-color: rgba(249, 115, 22, 0.28);
-  --border-subtle: rgba(249, 115, 22, 0.14);
-  --text-primary: #fff7ed;
-  --text-secondary: #fdba74;
-  --text-muted: #c084fc;
-  --btn-primary-bg: #ea580c;
-  --btn-primary-text: #ffffff;
-  color-scheme: dark;
-}
-
 @layer base {
-  body {
-    background-color: var(--bg-main);
-    color: var(--text-primary);
-    @apply font-sans antialiased transition-colors duration-200;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-  }
-
-  h1, h2, h3, h4, .font-heading {
+  * {
     font-family: 'Poppins', sans-serif;
   }
 
-  /* Prevent single-character wrapping, text clipping, and orphan words across varied DPIs */
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    @apply antialiased transition-colors duration-150;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Prevent awkward word-breaks */
   h1, h2, h3, h4, h5, h6, p, label, span, strong, td, th {
     text-wrap: pretty;
     overflow-wrap: break-word;
   }
 
-  .text-balanced {
-    text-wrap: balance;
-  }
-
-  /* Keep currencies, counts, and numbers together without orphan characters */
-  .val-currency, .val-tag, .val-mono {
-    white-space: nowrap;
-    display: inline-block;
-  }
-
   /* Crisp minimalist scrollbar */
   ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+    width: 4px;
+    height: 4px;
   }
   ::-webkit-scrollbar-track {
-    background: var(--bg-surface);
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
     background: var(--border-color);
@@ -93,88 +67,6 @@ html.halloween {
   ::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
   }
-}
-
-/* Ultra-Smooth 60fps GPU-Accelerated UI Animations */
-@keyframes tabFadeIn {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 5px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes backdropFade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-tab-content {
-  animation: tabFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  will-change: opacity, transform;
-  backface-visibility: hidden;
-  transform: translateZ(0);
-}
-
-.animate-backdrop {
-  animation: backdropFade 0.2s ease-out forwards;
-}
-
-/* Halloween Spooky Animations */
-@keyframes pumpkinGlow {
-  0%, 100% {
-    filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.65));
-    transform: scale(1);
-  }
-  50% {
-    filter: drop-shadow(0 0 26px rgba(249, 115, 22, 0.95)) drop-shadow(0 0 12px rgba(168, 85, 247, 0.5));
-    transform: scale(1.03);
-  }
-}
-
-@keyframes floatBat {
-  0%, 100% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-  25% {
-    transform: translate3d(-12px, -8px, 0) rotate(-6deg);
-  }
-  75% {
-    transform: translate3d(12px, -5px, 0) rotate(6deg);
-  }
-}
-
-@keyframes floatEmbers {
-  0% {
-    transform: translateY(0) scale(0.8);
-    opacity: 0.2;
-  }
-  50% {
-    opacity: 0.9;
-  }
-  100% {
-    transform: translateY(-80px) scale(1.2);
-    opacity: 0;
-  }
-}
-
-.animate-pumpkin-glow {
-  animation: pumpkinGlow 3s ease-in-out infinite;
-}
-
-.animate-float-bat {
-  animation: floatBat 4s ease-in-out infinite;
-}
-
-.animate-float-embers {
-  animation: floatEmbers 3s ease-in infinite;
 }
 
 /* Dynamic theme helper classes */
@@ -223,83 +115,32 @@ html.halloween {
   color: var(--btn-primary-text) !important;
 }
 
-/* SweetAlert2 Dynamic Theme & Anti-Freeze Protections */
-.swal2-popup {
-  background: var(--bg-surface) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: 1rem !important;
-  color: var(--text-primary) !important;
-  font-family: 'Inter', sans-serif !important;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+/* SweetAlert2 Popup Style matching Theme */
+html.dark .swal2-popup {
+  background: #18181b !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 1.25rem !important;
 }
-
-/* Toast Notification Styling (Never blocks clicks or touch events) */
-.swal2-toast {
-  background: var(--bg-surface) !important;
-  border: 1px solid var(--border-color) !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
-  border-radius: 0.85rem !important;
-  padding: 0.75rem 1rem !important;
-  pointer-events: auto !important;
+html.light .swal2-popup {
+  background: #ffffff !important;
+  color: #09090b !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-radius: 1.25rem !important;
 }
-
-.swal2-toast .swal2-title {
-  font-size: 0.85rem !important;
-  font-weight: 600 !important;
-  margin: 0 !important;
-}
-
-/* Safety override: never let background container lock interactions when not visible */
-.swal2-container:not(.swal2-shown):not(.swal2-backdrop-show) {
-  pointer-events: none !important;
-}
-
 .swal2-title {
-  color: var(--text-primary) !important;
   font-family: 'Poppins', sans-serif !important;
-  font-weight: 700 !important;
   font-size: 1.15rem !important;
-}
-
-.swal2-html-container {
-  color: var(--text-secondary) !important;
-  font-size: 0.85rem !important;
-}
-
-.swal2-confirm {
-  background: var(--btn-primary-bg) !important;
-  color: var(--btn-primary-text) !important;
   font-weight: 700 !important;
-  border-radius: 0.75rem !important;
-  font-size: 0.8rem !important;
-  padding: 0.6rem 1.25rem !important;
-  transition: transform 0.15s ease, opacity 0.15s ease !important;
 }
-
-.swal2-confirm:hover {
-  opacity: 0.9 !important;
-  transform: translateY(-1px) !important;
-}
-
-.swal2-cancel {
-  background: var(--bg-card) !important;
-  color: var(--text-secondary) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: 0.75rem !important;
-  font-size: 0.8rem !important;
-  padding: 0.6rem 1.25rem !important;
-  transition: background-color 0.15s ease !important;
-}
-
-.swal2-cancel:hover {
-  background: var(--bg-card-hover) !important;
-  color: var(--text-primary) !important;
-}
-
-.swal2-input, .swal2-textarea {
-  background: var(--bg-input) !important;
-  border: 1px solid var(--border-color) !important;
-  color: var(--text-primary) !important;
-  border-radius: 0.75rem !important;
+.swal2-html-container {
+  font-family: 'Poppins', sans-serif !important;
   font-size: 0.85rem !important;
+}
+.swal2-confirm, .swal2-cancel {
+  font-family: 'Poppins', sans-serif !important;
+  border-radius: 0.75rem !important;
+  font-weight: 600 !important;
+  font-size: 0.8rem !important;
+  padding: 0.6rem 1.25rem !important;
 }

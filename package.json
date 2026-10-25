@@ -1,7 +1,7 @@
 {
-  "name": "jufa-store-business-manager",
+  "name": "jufastore",
   "private": true,
-  "version": "1.0.10",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,19 +12,27 @@
   "dependencies": {
     "@capacitor/android": "^6.2.0",
     "@capacitor/core": "^6.2.0",
+    "@fontsource/poppins": "^5.3.0",
+    "@hookform/resolvers": "^3.10.0",
     "clsx": "^2.1.1",
+    "dexie": "^4.4.7",
     "lucide-react": "^1.16.0",
+    "motion": "^14.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "sql.js": "^1.12.0",
+    "react-easy-crop": "^6.2.4",
+    "react-hook-form": "^7.91.0",
+    "react-is": "^19.3.1",
+    "recharts": "^3.10.1",
     "sweetalert2": "^11.17.2",
-    "tailwind-merge": "^3.0.2"
+    "tailwind-merge": "^3.0.2",
+    "vite-plugin-pwa": "^2.0.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@types/sql.js": "^1.4.9",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.5.3",

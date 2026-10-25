@@ -1,215 +1,336 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
-  ShoppingCart,
   Calculator,
   Package,
-  Truck,
+  Receipt,
   Wallet,
   BarChart3,
-  TrendingUp,
-  FileText,
   Settings,
-  AlertTriangle,
   Coins,
+  LucideIcon,
+  Menu,
   X,
-  Users,
-  Info,
+  ChevronRight,
 } from 'lucide-react';
-import { formatNumber, formatRupiah } from '../utils/formatters';
+import { AnimatePresence, motion } from 'motion/react';
+import { formatNumber } from '../utils/formatters';
+import { playTapSound } from '../utils/sound';
 
 export type NavItem =
   | 'dashboard'
-  | 'sales'
   | 'calculator'
   | 'stock'
-  | 'restock'
+  | 'sales'
   | 'finance'
-  | 'investors'
   | 'analysis'
-  | 'simulator'
-  | 'reports'
-  | 'settings'
-  | 'about';
+  | 'settings';
+
+export interface NavItemConfig {
+  id: NavItem;
+  label: string;
+  shortLabel: string;
+  icon: LucideIcon;
+  badge?: string;
+}
+
+export interface NavCategory {
+  title: string;
+  items: NavItemConfig[];
+}
+
+export const CATEGORIZED_NAV: NavCategory[] = [
+  {
+    title: 'Operasional',
+    items: [
+      {
+        id: 'dashboard',
+        label: 'Dashboard Ringkasan',
+        shortLabel: 'Dashboard',
+        icon: LayoutDashboard,
+      },
+      {
+        id: 'calculator',
+        label: 'Kalkulator Robux',
+        shortLabel: 'Kalkulator',
+        icon: Calculator,
+      },
+      {
+        id: 'sales',
+        label: 'Riwayat Penjualan',
+        shortLabel: 'Penjualan',
+        icon: Receipt,
+      },
+    ],
+  },
+  {
+    title: 'Inventaris & Kas',
+    items: [
+      {
+        id: 'stock',
+        label: 'Stok & Batch FIFO',
+        shortLabel: 'Stok',
+        icon: Package,
+      },
+      {
+        id: 'finance',
+        label: 'Buku Kas Harian',
+        shortLabel: 'Kas',
+        icon: Wallet,
+      },
+    ],
+  },
+  {
+    title: 'Laporan & Sistem',
+    items: [
+      {
+        id: 'analysis',
+        label: 'Analisis & Laporan',
+        shortLabel: 'Analisis',
+        icon: BarChart3,
+      },
+      {
+        id: 'settings',
+        label: 'Pengaturan & Backup',
+        shortLabel: 'Pengaturan',
+        icon: Settings,
+      },
+    ],
+  },
+];
 
 interface SidebarProps {
   currentTab: NavItem;
   onSelectTab: (tab: NavItem) => void;
-  totalRobuxStock: number;
-  stockAssetValue: number;
-  minStockAlert: number;
+  currentStock: number;
+  customLogoUrl?: string | null;
   storeName?: string;
-  isOpenMobile?: boolean;
-  onCloseMobile?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   onSelectTab,
-  totalRobuxStock,
-  stockAssetValue,
-  minStockAlert,
-  storeName = 'JUFA STORE',
-  isOpenMobile = false,
-  onCloseMobile,
+  currentStock,
+  customLogoUrl,
+  storeName = 'JufaStore',
 }) => {
-  const isStockLow = totalRobuxStock <= minStockAlert;
+  return (
+    <aside className="hidden lg:flex flex-col w-64 theme-bg-surface border-r theme-border h-screen sticky top-0 shrink-0 p-3.5 select-none theme-text-primary transition-colors duration-200">
+      {/* Brand Header */}
+      <div className="flex items-center gap-3 px-2 py-3 border-b theme-border mb-3">
+        <img
+          src={customLogoUrl || '/app-icon.png'}
+          alt={storeName}
+          className="w-9 h-9 rounded-xl object-cover border theme-border shadow-sm bg-black shrink-0"
+        />
+        <div className="overflow-hidden">
+          <h1 className="font-heading font-bold text-sm tracking-tight theme-text-primary leading-tight truncate">
+            {storeName}
+          </h1>
+          <p className="text-[10px] theme-text-muted font-mono tracking-wider uppercase mt-0.5">
+            Internal Bookkeeper
+          </p>
+        </div>
+      </div>
 
-  // Grouped Navigation for Professional Usability
-  const navSections = [
-    {
-      groupTitle: 'OPERASIONAL UTAMA',
-      items: [
-        { id: 'dashboard' as NavItem, label: 'Dasbor Performa', icon: <LayoutDashboard size={17} /> },
-        { id: 'sales' as NavItem, label: 'Pencatatan Penjualan', icon: <ShoppingCart size={17} /> },
-        {
-          id: 'stock' as NavItem,
-          label: 'Inventaris Stok Robux',
-          icon: <Package size={17} />,
-          badge: isStockLow && totalRobuxStock > 0 ? 'Menipis' : undefined,
-        },
-        { id: 'finance' as NavItem, label: 'Buku Kas & Saldo', icon: <Wallet size={17} /> },
-        { id: 'calculator' as NavItem, label: 'Kalkulator Cepat', icon: <Calculator size={17} /> },
-      ],
-    },
-    {
-      groupTitle: 'STRATEGIS & PERENCANAAN',
-      items: [
-        { id: 'restock' as NavItem, label: 'Restock & Supplier', icon: <Truck size={17} /> },
-        { id: 'investors' as NavItem, label: 'Investor & Bagi Hasil', icon: <Users size={17} /> },
-        { id: 'analysis' as NavItem, label: 'Analisis Tren Penjualan', icon: <BarChart3 size={17} /> },
-        { id: 'simulator' as NavItem, label: 'Simulasi & Tier Harga', icon: <TrendingUp size={17} /> },
-        { id: 'reports' as NavItem, label: 'Laporan Keuangan Resmi', icon: <FileText size={17} /> },
-      ],
-    },
-    {
-      groupTitle: 'SISTEM & KELOLA TOKO',
-      items: [
-        { id: 'settings' as NavItem, label: 'Pengaturan & Backup', icon: <Settings size={17} /> },
-        { id: 'about' as NavItem, label: 'Tentang Aplikasi', icon: <Info size={17} /> },
-      ],
-    },
+      {/* Navigation List Terkategori */}
+      <nav className="space-y-4 flex-1 overflow-y-auto pr-1">
+        {CATEGORIZED_NAV.map((group) => (
+          <div key={group.title} className="space-y-1">
+            <span className="text-[10px] font-semibold tracking-wider theme-text-muted uppercase px-2.5 block">
+              {group.title}
+            </span>
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      onSelectTab(item.id);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition active:scale-[0.99] ${
+                      isActive
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400 font-semibold border border-emerald-500/30 shadow-sm'
+                        : 'theme-text-secondary hover:theme-text-primary hover:theme-bg-card border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon
+                        size={15}
+                        className={isActive ? 'text-emerald-400' : 'theme-text-muted'}
+                      />
+                      <span>{item.label}</span>
+                    </div>
+                    {isActive && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      {/* Quick Stock Indicator Bottom Card */}
+      <div className="p-3 rounded-xl theme-bg-card border theme-border mt-auto">
+        <div className="flex items-center justify-between text-xs">
+          <span className="theme-text-muted flex items-center gap-1.5 font-medium text-[11px]">
+            <Coins size={13} className="text-amber-500 dark:text-amber-400" />
+            <span>Sisa Stok:</span>
+          </span>
+          <span className="font-mono font-bold text-amber-500 dark:text-amber-400 text-xs">
+            {formatNumber(currentStock)}{' '}
+            <span className="text-[10px] font-normal theme-text-muted">R$</span>
+          </span>
+        </div>
+      </div>
+    </aside>
+  );
+};
+
+interface MobileBottomNavProps {
+  currentTab: NavItem;
+  onSelectTab: (tab: NavItem) => void;
+}
+
+export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
+  currentTab,
+  onSelectTab,
+}) => {
+  const [showDrawer, setShowDrawer] = useState(false);
+
+  // 4 Primary Mobile Shortcuts + 1 Menu Drawer Button
+  const primaryShortcuts: NavItemConfig[] = [
+    { id: 'dashboard', label: 'Dashboard', shortLabel: 'Beranda', icon: LayoutDashboard },
+    { id: 'calculator', label: 'Kalkulator', shortLabel: 'Kalkulator', icon: Calculator },
+    { id: 'stock', label: 'Stok FIFO', shortLabel: 'Stok', icon: Package },
+    { id: 'sales', label: 'Penjualan', shortLabel: 'Jual', icon: Receipt },
   ];
 
-  const handleItemClick = (id: NavItem) => {
-    onSelectTab(id);
-    if (onCloseMobile) {
-      onCloseMobile();
-    }
+  const handleSelect = (tab: NavItem) => {
+    playTapSound();
+    onSelectTab(tab);
+    setShowDrawer(false);
   };
 
   return (
     <>
-      {/* Mobile Backdrop Overlay with smooth fade */}
-      {isOpenMobile && (
-        <div
-          onClick={onCloseMobile}
-          className="fixed inset-0 bg-black/75 z-40 lg:hidden animate-backdrop cursor-pointer"
-        />
-      )}
-
-      {/* Sidebar Drawer with ultra-smooth cubic-bezier transition */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 theme-bg-surface border-r theme-border flex flex-col justify-between select-none transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform lg:static lg:translate-x-0 lg:w-64 lg:z-auto shadow-2xl lg:shadow-none ${
-          isOpenMobile ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
-      >
-        <div className="overflow-y-auto flex-1 no-scrollbar">
-          {/* Brand Header */}
-          <div className="p-4 sm:p-5 border-b theme-border flex items-center justify-between">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-white text-black flex items-center justify-center font-black shadow-md shrink-0">
-                <Coins size={20} className="text-black" />
-              </div>
-              <div className="truncate">
-                <h1 className="font-heading font-bold text-sm tracking-wide theme-text-primary leading-tight truncate">
-                  {storeName}
-                </h1>
-                <p className="text-[10px] font-mono tracking-widest theme-text-muted uppercase">
-                  Robux Manager
-                </p>
-              </div>
-            </div>
-
-            {/* Close Button on Mobile */}
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 theme-bg-surface/95 backdrop-blur-md border-t theme-border py-1.5 px-3 flex items-center justify-around select-none transition-colors duration-200">
+        {primaryShortcuts.map((item) => {
+          const Icon = item.icon;
+          const isActive = currentTab === item.id;
+          return (
             <button
-              onClick={onCloseMobile}
-              className="lg:hidden p-1.5 rounded-lg theme-text-muted hover:theme-text-primary theme-bg-card border theme-border"
-              aria-label="Tutup Menu"
+              key={item.id}
+              type="button"
+              onClick={() => handleSelect(item.id)}
+              className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
+                isActive ? 'text-emerald-500 dark:text-emerald-400 font-bold' : 'theme-text-muted hover:theme-text-secondary'
+              }`}
             >
-              <X size={16} />
+              <Icon size={17} className={isActive ? 'text-emerald-500 dark:text-emerald-400' : 'theme-text-muted'} />
+              <span className="text-[10px] mt-0.5 tracking-tight">{item.shortLabel}</span>
             </button>
-          </div>
+          );
+        })}
 
-          {/* Grouped Nav Items */}
-          <div className="p-3 space-y-5">
-            {navSections.map((sec, secIdx) => (
-              <div key={secIdx} className="space-y-1">
-                <div className="px-3 py-1 text-[10px] font-bold font-mono tracking-wider theme-text-muted uppercase">
-                  {sec.groupTitle}
+        {/* Tombol Menu Terkategori Lengkap */}
+        <button
+          type="button"
+          onClick={() => {
+            playTapSound();
+            setShowDrawer(true);
+          }}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
+            currentTab === 'finance' || currentTab === 'analysis' || currentTab === 'settings'
+              ? 'text-emerald-500 dark:text-emerald-400 font-bold'
+              : 'theme-text-muted hover:theme-text-secondary'
+          }`}
+        >
+          <Menu size={17} className="theme-text-muted" />
+          <span className="text-[10px] mt-0.5 tracking-tight">Semua</span>
+        </button>
+      </nav>
+
+      {/* Categorized Drawer Sheet on Mobile with Motion */}
+      <AnimatePresence>
+        {showDrawer && (
+          <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-sm">
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ duration: 0.22, ease: [0.25, 1, 0.5, 1] }}
+              className="w-full theme-bg-surface border-t theme-border rounded-t-3xl p-5 max-h-[85vh] overflow-y-auto space-y-4 shadow-2xl"
+            >
+              {/* Header Drawer */}
+              <div className="flex items-center justify-between pb-3 border-b theme-border">
+                <div>
+                  <h3 className="text-sm font-bold theme-text-primary">Kategori Menu JufaStore</h3>
+                  <p className="text-[11px] theme-text-muted">Pilih modul navigasi yang ingin dibuka</p>
                 </div>
-                <nav className="space-y-0.5">
-                  {sec.items.map(item => {
-                    const isActive = currentTab === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => handleItemClick(item.id)}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 active:scale-[0.98] group ${
-                          isActive
-                            ? 'theme-btn-primary font-bold shadow-sm'
-                            : 'theme-text-secondary hover:theme-text-primary hover:theme-bg-card'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 truncate">
-                          <span
-                            className={`shrink-0 transition-colors ${
-                              isActive ? 'text-black' : 'theme-text-muted group-hover:theme-text-primary'
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTapSound();
+                    setShowDrawer(false);
+                  }}
+                  className="p-1.5 rounded-xl theme-bg-card theme-text-muted hover:theme-text-primary border theme-border"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* List Menu Terkategori */}
+              <div className="space-y-4">
+                {CATEGORIZED_NAV.map((group) => (
+                  <div key={group.title} className="space-y-1.5">
+                    <span className="text-[10px] font-semibold tracking-wider theme-text-muted uppercase px-1 block">
+                      {group.title}
+                    </span>
+                    <div className="grid grid-cols-1 gap-1">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = currentTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleSelect(item.id)}
+                            className={`w-full flex items-center justify-between p-3 rounded-xl text-xs transition ${
+                              isActive
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400 font-semibold border border-emerald-500/30 shadow-sm'
+                                : 'theme-bg-card theme-text-secondary hover:theme-text-primary border theme-border'
                             }`}
                           >
-                            {item.icon}
-                          </span>
-                          <span className="truncate">{item.label}</span>
-                        </div>
-                        {item.badge && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-500 border border-amber-500/30">
-                            {item.badge}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </nav>
+                            <div className="flex items-center gap-3">
+                              <Icon
+                                size={16}
+                                className={isActive ? 'text-emerald-500 dark:text-emerald-400' : 'theme-text-muted'}
+                              />
+                              <span>{item.label}</span>
+                            </div>
+                            <ChevronRight
+                              size={14}
+                              className={isActive ? 'text-emerald-500 dark:text-emerald-400' : 'theme-text-muted'}
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </motion.div>
           </div>
-        </div>
-
-        {/* Bottom Persistent Live Stock Card */}
-        <div className="p-3 border-t theme-border theme-bg-card/50">
-          <div
-            onClick={() => handleItemClick('stock')}
-            className="p-3 rounded-xl theme-bg-card border theme-border cursor-pointer hover:theme-border transition"
-          >
-            <div className="flex items-center justify-between text-xs">
-              <span className="theme-text-secondary font-medium flex items-center gap-1.5">
-                <Package size={13} className="theme-text-muted" /> Stok Tersedia
-              </span>
-              {isStockLow && (
-                <span className="flex items-center gap-1 text-[10px] text-amber-500 font-bold">
-                  <AlertTriangle size={11} /> Menipis
-                </span>
-              )}
-            </div>
-            <div className="text-base font-bold theme-text-primary font-mono mt-1">
-              {formatNumber(totalRobuxStock)} <span className="text-xs font-normal theme-text-muted">R$</span>
-            </div>
-            <div className="text-[10px] theme-text-muted font-mono mt-0.5">
-              Nilai: {formatRupiah(stockAssetValue)}
-            </div>
-          </div>
-        </div>
-      </aside>
+        )}
+      </AnimatePresence>
     </>
   );
 };

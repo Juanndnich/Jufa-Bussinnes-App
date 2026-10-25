@@ -1,0 +1,675 @@
+import { db } from './db';
+import {
+  StockBatch,
+  StockMovement,
+  Sale,
+  PersonalUsage,
+  CashLedgerEntry,
+  RatePreset,
+  Category,
+  AuditLog,
+  AppSettings,
+} from './schema';
+import {
+  allocateFifoCost,
+  rollbackFifoBatch,
+  calculateProfit,
+  FifoBatchInput,
+} from '../domain/calculations';
+import { generateTransactionCode, generateBatchCode } from '../utils/formatters';
+
+export function getTodayKey(): string {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export const repository = {
+  // ===================== PENGATURAN (SETTINGS) =====================
+  async getSettings(): Promise<AppSettings> {
+    const s = await db.settings.get('current');
+    if (!s) {
+      const initial: AppSettings = {
+        id: 'current',
+        storeName: 'JufaStore',
+        theme: 'dark',
+        accentColor: '#10b981',
+        textSize: 'base',
+        customLogoUrl: null,
+        schemaVersion: 1,
+      };
+      await db.settings.put(initial);
+      return initial;
+    }
+    return s;
+  },
+
+  async updateSettings(updates: Partial<AppSettings>): Promise<void> {
+    await db.settings.update('current', updates);
+  },
+
+  // ===================== RATE PRESETS =====================
+  async getRatePresets(): Promise<RatePreset[]> {
+    return db.ratePresets.orderBy('rate').toArray();
+  },
+
+  async addRatePreset(rate: number, label?: string): Promise<RatePreset> {
+    const item: RatePreset = {
+      id: `RATE-${Date.now()}`,
+      rate: Number(rate),
+      label: label?.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    };
+    await db.ratePresets.put(item);
+    return item;
+  },
+
+  async deleteRatePreset(id: string): Promise<void> {
+    await db.ratePresets.delete(id);
+  },
+
+  // ===================== STOK & FIFO BATCHES =====================
+  async getAvailableBatches(): Promise<StockBatch[]> {
+    // Diurutkan secara FIFO (paling lama masuk lebih dulu diambil)
+    const batches = await db.stockBatches
+      .where('remainingRobux')
+      .above(0)
+      .sortBy('createdAt');
+    return batches;
+  },
+
+  async getAllBatches(): Promise<StockBatch[]> {
+    return db.stockBatches.orderBy('createdAt').reverse().toArray();
+  },
+
+  async getTotalStockSummary(): Promise<{
+    totalRemainingRobux: number;
+    totalRemainingCostRupiah: number;
+    activeBatchCount: number;
+    averageCostPerRobux: number;
+  }> {
+    const batches = await this.getAvailableBatches();
+    let totalRemainingRobux = 0;
+    let totalRemainingCostRupiah = 0;
+
+    for (const b of batches) {
+      totalRemainingRobux += b.remainingRobux;
+      totalRemainingCostRupiah += b.remainingCostRupiah;
+    }
+
+    return {
+      totalRemainingRobux,
+      totalRemainingCostRupiah,
+      activeBatchCount: batches.length,
+      averageCostPerRobux:
+        totalRemainingRobux > 0
+          ? totalRemainingCostRupiah / totalRemainingRobux
+          : 0,
+    };
+  },
+
+  /**
+   * Catat Pembelian Stok Baru (Restock)
+   * Mengurangi Kas (Buku Kas OUT) dan Menambah Batch Persediaan.
+   */
+  async createRestockBatch(params: {
+    robux: number;
+    totalCostRupiah: number;
+    notes?: string;
+  }): Promise<StockBatch> {
+    const robux = Math.max(0, Math.floor(params.robux || 0));
+    const totalCost = Math.max(0, Math.floor(params.totalCostRupiah || 0));
+
+    if (robux <= 0) throw new Error('Jumlah Robux harus lebih besar dari 0');
+    if (totalCost < 0) throw new Error('Biaya modal tidak valid');
+
+    const now = new Date().toISOString();
+    const batchId = generateBatchCode();
+    const unitCostDisplay = robux > 0 ? totalCost / robux : 0;
+
+    const newBatch: StockBatch = {
+      id: batchId,
+      createdAt: now,
+      sourceType: 'RESTOCK',
+      initialRobux: robux,
+      remainingRobux: robux,
+      totalCostRupiah: totalCost,
+      remainingCostRupiah: totalCost,
+      unitCostDisplay,
+      notes: params.notes?.trim() || undefined,
+    };
+
+    const movement: StockMovement = {
+      id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      batchId,
+      type: 'RESTOCK',
+      robuxAmount: robux,
+      costAllocatedRupiah: totalCost,
+      referenceId: batchId,
+      createdAt: now,
+    };
+
+    const cashEntry: CashLedgerEntry = {
+      id: `CASH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      dateKey: getTodayKey(),
+      createdAt: now,
+      type: 'OUT',
+      amountRupiah: totalCost,
+      sourceType: 'RESTOCK',
+      sourceId: batchId,
+      notes: `Restock ${robux.toLocaleString('id-ID')} R$`,
+    };
+
+    const audit: AuditLog = {
+      id: `LOG-${Date.now()}`,
+      action: 'CREATE_RESTOCK',
+      entity: 'stockBatches',
+      entityId: batchId,
+      details: `Restock ${robux} R$ modal Rp${totalCost.toLocaleString('id-ID')}`,
+      createdAt: now,
+    };
+
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs], async () => {
+      await db.stockBatches.put(newBatch);
+      await db.stockMovements.put(movement);
+      if (totalCost > 0) {
+        await db.cashLedger.put(cashEntry);
+      }
+      await db.auditLogs.put(audit);
+    });
+
+    return newBatch;
+  },
+
+  /**
+   * Catat Sisa Robux Akun Roblox (Tambahan di luar pencatatan)
+   * TIDAK mengubah saldo kas dan BUKAN pendapatan (Rule 6.4).
+   */
+  async createAccountRemainderBatch(params: {
+    robux: number;
+    modalPerRobux: number;
+    notes?: string;
+  }): Promise<StockBatch> {
+    const robux = Math.max(0, Math.floor(params.robux || 0));
+    const modalPerRobux = Math.max(0, Number(params.modalPerRobux) || 0);
+
+    if (robux <= 0) throw new Error('Jumlah Robux harus lebih besar dari 0');
+
+    const totalCost = Math.round(robux * modalPerRobux);
+    const now = new Date().toISOString();
+    const batchId = generateBatchCode();
+
+    const newBatch: StockBatch = {
+      id: batchId,
+      createdAt: now,
+      sourceType: 'ACCOUNT_REMAINDER',
+      initialRobux: robux,
+      remainingRobux: robux,
+      totalCostRupiah: totalCost,
+      remainingCostRupiah: totalCost,
+      unitCostDisplay: modalPerRobux,
+      notes: params.notes?.trim() || 'Sisa Robux Akun',
+    };
+
+    const movement: StockMovement = {
+      id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      batchId,
+      type: 'RECONCILE_ADD',
+      robuxAmount: robux,
+      costAllocatedRupiah: totalCost,
+      referenceId: batchId,
+      createdAt: now,
+    };
+
+    const audit: AuditLog = {
+      id: `LOG-${Date.now()}`,
+      action: 'CREATE_ACCOUNT_REMAINDER',
+      entity: 'stockBatches',
+      entityId: batchId,
+      details: `Sisa Robux Akun ${robux} R$ modal Rp${modalPerRobux}/R$`,
+      createdAt: now,
+    };
+
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.auditLogs], async () => {
+      await db.stockBatches.put(newBatch);
+      await db.stockMovements.put(movement);
+      await db.auditLogs.put(audit);
+    });
+
+    return newBatch;
+  },
+
+  // ===================== PENJUALAN (SALES) & FIFO =====================
+  async recordSale(params: {
+    robuxSold: number;
+    rateUsed: number;
+    totalRevenueRupiah: number;
+    customerName?: string;
+    notes?: string;
+  }): Promise<Sale> {
+    const robuxSold = Math.max(0, Math.floor(params.robuxSold || 0));
+    const totalRevenue = Math.max(0, Math.floor(params.totalRevenueRupiah || 0));
+    const rateUsed = Number(params.rateUsed) || 0;
+
+    if (robuxSold <= 0) throw new Error('Jumlah Robux terjual harus lebih dari 0');
+    if (totalRevenue <= 0) throw new Error('Total uang diterima harus lebih dari 0');
+
+    const now = new Date().toISOString();
+    const invoiceNumber = generateTransactionCode();
+
+    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs], async () => {
+      // 1. Ambil antrean FIFO
+      const activeBatches = await db.stockBatches
+        .where('remainingRobux')
+        .above(0)
+        .sortBy('createdAt');
+
+      const batchInputs: FifoBatchInput[] = activeBatches.map((b) => ({
+        id: b.id,
+        remainingRobux: b.remainingRobux,
+        remainingCostRupiah: b.remainingCostRupiah,
+      }));
+
+      // 2. Alokasikan HPP dengan integer remainder allocation
+      const allocationResult = allocateFifoCost(batchInputs, robuxSold);
+      if (!allocationResult.success) {
+        throw new Error(
+          `Stok Robux tidak mencukupi! Kurang ${allocationResult.shortageRobux.toLocaleString('id-ID')} R$`
+        );
+      }
+
+      // 3. Update setiap batch dan catat stockMovements
+      for (const item of allocationResult.allocations) {
+        const batch = activeBatches.find((b) => b.id === item.batchId);
+        if (!batch) continue;
+
+        batch.remainingRobux = item.batchRemainingRobuxAfter;
+        batch.remainingCostRupiah = item.batchRemainingCostAfter;
+        await db.stockBatches.put(batch);
+
+        const movement: StockMovement = {
+          id: `MOV-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+          batchId: item.batchId,
+          type: 'SALE',
+          robuxAmount: item.robuxTaken,
+          costAllocatedRupiah: item.costAllocatedRupiah,
+          referenceId: invoiceNumber,
+          createdAt: now,
+        };
+        await db.stockMovements.put(movement);
+      }
+
+      // 4. Hitung Laba Kotor
+      const totalCogsRupiah = allocationResult.totalCogsRupiah;
+      const profitCalc = calculateProfit(totalRevenue, totalCogsRupiah);
+
+      const sale: Sale = {
+        id: invoiceNumber,
+        invoiceNumber,
+        createdAt: now,
+        customerName: params.customerName?.trim() || undefined,
+        robuxSold,
+        rateUsed,
+        totalRevenueRupiah: totalRevenue,
+        totalCogsRupiah,
+        grossProfitRupiah: profitCalc.grossProfit,
+        notes: params.notes?.trim() || undefined,
+        status: 'ACTIVE',
+        allocations: allocationResult.allocations.map((a) => ({
+          batchId: a.batchId,
+          robuxTaken: a.robuxTaken,
+          costAllocatedRupiah: a.costAllocatedRupiah,
+        })),
+      };
+
+      await db.sales.put(sale);
+
+      // 5. Catat Uang Masuk ke Buku Kas
+      const cashEntry: CashLedgerEntry = {
+        id: `CASH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        dateKey: getTodayKey(),
+        createdAt: now,
+        type: 'IN',
+        amountRupiah: totalRevenue,
+        sourceType: 'SALE',
+        sourceId: invoiceNumber,
+        notes: `Penjualan ${robuxSold.toLocaleString('id-ID')} R$ (${invoiceNumber})`,
+      };
+      await db.cashLedger.put(cashEntry);
+
+      // 6. Catat Audit Log
+      const audit: AuditLog = {
+        id: `LOG-${Date.now()}`,
+        action: 'CREATE_SALE',
+        entity: 'sales',
+        entityId: invoiceNumber,
+        details: `Jual ${robuxSold} R$ omzet Rp${totalRevenue} profit Rp${profitCalc.grossProfit}`,
+        createdAt: now,
+      };
+      await db.auditLogs.put(audit);
+
+      return sale;
+    });
+  },
+
+  /**
+   * Batalkan Transaksi Penjualan (VOID)
+   * Kembalikan stok dan HPP ke batch masing-masing secara presisi!
+   */
+  async voidSale(saleId: string, reason = 'Pembatalan transaksi'): Promise<void> {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs], async () => {
+      const sale = await db.sales.get(saleId);
+      if (!sale) throw new Error('Data penjualan tidak ditemukan');
+      if (sale.status === 'VOID') throw new Error('Transaksi ini sudah berstatus BATAL');
+
+      const now = new Date().toISOString();
+
+      // 1. Rollback setiap alokasi ke batch asalnya
+      for (const alloc of sale.allocations) {
+        const batch = await db.stockBatches.get(alloc.batchId);
+        if (batch) {
+          const restored = rollbackFifoBatch(
+            {
+              id: batch.id,
+              remainingRobux: batch.remainingRobux,
+              remainingCostRupiah: batch.remainingCostRupiah,
+            },
+            alloc.robuxTaken,
+            alloc.costAllocatedRupiah,
+            batch.initialRobux,
+            batch.totalCostRupiah
+          );
+
+          batch.remainingRobux = restored.remainingRobux;
+          batch.remainingCostRupiah = restored.remainingCostRupiah;
+          await db.stockBatches.put(batch);
+
+          // Catat pergerakan pembatalan
+          const movement: StockMovement = {
+            id: `MOV-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+            batchId: alloc.batchId,
+            type: 'VOID_RESTORE',
+            robuxAmount: alloc.robuxTaken,
+            costAllocatedRupiah: alloc.costAllocatedRupiah,
+            referenceId: saleId,
+            createdAt: now,
+          };
+          await db.stockMovements.put(movement);
+        }
+      }
+
+      // 2. Set status VOID
+      sale.status = 'VOID';
+      sale.notes = sale.notes ? `${sale.notes} [BATAL: ${reason}]` : `[BATAL: ${reason}]`;
+      await db.sales.put(sale);
+
+      // 3. Batalkan entri buku kas terkait penjualan ini (hapus entri kas terkait agar saldo kas ril sinkron)
+      const relatedCash = await db.cashLedger
+        .where('sourceId')
+        .equals(saleId)
+        .toArray();
+      for (const c of relatedCash) {
+        await db.cashLedger.delete(c.id);
+      }
+
+      // 4. Catat Audit Log
+      const audit: AuditLog = {
+        id: `LOG-${Date.now()}`,
+        action: 'VOID_SALE',
+        entity: 'sales',
+        entityId: saleId,
+        details: `Batalkan invoice ${saleId}: ${reason}`,
+        createdAt: now,
+      };
+      await db.auditLogs.put(audit);
+    });
+  },
+
+  async getSales(status?: 'ACTIVE' | 'VOID'): Promise<Sale[]> {
+    if (status) {
+      return db.sales.where('status').equals(status).reverse().sortBy('createdAt');
+    }
+    return db.sales.orderBy('createdAt').reverse().toArray();
+  },
+
+  // ===================== PEMAKAIAN PRIBADI (PRIVE NON-KAS) =====================
+  /**
+   * Catat Pengambilan Robux Pribadi (Prive)
+   * Memotong stok FIFO sebesar modal batch yang terpakai.
+   * TIDAK mengurangi laba bersih toko dan TIDAK mengubah saldo kas (Rule 6.5).
+   */
+  async recordPersonalUsage(params: {
+    robuxUsed: number;
+    categoryId?: string;
+    notes?: string;
+  }): Promise<PersonalUsage> {
+    const robuxUsed = Math.max(0, Math.floor(params.robuxUsed || 0));
+    if (robuxUsed <= 0) throw new Error('Jumlah Robux harus lebih dari 0');
+
+    const now = new Date().toISOString();
+    const id = `PRIVE-${Date.now()}`;
+
+    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.personalUsages, db.auditLogs], async () => {
+      const activeBatches = await db.stockBatches
+        .where('remainingRobux')
+        .above(0)
+        .sortBy('createdAt');
+
+      const batchInputs: FifoBatchInput[] = activeBatches.map((b) => ({
+        id: b.id,
+        remainingRobux: b.remainingRobux,
+        remainingCostRupiah: b.remainingCostRupiah,
+      }));
+
+      const allocationResult = allocateFifoCost(batchInputs, robuxUsed);
+      if (!allocationResult.success) {
+        throw new Error(
+          `Stok Robux tidak cukup! Kurang ${allocationResult.shortageRobux.toLocaleString('id-ID')} R$`
+        );
+      }
+
+      for (const item of allocationResult.allocations) {
+        const batch = activeBatches.find((b) => b.id === item.batchId);
+        if (!batch) continue;
+
+        batch.remainingRobux = item.batchRemainingRobuxAfter;
+        batch.remainingCostRupiah = item.batchRemainingCostAfter;
+        await db.stockBatches.put(batch);
+
+        const movement: StockMovement = {
+          id: `MOV-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+          batchId: item.batchId,
+          type: 'PERSONAL_USE',
+          robuxAmount: item.robuxTaken,
+          costAllocatedRupiah: item.costAllocatedRupiah,
+          referenceId: id,
+          createdAt: now,
+        };
+        await db.stockMovements.put(movement);
+      }
+
+      const usage: PersonalUsage = {
+        id,
+        createdAt: now,
+        robuxUsed,
+        totalCostRupiah: allocationResult.totalCogsRupiah,
+        categoryId: params.categoryId || undefined,
+        notes: params.notes?.trim() || undefined,
+        allocations: allocationResult.allocations.map((a) => ({
+          batchId: a.batchId,
+          robuxTaken: a.robuxTaken,
+          costAllocatedRupiah: a.costAllocatedRupiah,
+        })),
+      };
+
+      await db.personalUsages.put(usage);
+
+      const audit: AuditLog = {
+        id: `LOG-${Date.now()}`,
+        action: 'CREATE_PERSONAL_USAGE',
+        entity: 'personalUsages',
+        entityId: id,
+        details: `Pakai pribadi ${robuxUsed} R$ modal Rp${allocationResult.totalCogsRupiah}`,
+        createdAt: now,
+      };
+      await db.auditLogs.put(audit);
+
+      return usage;
+    });
+  },
+
+  async getPersonalUsages(): Promise<PersonalUsage[]> {
+    return db.personalUsages.orderBy('createdAt').reverse().toArray();
+  },
+
+  // ===================== BUKU KAS HARIAN (CASH LEDGER) =====================
+  async getCashLedger(): Promise<CashLedgerEntry[]> {
+    return db.cashLedger.orderBy('createdAt').reverse().toArray();
+  },
+
+  async addManualCashEntry(params: {
+    type: 'IN' | 'OUT';
+    amountRupiah: number;
+    categoryId?: string;
+    notes?: string;
+    tags?: string[];
+    dateKey?: string;
+  }): Promise<CashLedgerEntry> {
+    const amount = Math.max(0, Math.floor(params.amountRupiah || 0));
+    if (amount <= 0) throw new Error('Nominal uang harus lebih dari 0');
+
+    const now = new Date().toISOString();
+    const entry: CashLedgerEntry = {
+      id: `CASH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      dateKey: params.dateKey || getTodayKey(),
+      createdAt: now,
+      type: params.type,
+      amountRupiah: amount,
+      categoryId: params.categoryId || undefined,
+      notes: params.notes?.trim() || undefined,
+      tags: params.tags || [],
+      sourceType: 'MANUAL',
+    };
+
+    await db.cashLedger.put(entry);
+    return entry;
+  },
+
+  async deleteManualCashEntry(id: string): Promise<void> {
+    const entry = await db.cashLedger.get(id);
+    if (!entry) return;
+    if (entry.sourceType !== 'MANUAL') {
+      throw new Error('Entri kas otomatis dari penjualan atau restock tidak dapat dihapus manual dari sini!');
+    }
+    await db.cashLedger.delete(id);
+  },
+
+  // ===================== KATEGORI =====================
+  async getCategories(): Promise<Category[]> {
+    return db.categories.orderBy('name').toArray();
+  },
+
+  async addCategory(name: string, color: string, type: 'EXPENSE' | 'INCOME' | 'PERSONAL'): Promise<Category> {
+    const item: Category = {
+      id: `CAT-${Date.now()}`,
+      name: name.trim(),
+      color: color || '#3b82f6',
+      type,
+      createdAt: new Date().toISOString(),
+    };
+    await db.categories.put(item);
+    return item;
+  },
+
+  async deleteCategory(id: string): Promise<void> {
+    await db.categories.delete(id);
+  },
+
+  // ===================== AUDIT LOGS =====================
+  async getAuditLogs(limit = 100): Promise<AuditLog[]> {
+    return db.auditLogs.orderBy('createdAt').reverse().limit(limit).toArray();
+  },
+
+  // ===================== REKAP KESELURUHAN (DASHBOARD) =====================
+  async getDashboardSummary() {
+    const todayKey = getTodayKey();
+    const currentMonthKey = todayKey.substring(0, 7); // YYYY-MM
+
+    const [batches, sales, ledgerEntries] = await Promise.all([
+      db.stockBatches.toArray(),
+      db.sales.where('status').equals('ACTIVE').toArray(),
+      db.cashLedger.toArray(),
+    ]);
+
+    // Stok
+    let currentStockRobux = 0;
+    let sisaNilaiModalStok = 0;
+    let totalModalDikeluarkan = 0;
+
+    for (const b of batches) {
+      currentStockRobux += b.remainingRobux;
+      sisaNilaiModalStok += b.remainingCostRupiah;
+      totalModalDikeluarkan += b.totalCostRupiah;
+    }
+
+    // Penjualan
+    let totalOmzet = 0;
+    let totalGrossProfit = 0;
+    let totalRobuxSold = 0;
+
+    let todayRobuxSold = 0;
+    let todayOmzet = 0;
+    let todayProfit = 0;
+
+    let monthRobuxSold = 0;
+    let monthOmzet = 0;
+    let monthProfit = 0;
+
+    for (const s of sales) {
+      totalOmzet += s.totalRevenueRupiah;
+      totalGrossProfit += s.grossProfitRupiah;
+      totalRobuxSold += s.robuxSold;
+
+      const saleDate = s.createdAt.substring(0, 10);
+      if (saleDate === todayKey) {
+        todayRobuxSold += s.robuxSold;
+        todayOmzet += s.totalRevenueRupiah;
+        todayProfit += s.grossProfitRupiah;
+      }
+      if (saleDate.startsWith(currentMonthKey)) {
+        monthRobuxSold += s.robuxSold;
+        monthOmzet += s.totalRevenueRupiah;
+        monthProfit += s.grossProfitRupiah;
+      }
+    }
+
+    // Biaya Operasional Manual dari Buku Kas
+    let totalManualExpense = 0;
+    for (const entry of ledgerEntries) {
+      if (entry.type === 'OUT' && entry.sourceType === 'MANUAL') {
+        totalManualExpense += entry.amountRupiah;
+      }
+    }
+
+    const netProfit = totalGrossProfit - totalManualExpense;
+
+    return {
+      currentStockRobux,
+      sisaNilaiModalStok,
+      totalModalDikeluarkan,
+      totalOmzet,
+      totalGrossProfit,
+      totalManualExpense,
+      netProfit,
+      totalRobuxSold,
+      todayRobuxSold,
+      todayOmzet,
+      todayProfit,
+      monthRobuxSold,
+      monthOmzet,
+      monthProfit,
+    };
+  },
+};
