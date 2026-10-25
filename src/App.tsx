@@ -8,13 +8,18 @@ import { StockView } from './features/stock/StockView';
 import { SalesView } from './features/sales/SalesView';
 import { FinanceView } from './features/finance/FinanceView';
 import { AnalysisView } from './features/analysis/AnalysisView';
+import { InvestorView } from './features/investor/InvestorView';
 import { SettingsView } from './features/settings/SettingsView';
+import { PricelistView } from './features/pricelist/PricelistView';
+import { AppInfoView } from './features/info/AppInfoView';
+import { SplashScreen } from './components/SplashScreen';
 import { repository } from './db/repository';
 import { AppSettings } from './db/schema';
 import { applyTheme } from './utils/theme';
 import { playTapSound } from './utils/sound';
 
 export const App: React.FC = () => {
+  const [showSplash, setShowSplash] = useState(true);
   const [currentTab, setCurrentTab] = useState<NavItem>('dashboard');
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [currentStock, setCurrentStock] = useState<number>(0);
@@ -57,71 +62,90 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen theme-bg-main flex select-none theme-text-primary transition-colors duration-200">
-      {/* Desktop Sidebar Terkategori */}
-      <Sidebar
-        currentTab={currentTab}
-        onSelectTab={handleSelectTab}
-        currentStock={currentStock}
-        customLogoUrl={settings?.customLogoUrl}
-        storeName={settings?.storeName}
-      />
+    <>
+      {/* Loading Splash Screen Modern saat Buka Aplikasi */}
+      <AnimatePresence>
+        {showSplash && (
+          <SplashScreen
+            onComplete={() => setShowSplash(false)}
+            logoUrl={settings?.customLogoUrl}
+            storeName={settings?.storeName}
+          />
+        )}
+      </AnimatePresence>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header
+      <div className="min-h-screen theme-bg-main flex select-none theme-text-primary transition-colors duration-200">
+        {/* Desktop Sidebar Terkategori */}
+        <Sidebar
+          currentTab={currentTab}
+          onSelectTab={handleSelectTab}
           currentStock={currentStock}
-          currentTheme={settings?.theme || 'dark'}
-          onToggleTheme={handleToggleTheme}
-          onNavigateTab={handleSelectTab}
-          storeName={settings?.storeName}
           customLogoUrl={settings?.customLogoUrl}
+          storeName={settings?.storeName}
         />
 
-        {/* Dynamic View Container dengan Animasi Smooth */}
-        <main className="flex-1 p-3 sm:p-6 overflow-y-auto pb-24 lg:pb-8">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentTab}
-              initial={{ opacity: 0, y: 8, filter: 'blur(2px)' }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, y: -8, filter: 'blur(2px)' }}
-              transition={{ duration: 0.16, ease: [0.25, 1, 0.5, 1] }}
-              className="w-full"
-            >
-              {currentTab === 'dashboard' && (
-                <DashboardView onNavigateTab={handleSelectTab} />
-              )}
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <Header
+            currentStock={currentStock}
+            currentTheme={settings?.theme || 'dark'}
+            onToggleTheme={handleToggleTheme}
+            onNavigateTab={handleSelectTab}
+            storeName={settings?.storeName}
+            customLogoUrl={settings?.customLogoUrl}
+          />
 
-              {currentTab === 'calculator' && (
-                <CalculatorView
-                  onSaleSaved={refreshGlobalState}
-                  onNavigateToStock={() => handleSelectTab('stock')}
-                />
-              )}
+          {/* Dynamic View Container dengan Animasi Smooth */}
+          <main className="flex-1 p-3 sm:p-6 overflow-y-auto pb-24 lg:pb-8">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentTab}
+                initial={{ opacity: 0, y: 8, filter: 'blur(2px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, y: -8, filter: 'blur(2px)' }}
+                transition={{ duration: 0.16, ease: [0.25, 1, 0.5, 1] }}
+                className="w-full"
+              >
+                {currentTab === 'dashboard' && (
+                  <DashboardView onNavigateTab={handleSelectTab} />
+                )}
 
-              {currentTab === 'stock' && <StockView />}
+                {currentTab === 'calculator' && (
+                  <CalculatorView
+                    onSaleSaved={refreshGlobalState}
+                    onNavigateToStock={() => handleSelectTab('stock')}
+                  />
+                )}
 
-              {currentTab === 'sales' && <SalesView />}
+                {currentTab === 'pricelist' && <PricelistView />}
 
-              {currentTab === 'finance' && <FinanceView />}
+                {currentTab === 'stock' && <StockView />}
 
-              {currentTab === 'analysis' && <AnalysisView />}
+                {currentTab === 'sales' && <SalesView />}
 
-              {currentTab === 'settings' && (
-                <SettingsView onSettingsChanged={refreshGlobalState} />
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </main>
+                {currentTab === 'finance' && <FinanceView />}
+
+                {currentTab === 'analysis' && <AnalysisView />}
+
+                {currentTab === 'investor' && <InvestorView />}
+
+                {currentTab === 'settings' && (
+                  <SettingsView onSettingsChanged={refreshGlobalState} />
+                )}
+
+                {currentTab === 'info' && <AppInfoView />}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+
+        {/* Mobile Bottom Navigation Bar Terkategori */}
+        <MobileBottomNav
+          currentTab={currentTab}
+          onSelectTab={handleSelectTab}
+        />
       </div>
-
-      {/* Mobile Bottom Navigation Bar Terkategori */}
-      <MobileBottomNav
-        currentTab={currentTab}
-        onSelectTab={handleSelectTab}
-      />
-    </div>
+    </>
   );
 };
 

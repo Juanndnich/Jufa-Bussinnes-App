@@ -64,7 +64,6 @@ jobs:
       - name: Prepare Release APK File
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk JufaStore.apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk JUFA-STORE.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -90,6 +89,5 @@ jobs:
           make_latest: true
           files: |
             JufaStore.apk
-            JUFA-STORE.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -9,6 +9,8 @@ import {
   Category,
   AuditLog,
   AppSettings,
+  Investor,
+  InvestorPayout,
 } from './schema';
 import {
   allocateFifoCost,
@@ -68,6 +70,14 @@ export const repository = {
 
   async deleteRatePreset(id: string): Promise<void> {
     await db.ratePresets.delete(id);
+  },
+
+  async updateRatePreset(id: string, updates: { rate?: number; label?: string }): Promise<void> {
+    const preset = await db.ratePresets.get(id);
+    if (!preset) throw new Error('Preset rate tidak ditemukan');
+    if (updates.rate !== undefined) preset.rate = Number(updates.rate);
+    if (updates.label !== undefined) preset.label = updates.label.trim() || undefined;
+    await db.ratePresets.put(preset);
   },
 
   // ===================== STOK & FIFO BATCHES =====================
@@ -239,6 +249,73 @@ export const repository = {
     });
 
     return newBatch;
+  },
+
+  /**
+   * Edit catatan / keterangan pada Batch Persediaan
+   */
+  async updateStockBatchNotes(batchId: string, notes: string): Promise<void> {
+    const batch = await db.stockBatches.get(batchId);
+    if (!batch) throw new Error('Batch tidak ditemukan');
+
+    batch.notes = notes.trim() || undefined;
+    await db.stockBatches.put(batch);
+
+    const audit: AuditLog = {
+      id: `LOG-${Date.now()}`,
+      action: 'UPDATE_BATCH_NOTES',
+      entity: 'stockBatches',
+      entityId: batchId,
+      details: `Ubah catatan batch ${batchId}`,
+      createdAt: new Date().toISOString(),
+    };
+    await db.auditLogs.put(audit);
+  },
+
+  /**
+   * Hapus batch persediaan (Hanya diizinkan jika stok batch masih 100% utuh / belum terpakai)
+   * Jika batch bertipe RESTOCK, entri pengeluaran kas otomatis terkait akan dibatalkan/dihapus.
+   */
+  async deleteStockBatch(batchId: string): Promise<void> {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs], async () => {
+      const batch = await db.stockBatches.get(batchId);
+      if (!batch) throw new Error('Batch tidak ditemukan');
+
+      if (batch.remainingRobux !== batch.initialRobux) {
+        throw new Error('Batch ini sudah terpakai sebagian dan tidak dapat dihapus demi menjaga integritas alokasi FIFO.');
+      }
+
+      // Jika restock, hapus juga pengeluaran kas terkait
+      if (batch.sourceType === 'RESTOCK') {
+        const relatedCash = await db.cashLedger
+          .where('sourceId')
+          .equals(batchId)
+          .toArray();
+        for (const c of relatedCash) {
+          await db.cashLedger.delete(c.id);
+        }
+      }
+
+      // Hapus movements terkait batch ini
+      const movements = await db.stockMovements.where('batchId').equals(batchId).toArray();
+      for (const m of movements) {
+        await db.stockMovements.delete(m.id);
+      }
+
+      // Hapus batch
+      await db.stockBatches.delete(batchId);
+
+      // Audit Log
+      const audit: AuditLog = {
+        id: `LOG-${Date.now()}`,
+        action: 'DELETE_BATCH',
+        entity: 'stockBatches',
+        entityId: batchId,
+        details: `Hapus batch ${batchId} (${batch.initialRobux} R$ modal Rp${batch.totalCostRupiah})`,
+        createdAt: new Date().toISOString(),
+      };
+      await db.auditLogs.put(audit);
+    });
   },
 
   // ===================== PENJUALAN (SALES) & FIFO =====================
@@ -427,6 +504,56 @@ export const repository = {
     });
   },
 
+  /**
+   * Edit detail informasi penjualan (Nama Pembeli / Catatan)
+   */
+  async updateSaleDetails(saleId: string, updates: { customerName?: string; notes?: string }): Promise<void> {
+    const sale = await db.sales.get(saleId);
+    if (!sale) throw new Error('Data penjualan tidak ditemukan');
+
+    const updated = {
+      ...sale,
+      customerName: updates.customerName !== undefined ? updates.customerName.trim() || undefined : sale.customerName,
+      notes: updates.notes !== undefined ? updates.notes.trim() || undefined : sale.notes,
+    };
+
+    await db.sales.put(updated);
+
+    const audit: AuditLog = {
+      id: `LOG-${Date.now()}`,
+      action: 'UPDATE_SALE_DETAILS',
+      entity: 'sales',
+      entityId: saleId,
+      details: `Ubah info penjualan ${saleId}`,
+      createdAt: new Date().toISOString(),
+    };
+    await db.auditLogs.put(audit);
+  },
+
+  /**
+   * Hapus permanen transaksi yang sudah berstatus VOID
+   */
+  async deleteSalePermanently(saleId: string): Promise<void> {
+    const sale = await db.sales.get(saleId);
+    if (!sale) return;
+    if (sale.status !== 'VOID') {
+      throw new Error('Hanya transaksi berstatus BATAL (VOID) yang dapat dihapus permanen.');
+    }
+
+    await db.transaction('rw', [db.sales, db.auditLogs], async () => {
+      await db.sales.delete(saleId);
+      const audit: AuditLog = {
+        id: `LOG-${Date.now()}`,
+        action: 'DELETE_SALE_PERMANENT',
+        entity: 'sales',
+        entityId: saleId,
+        details: `Hapus permanen invoice VOID ${saleId}`,
+        createdAt: new Date().toISOString(),
+      };
+      await db.auditLogs.put(audit);
+    });
+  },
+
   async getSales(status?: 'ACTIVE' | 'VOID'): Promise<Sale[]> {
     if (status) {
       return db.sales.where('status').equals(status).reverse().sortBy('createdAt');
@@ -524,6 +651,86 @@ export const repository = {
     return db.personalUsages.orderBy('createdAt').reverse().toArray();
   },
 
+  /**
+   * Batalkan pencatatan pemakaian pribadi (Prive)
+   * Mengembalikan stok Robux dan modal HPP secara presisi ke batch FIFO asalnya.
+   */
+  async cancelPersonalUsage(usageId: string, reason = 'Pembatalan prive'): Promise<void> {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.personalUsages, db.auditLogs], async () => {
+      const usage = await db.personalUsages.get(usageId);
+      if (!usage) throw new Error('Data pemakaian pribadi tidak ditemukan');
+
+      const now = new Date().toISOString();
+
+      if (usage.allocations && usage.allocations.length > 0) {
+        for (const alloc of usage.allocations) {
+          const batch = await db.stockBatches.get(alloc.batchId);
+          if (batch) {
+            const restored = rollbackFifoBatch(
+              {
+                id: batch.id,
+                remainingRobux: batch.remainingRobux,
+                remainingCostRupiah: batch.remainingCostRupiah,
+              },
+              alloc.robuxTaken,
+              alloc.costAllocatedRupiah,
+              batch.initialRobux,
+              batch.totalCostRupiah
+            );
+
+            batch.remainingRobux = restored.remainingRobux;
+            batch.remainingCostRupiah = restored.remainingCostRupiah;
+            await db.stockBatches.put(batch);
+
+            const movement: StockMovement = {
+              id: `MOV-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+              batchId: alloc.batchId,
+              type: 'VOID_RESTORE',
+              robuxAmount: alloc.robuxTaken,
+              costAllocatedRupiah: alloc.costAllocatedRupiah,
+              referenceId: usageId,
+              createdAt: now,
+            };
+            await db.stockMovements.put(movement);
+          }
+        }
+      }
+
+      await db.personalUsages.delete(usageId);
+
+      const audit: AuditLog = {
+        id: `LOG-${Date.now()}`,
+        action: 'CANCEL_PERSONAL_USAGE',
+        entity: 'personalUsages',
+        entityId: usageId,
+        details: `Batalkan & kembalikan prive ${usage.robuxUsed} R$ ke FIFO (${reason})`,
+        createdAt: now,
+      };
+      await db.auditLogs.put(audit);
+    });
+  },
+
+  /**
+   * Edit catatan / keperluan pada riwayat prive
+   */
+  async updatePersonalUsageNotes(usageId: string, notes: string): Promise<void> {
+    const usage = await db.personalUsages.get(usageId);
+    if (!usage) throw new Error('Data pemakaian pribadi tidak ditemukan');
+
+    usage.notes = notes.trim() || undefined;
+    await db.personalUsages.put(usage);
+
+    const audit: AuditLog = {
+      id: `LOG-${Date.now()}`,
+      action: 'UPDATE_PERSONAL_USAGE_NOTES',
+      entity: 'personalUsages',
+      entityId: usageId,
+      details: `Ubah catatan prive ${usageId}`,
+      createdAt: new Date().toISOString(),
+    };
+    await db.auditLogs.put(audit);
+  },
+
   // ===================== BUKU KAS HARIAN (CASH LEDGER) =====================
   async getCashLedger(): Promise<CashLedgerEntry[]> {
     return db.cashLedger.orderBy('createdAt').reverse().toArray();
@@ -566,6 +773,42 @@ export const repository = {
     await db.cashLedger.delete(id);
   },
 
+  async updateManualCashEntry(id: string, updates: {
+    amountRupiah?: number;
+    notes?: string;
+    categoryId?: string;
+    dateKey?: string;
+    type?: 'IN' | 'OUT';
+  }): Promise<void> {
+    const entry = await db.cashLedger.get(id);
+    if (!entry) throw new Error('Data kas tidak ditemukan');
+    if (entry.sourceType !== 'MANUAL') {
+      throw new Error('Hanya transaksi kas manual yang dapat diedit di sini.');
+    }
+
+    if (updates.amountRupiah !== undefined) {
+      const amt = Math.max(0, Math.floor(updates.amountRupiah));
+      if (amt <= 0) throw new Error('Nominal kas harus lebih besar dari 0');
+      entry.amountRupiah = amt;
+    }
+    if (updates.type) entry.type = updates.type;
+    if (updates.notes !== undefined) entry.notes = updates.notes.trim() || undefined;
+    if (updates.categoryId !== undefined) entry.categoryId = updates.categoryId || undefined;
+    if (updates.dateKey) entry.dateKey = updates.dateKey;
+
+    await db.cashLedger.put(entry);
+
+    const audit: AuditLog = {
+      id: `LOG-${Date.now()}`,
+      action: 'UPDATE_MANUAL_CASH',
+      entity: 'cashLedger',
+      entityId: id,
+      details: `Ubah entri kas manual ${id}`,
+      createdAt: new Date().toISOString(),
+    };
+    await db.auditLogs.put(audit);
+  },
+
   // ===================== KATEGORI =====================
   async getCategories(): Promise<Category[]> {
     return db.categories.orderBy('name').toArray();
@@ -581,6 +824,14 @@ export const repository = {
     };
     await db.categories.put(item);
     return item;
+  },
+
+  async updateCategory(id: string, updates: { name?: string; color?: string }): Promise<void> {
+    const cat = await db.categories.get(id);
+    if (!cat) throw new Error('Kategori tidak ditemukan');
+    if (updates.name) cat.name = updates.name.trim();
+    if (updates.color) cat.color = updates.color;
+    await db.categories.put(cat);
   },
 
   async deleteCategory(id: string): Promise<void> {
@@ -671,5 +922,56 @@ export const repository = {
       monthOmzet,
       monthProfit,
     };
+  },
+
+  // ===================== INVESTOR & BAGI HASIL =====================
+  async getInvestors(): Promise<Investor[]> {
+    return db.investors.orderBy('createdAt').reverse().toArray();
+  },
+
+  async addInvestor(data: Omit<Investor, 'id' | 'createdAt'>): Promise<string> {
+    const id = `INV-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const now = new Date().toISOString();
+    const investor: Investor = {
+      ...data,
+      id,
+      createdAt: now,
+    };
+    await db.investors.put(investor);
+    return id;
+  },
+
+  async updateInvestor(id: string, updates: Partial<Investor>): Promise<void> {
+    await db.investors.update(id, updates);
+  },
+
+  async deleteInvestor(id: string): Promise<void> {
+    await db.transaction('rw', [db.investors, db.investorPayouts], async () => {
+      await db.investors.delete(id);
+      await db.investorPayouts.where('investorId').equals(id).delete();
+    });
+  },
+
+  async getInvestorPayouts(investorId?: string): Promise<InvestorPayout[]> {
+    if (investorId) {
+      return db.investorPayouts.where('investorId').equals(investorId).reverse().sortBy('createdAt');
+    }
+    return db.investorPayouts.orderBy('createdAt').reverse().toArray();
+  },
+
+  async recordInvestorPayout(data: Omit<InvestorPayout, 'id' | 'createdAt'>): Promise<string> {
+    const id = `PAY-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const now = new Date().toISOString();
+    const payout: InvestorPayout = {
+      ...data,
+      id,
+      createdAt: now,
+    };
+    await db.investorPayouts.put(payout);
+    return id;
+  },
+
+  async deleteInvestorPayout(id: string): Promise<void> {
+    await db.investorPayouts.delete(id);
   },
 };

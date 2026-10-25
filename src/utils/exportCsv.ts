@@ -1,4 +1,4 @@
-import { Sale, CashLedgerEntry, Category } from '../db/schema';
+import { Sale, CashLedgerEntry, Category, PersonalUsage } from '../db/schema';
 import { formatDateJakarta } from './formatters';
 
 function escapeCsvField(value: any): string {
@@ -109,4 +109,37 @@ export function exportCashLedgerToCsv(
 
   const dateStr = new Date().toISOString().substring(0, 10);
   downloadCsvFile(`JufaStore_BukuKas_${dateStr}.csv`, csvContent);
+}
+
+export function exportPersonalUsagesToCsv(usages: PersonalUsage[]): void {
+  const headers = [
+    'ID Transaksi',
+    'Waktu Catat (WIB)',
+    'Robux Diambil (R$)',
+    'Total Modal FIFO (Rp)',
+    'Modal per Robux (Rp)',
+    'Jumlah Batch Terpangkas',
+    'Catatan / Keperluan',
+  ];
+
+  const rows = usages.map((u) => {
+    const modalPerRobux = u.robuxUsed > 0 ? (u.totalCostRupiah / u.robuxUsed).toFixed(2) : '0';
+    return [
+      u.id,
+      formatDateJakarta(u.createdAt),
+      u.robuxUsed,
+      u.totalCostRupiah,
+      modalPerRobux,
+      u.allocations ? u.allocations.length : 0,
+      u.notes || '-',
+    ];
+  });
+
+  const csvContent = [
+    headers.map(escapeCsvField).join(','),
+    ...rows.map((row) => row.map(escapeCsvField).join(',')),
+  ].join('\r\n');
+
+  const dateStr = new Date().toISOString().substring(0, 10);
+  downloadCsvFile(`JufaStore_PemakaianPribadi_${dateStr}.csv`, csvContent);
 }

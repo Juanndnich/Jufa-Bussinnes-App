@@ -14,6 +14,8 @@ import {
   FileText,
   FileSpreadsheet,
   X,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { Sale } from '../../db/schema';
@@ -34,6 +36,12 @@ export const SalesView: React.FC = () => {
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedSaleDetail, setSelectedSaleDetail] = useState<Sale | null>(null);
+
+  // Edit Sale State
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [editCustomerName, setEditCustomerName] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const loadSales = async () => {
     try {
@@ -84,6 +92,59 @@ export const SalesView: React.FC = () => {
         );
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Gagal membatalkan transaksi';
+        await showErrorAlert('Gagal', msg);
+      }
+    }
+  };
+
+  // Handler: Buka Modal Edit Info Penjualan
+  const handleOpenEditModal = (sale: Sale) => {
+    playTapSound();
+    setEditingSale(sale);
+    setEditCustomerName(sale.customerName || '');
+    setEditNotes(sale.notes || '');
+  };
+
+  // Handler: Simpan Perubahan Info Penjualan
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSale) return;
+
+    setIsSavingEdit(true);
+    try {
+      await repository.updateSaleDetails(editingSale.id, {
+        customerName: editCustomerName,
+        notes: editNotes,
+      });
+      playTapSound();
+      await loadSales();
+      setEditingSale(null);
+      await showSuccessAlert('Berhasil Diperbarui', 'Data pembeli & catatan penjualan berhasil disimpan.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal memperbarui penjualan';
+      await showErrorAlert('Gagal', msg);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Handler: Hapus Permanen Transaksi VOID
+  const handleDeletePermanent = async (sale: Sale) => {
+    const ok = await showConfirmDialog({
+      title: 'Hapus Permanen Transaksi VOID?',
+      text: `Transaksi ${sale.invoiceNumber} yang sudah berstatus batal akan DIHAPUS PERMANEN dari database. Tindakan ini tidak dapat dibatalkan.`,
+      confirmButtonText: 'Ya, Hapus Permanen',
+      isDanger: true,
+    });
+
+    if (ok) {
+      try {
+        playDeleteSound();
+        await repository.deleteSalePermanently(sale.id);
+        await loadSales();
+        await showSuccessAlert('Berhasil Dihapus', `Invoice ${sale.invoiceNumber} berhasil dihapus permanen.`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Gagal menghapus transaksi';
         await showErrorAlert('Gagal', msg);
       }
     }
@@ -322,14 +383,33 @@ export const SalesView: React.FC = () => {
                         <Layers size={14} />
                       </button>
 
-                      {!isVoid && (
+                      {/* Tombol Edit Info Pembeli & Catatan */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditModal(sale)}
+                        className="p-1.5 rounded-lg theme-bg-surface border theme-border hover:border-emerald-500/40 text-zinc-400 hover:text-emerald-400 transition"
+                        title="Edit Info Pembeli & Catatan"
+                      >
+                        <Pencil size={14} />
+                      </button>
+
+                      {!isVoid ? (
                         <button
                           type="button"
                           onClick={() => handleVoidSale(sale)}
                           className="p-1.5 rounded-lg theme-bg-surface border border-red-500/20 text-red-400 hover:bg-red-500/10 transition"
-                          title="Batalkan Transaksi (Kembalikan Stok)"
+                          title="Batalkan Transaksi (Kembalikan Stok ke FIFO)"
                         >
                           <RotateCcw size={14} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePermanent(sale)}
+                          className="p-1.5 rounded-lg theme-bg-surface border border-red-500/20 text-red-400 hover:bg-red-500/10 transition"
+                          title="Hapus Permanen Transaksi VOID"
+                        >
+                          <Trash2 size={14} />
                         </button>
                       )}
                     </div>
@@ -420,6 +500,75 @@ export const SalesView: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal Edit Detail Penjualan (Nama Pembeli & Catatan) */}
+      {editingSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <form
+            onSubmit={handleSaveEdit}
+            className="w-full max-w-md rounded-2xl theme-bg-card border theme-border p-5 space-y-4 shadow-2xl"
+          >
+            <div className="flex items-center justify-between pb-3 border-b theme-border">
+              <div className="flex items-center gap-2">
+                <Pencil size={16} className="text-emerald-500" />
+                <h3 className="font-bold theme-text-primary text-sm">
+                  Edit Info Penjualan ({editingSale.invoiceNumber})
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSale(null)}
+                className="text-xs theme-text-muted hover:theme-text-primary"
+              >
+                Batal
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium theme-text-secondary">
+                Nama Pembeli / Akun
+              </label>
+              <input
+                type="text"
+                placeholder="Contoh: Budi, @robloxuser..."
+                value={editCustomerName}
+                onChange={(e) => setEditCustomerName(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium theme-text-secondary">
+                Catatan Penjualan
+              </label>
+              <textarea
+                rows={3}
+                placeholder="Catatan transaksi..."
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t theme-border">
+              <button
+                type="button"
+                onClick={() => setEditingSale(null)}
+                className="px-4 py-2 rounded-xl text-xs theme-text-muted hover:theme-text-primary"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingEdit}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition shadow-sm"
+              >
+                {isSavingEdit ? 'Menyimpan...' : 'Simpan Perubahan'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

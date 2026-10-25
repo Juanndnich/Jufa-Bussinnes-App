@@ -19,7 +19,7 @@ Agar aplikasi fokus, cepat, dan tidak membebani pengguna:
 - **TANPA Diskon / Promo:** Tidak ada kolom diskon, voucher, atau potongan harga di penjualan maupun restock.
 - **TANPA Biaya Admin / Layanan:** Harga yang diketik pengguna adalah harga ril bersih yang diterima atau dikeluarkan.
 - **TANPA Sumber Stok / Supplier:** Saat restock, pengguna hanya memasukkan jumlah Robux dan total uang ril yang dikeluarkan.
-- **TANPA Sistem Kasbon / Pelanggan / Investor:** Semua transaksi dicatat berdasarkan uang ril yang masuk dan keluar.
+- **TANPA Sistem Kasbon / Pelanggan:** Semua transaksi penjualan dicatat berdasarkan uang ril yang masuk dan keluar. Fitur Investor & Pembagian Hasil didukung sebagai modul internal bagi pemilik bisnis untuk memantau setoran modal dan dividen pemodal.
 
 ## 4. Tech Stack & Keamanan Supply-Chain (Minimal & Terkunci)
 Sebelum menginstal paket, cek versi stabil terbaru (`npm view <paket> version`), hindari versi beta/rc, pin versi eksak di `package.json`, dan pastikan `npm audit` bersih dari celah High/Critical:

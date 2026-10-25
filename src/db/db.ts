@@ -9,6 +9,8 @@ import {
   CashLedgerEntry,
   Category,
   AuditLog,
+  Investor,
+  InvestorPayout,
 } from './schema';
 
 export class JufaStoreDatabase extends Dexie {
@@ -21,6 +23,8 @@ export class JufaStoreDatabase extends Dexie {
   cashLedger!: Table<CashLedgerEntry, string>;
   categories!: Table<Category, string>;
   auditLogs!: Table<AuditLog, string>;
+  investors!: Table<Investor, string>;
+  investorPayouts!: Table<InvestorPayout, string>;
 
   constructor() {
     super('JufaStoreDB');
@@ -36,6 +40,21 @@ export class JufaStoreDatabase extends Dexie {
       cashLedger: 'id, dateKey, createdAt, type, sourceType, categoryId',
       categories: 'id, name, type, createdAt',
       auditLogs: 'id, entity, entityId, createdAt',
+    });
+
+    // Versi 2: Penambahan Tabel Investor & Riwayat Bagi Hasil
+    this.version(2).stores({
+      settings: 'id',
+      ratePresets: 'id, rate, createdAt',
+      stockBatches: 'id, sourceType, createdAt, remainingRobux',
+      stockMovements: 'id, batchId, type, referenceId, createdAt',
+      sales: 'id, invoiceNumber, createdAt, status',
+      personalUsages: 'id, categoryId, createdAt',
+      cashLedger: 'id, dateKey, createdAt, type, sourceType, categoryId',
+      categories: 'id, name, type, createdAt',
+      auditLogs: 'id, entity, entityId, createdAt',
+      investors: 'id, name, status, createdAt',
+      investorPayouts: 'id, investorId, createdAt',
     });
   }
 }

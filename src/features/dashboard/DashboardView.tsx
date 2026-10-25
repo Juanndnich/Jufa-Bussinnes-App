@@ -10,6 +10,7 @@ import {
   Calculator,
   Plus,
   Layers,
+  Database,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -332,6 +333,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* Kartu Pintasan Pengaturan & Cadangan Database */}
+      <div className="p-4 rounded-2xl theme-bg-card border theme-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+            <Database size={18} />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold theme-text-primary">
+              Pengaturan & Cadangan Database
+            </h3>
+            <p className="text-[11px] theme-text-muted">
+              Pencadangan JSON, pulihkan data, ekspor laporan ke Excel (CSV), & preferensi sistem
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            playTapSound();
+            onNavigateTab('settings');
+          }}
+          className="px-3.5 py-2 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card-hover theme-text-primary text-xs font-semibold flex items-center gap-1.5 transition active:scale-98 self-start sm:self-auto shrink-0"
+        >
+          <span>Buka Pengaturan</span>
+          <ArrowRight size={13} />
+        </button>
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ import {
   Search,
   FileSpreadsheet,
   X,
+  Pencil,
 } from 'lucide-react';
 import { repository, getTodayKey } from '../../db/repository';
 import { CashLedgerEntry, Category } from '../../db/schema';
@@ -42,6 +43,20 @@ export const FinanceView: React.FC = () => {
   // Form input kategori baru
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#10b981');
+
+  // Edit Kas Manual State
+  const [editingCashEntry, setEditingCashEntry] = useState<CashLedgerEntry | null>(null);
+  const [editCashType, setEditCashType] = useState<'IN' | 'OUT'>('OUT');
+  const [editCashAmount, setEditCashAmount] = useState('');
+  const [editCashCategoryId, setEditCashCategoryId] = useState('');
+  const [editCashNotes, setEditCashNotes] = useState('');
+  const [editCashDate, setEditCashDate] = useState('');
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
+  // Edit Kategori State
+  const [editingCat, setEditingCat] = useState<Category | null>(null);
+  const [editCatName, setEditCatName] = useState('');
+  const [editCatColor, setEditCatColor] = useState('#10b981');
 
   // State accordion tanggal terbuka/tertutup
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
@@ -231,6 +246,91 @@ export const FinanceView: React.FC = () => {
         const msg = err instanceof Error ? err.message : 'Gagal menghapus entri kas';
         await showErrorAlert('Gagal', msg);
       }
+    }
+  };
+
+  // Handler: Buka Modal Edit Kas Manual
+  const handleOpenEditCash = (item: CashLedgerEntry) => {
+    playTapSound();
+    setEditingCashEntry(item);
+    setEditCashType(item.type);
+    setEditCashAmount(String(item.amountRupiah));
+    setEditCashCategoryId(item.categoryId || '');
+    setEditCashNotes(item.notes || '');
+    setEditCashDate(item.dateKey);
+  };
+
+  // Handler: Simpan Perubahan Kas Manual
+  const handleSaveEditCash = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCashEntry) return;
+
+    const amt = Math.floor(parseFloat(editCashAmount) || 0);
+    if (amt <= 0) {
+      await showWarningAlert('Nominal Kosong', 'Masukkan nominal uang kas lebih dari 0.');
+      return;
+    }
+
+    setIsSubmittingEdit(true);
+    try {
+      await repository.updateManualCashEntry(editingCashEntry.id, {
+        type: editCashType,
+        amountRupiah: amt,
+        categoryId: editCashCategoryId || undefined,
+        notes: editCashNotes,
+        dateKey: editCashDate,
+      });
+
+      playSuccessSound();
+      await loadData();
+      setEditingCashEntry(null);
+      await showSuccessAlert('Berhasil Diperbarui', 'Pencatatan kas manual berhasil disimpan.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal memperbarui kas';
+      await showErrorAlert('Gagal', msg);
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
+
+  // Handler: Hapus Kategori
+  const handleDeleteCategory = async (cat: Category) => {
+    const ok = await showConfirmDialog({
+      title: 'Hapus Kategori?',
+      text: `Kategori "${cat.name}" akan dihapus.`,
+      confirmButtonText: 'Ya, Hapus Kategori',
+      isDanger: true,
+    });
+    if (ok) {
+      try {
+        playDeleteSound();
+        await repository.deleteCategory(cat.id);
+        await loadData();
+        await showSuccessAlert('Kategori Dihapus', `Kategori "${cat.name}" berhasil dihapus.`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Gagal menghapus kategori';
+        await showErrorAlert('Gagal', msg);
+      }
+    }
+  };
+
+  // Handler: Simpan Edit Kategori
+  const handleSaveEditCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCat || !editCatName.trim()) return;
+
+    try {
+      await repository.updateCategory(editingCat.id, {
+        name: editCatName.trim(),
+        color: editCatColor,
+      });
+      playTapSound();
+      await loadData();
+      setEditingCat(null);
+      await showSuccessAlert('Kategori Diperbarui', 'Kategori berhasil diperbarui.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal mengubah kategori';
+      await showErrorAlert('Gagal', msg);
     }
   };
 
@@ -504,14 +604,24 @@ export const FinanceView: React.FC = () => {
                             </span>
 
                             {!isSystem && (
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteManual(item)}
-                                className="p-1 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition"
-                                title="Hapus Catatan Manual"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditCash(item)}
+                                  className="p-1 rounded-lg text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 transition"
+                                  title="Edit Catatan Manual"
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteManual(item)}
+                                  className="p-1 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition"
+                                  title="Hapus Catatan Manual"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -671,55 +781,274 @@ export const FinanceView: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Tambah Kategori */}
+      {/* Modal Kelola Kategori (Tambah, Edit, Hapus) */}
       {showAddCatModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-          <form
-            onSubmit={handleAddCategory}
-            className="w-full max-w-sm rounded-2xl theme-bg-card border theme-border p-5 space-y-4 shadow-2xl"
-          >
+          <div className="w-full max-w-sm rounded-2xl theme-bg-card border theme-border p-5 space-y-4 shadow-2xl max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b theme-border">
-              <h4 className="font-bold theme-text-primary text-xs">Tambah Kategori Buku Kas</h4>
+              <h4 className="font-bold theme-text-primary text-xs">
+                {editingCat ? 'Edit Kategori Buku Kas' : 'Kelola Kategori Buku Kas'}
+              </h4>
               <button
                 type="button"
-                onClick={() => setShowAddCatModal(false)}
+                onClick={() => {
+                  setShowAddCatModal(false);
+                  setEditingCat(null);
+                  setNewCatName('');
+                }}
+                className="text-xs theme-text-muted hover:theme-text-primary"
+              >
+                Tutup
+              </button>
+            </div>
+
+            {/* Form Input Kategori Baru / Edit */}
+            <form onSubmit={editingCat ? handleSaveEditCategory : handleAddCategory} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium theme-text-secondary">
+                  {editingCat ? 'Nama Kategori (Ubah)' : 'Tambah Kategori Baru'}
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Operasional, Kuota, Listrik"
+                  value={editingCat ? editCatName : newCatName}
+                  onChange={(e) => editingCat ? setEditCatName(e.target.value) : setNewCatName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium theme-text-secondary">Warna Tag</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={editingCat ? editCatColor : newCatColor}
+                    onChange={(e) => editingCat ? setEditCatColor(e.target.value) : setNewCatColor(e.target.value)}
+                    className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                  />
+                  <span className="font-mono text-xs theme-text-muted">
+                    {editingCat ? editCatColor : newCatColor}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {editingCat && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingCat(null);
+                      setNewCatName('');
+                    }}
+                    className="px-3 py-2 rounded-xl text-xs theme-text-muted hover:theme-text-primary border theme-border"
+                  >
+                    Batal Edit
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition"
+                >
+                  {editingCat ? 'Simpan Perubahan' : 'Tambah Kategori'}
+                </button>
+              </div>
+            </form>
+
+            {/* Daftar Kategori Tersimpan */}
+            {categories.length > 0 && (
+              <div className="pt-3 border-t theme-border space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider theme-text-muted block">
+                  Daftar Kategori ({categories.length})
+                </span>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {categories.map((cat) => (
+                    <div
+                      key={cat.id}
+                      className="p-2 rounded-xl theme-bg-surface border theme-border flex items-center justify-between text-xs"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: cat.color }}
+                        />
+                        <span className="font-medium theme-text-primary">{cat.name}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCat(cat);
+                            setEditCatName(cat.name);
+                            setEditCatColor(cat.color);
+                          }}
+                          className="p-1 rounded-lg text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10 transition"
+                          title="Edit Kategori"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategory(cat)}
+                          className="p-1 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition"
+                          title="Hapus Kategori"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Edit Kas Manual */}
+      {editingCashEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <form
+            onSubmit={handleSaveEditCash}
+            className="w-full max-w-md rounded-2xl theme-bg-card border theme-border p-5 space-y-4 shadow-2xl"
+          >
+            <div className="flex items-center justify-between pb-3 border-b theme-border">
+              <div className="flex items-center gap-2">
+                <Pencil size={16} className="text-blue-400" />
+                <h3 className="font-bold theme-text-primary text-sm">
+                  Edit Entri Kas Manual
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingCashEntry(null)}
                 className="text-xs theme-text-muted hover:theme-text-primary"
               >
                 Batal
               </button>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-medium theme-text-secondary">Nama Kategori</label>
+            {/* Jenis Mutasi */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setEditCashType('OUT');
+                }}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                  editCashType === 'OUT'
+                    ? 'bg-red-500/15 border-red-500 text-red-400 shadow-sm'
+                    : 'theme-bg-surface border-theme theme-text-muted'
+                }`}
+              >
+                <ArrowDownLeft size={14} />
+                <span>Kas Keluar (Biaya)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setEditCashType('IN');
+                }}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                  editCashType === 'IN'
+                    ? 'bg-emerald-500/15 border-emerald-500 text-emerald-400 shadow-sm'
+                    : 'theme-bg-surface border-theme theme-text-muted'
+                }`}
+              >
+                <ArrowUpRight size={14} />
+                <span>Kas Masuk</span>
+              </button>
+            </div>
+
+            {/* Nominal */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium theme-text-secondary">
+                Nominal Uang (Rp)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
+                  Rp
+                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={editCashAmount}
+                  onChange={(e) => setEditCashAmount(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Tanggal */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium theme-text-secondary">
+                Tanggal Mutasi
+              </label>
               <input
-                type="text"
-                placeholder="Contoh: Operasional, Kuota, Listrik"
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+                type="date"
+                value={editCashDate}
+                onChange={(e) => setEditCashDate(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono"
                 required
               />
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-medium theme-text-secondary">Warna Tag</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={newCatColor}
-                  onChange={(e) => setNewCatColor(e.target.value)}
-                  className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
-                />
-                <span className="font-mono text-xs theme-text-muted">{newCatColor}</span>
-              </div>
+            {/* Kategori */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium theme-text-secondary">
+                Kategori
+              </label>
+              <select
+                value={editCashCategoryId}
+                onChange={(e) => setEditCashCategoryId(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+              >
+                <option value="">-- Tanpa Kategori --</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <button
-              type="submit"
-              className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition"
-            >
-              Simpan Kategori
-            </button>
+            {/* Catatan */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium theme-text-secondary">
+                Keterangan / Keperluan
+              </label>
+              <input
+                type="text"
+                placeholder="Catatan..."
+                value={editCashNotes}
+                onChange={(e) => setEditCashNotes(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t theme-border">
+              <button
+                type="button"
+                onClick={() => setEditingCashEntry(null)}
+                className="px-4 py-2 rounded-xl text-xs theme-text-muted hover:theme-text-primary"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmittingEdit}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5"
+              >
+                <CheckCircle2 size={15} />
+                <span>Simpan Perubahan</span>
+              </button>
+            </div>
           </form>
         </div>
       )}

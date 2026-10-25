@@ -17,6 +17,9 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  Database,
+  Copy,
+  FileCode,
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { z } from 'zod';
@@ -24,7 +27,7 @@ import { db } from '../../db/db';
 import { repository } from '../../db/repository';
 import { AppSettings } from '../../db/schema';
 import { applyTheme } from '../../utils/theme';
-import { isSoundEnabled, setSoundEnabled, playTapSound } from '../../utils/sound';
+import { isSoundEnabled, setSoundEnabled, playTapSound, playSuccessSound } from '../../utils/sound';
 import { exportSalesToCsv, exportCashLedgerToCsv } from '../../utils/exportCsv';
 import { formatDateJakarta } from '../../utils/formatters';
 import {
@@ -34,7 +37,7 @@ import {
   showConfirmDialog,
 } from '../../utils/alert';
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 
 // Zod Schema untuk validasi file backup
 const BackupSchema = z.object({
@@ -49,6 +52,8 @@ const BackupSchema = z.object({
   cashLedger: z.array(z.any()).optional(),
   categories: z.array(z.any()).optional(),
   auditLogs: z.array(z.any()).optional(),
+  investors: z.array(z.any()).optional(),
+  investorPayouts: z.array(z.any()).optional(),
 });
 
 interface SettingsViewProps {
@@ -70,6 +75,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
+
+  // State Modal Tempel Teks Database JSON
+  const [showPasteModal, setShowPasteModal] = useState(false);
+  const [pasteJsonText, setPasteJsonText] = useState('');
+  const [isRestoringText, setIsRestoringText] = useState(false);
 
   const loadSettings = async () => {
     try {
@@ -210,6 +220,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         ledger,
         cats,
         logs,
+        invs,
+        pays,
       ] = await Promise.all([
         db.settings.toArray(),
         db.ratePresets.toArray(),
@@ -220,6 +232,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         db.cashLedger.toArray(),
         db.categories.toArray(),
         db.auditLogs.toArray(),
+        db.investors.toArray(),
+        db.investorPayouts.toArray(),
       ]);
 
       const backupData = {
@@ -234,6 +248,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         cashLedger: ledger,
         categories: cats,
         auditLogs: logs,
+        investors: invs,
+        investorPayouts: pays,
       };
 
       const jsonStr = JSON.stringify(backupData, null, 2);
@@ -251,10 +267,221 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
       setSettings((prev) => (prev ? { ...prev, lastBackupAt: nowIso } : null));
       if (onSettingsChanged) onSettingsChanged();
 
-      await showSuccessAlert('Cadangan Berhasil', 'File cadangan JSON berhasil diunduh ke perangkat Anda.');
+      playSuccessSound();
+      await showSuccessAlert('Ekspor Database Berhasil', 'File cadangan JSON berhasil diunduh ke perangkat Anda.');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal membuat file cadangan';
-      await showErrorAlert('Gagal Cadangan', msg);
+      await showErrorAlert('Gagal Ekspor', msg);
+    }
+  };
+
+  // Salin Teks Database JSON ke Clipboard
+  const handleCopyBackupJson = async () => {
+    try {
+      playTapSound();
+      const [
+        s,
+        presets,
+        batches,
+        movements,
+        sales,
+        usages,
+        ledger,
+        cats,
+        logs,
+        invs,
+        pays,
+      ] = await Promise.all([
+        db.settings.toArray(),
+        db.ratePresets.toArray(),
+        db.stockBatches.toArray(),
+        db.stockMovements.toArray(),
+        db.sales.toArray(),
+        db.personalUsages.toArray(),
+        db.cashLedger.toArray(),
+        db.categories.toArray(),
+        db.auditLogs.toArray(),
+        db.investors.toArray(),
+        db.investorPayouts.toArray(),
+      ]);
+
+      const backupData = {
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        settings: s,
+        ratePresets: presets,
+        stockBatches: batches,
+        stockMovements: movements,
+        sales,
+        personalUsages: usages,
+        cashLedger: ledger,
+        categories: cats,
+        auditLogs: logs,
+        investors: invs,
+        investorPayouts: pays,
+      };
+
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      await navigator.clipboard.writeText(jsonStr);
+
+      const nowIso = new Date().toISOString();
+      await repository.updateSettings({ lastBackupAt: nowIso });
+      setSettings((prev) => (prev ? { ...prev, lastBackupAt: nowIso } : null));
+      if (onSettingsChanged) onSettingsChanged();
+
+      playSuccessSound();
+      await showSuccessAlert(
+        'Teks Database Tersalin!',
+        'Seluruh data JSON berhasil disalin ke clipboard. Anda bisa menyimpannya di catatan (Notes) atau mengirim ke perangkat lain.'
+      );
+    } catch (err: unknown) {
+      console.error('Failed to copy backup json:', err);
+      await showErrorAlert('Gagal Menyalin', 'Tidak dapat mengakses clipboard perangkat.');
+    }
+  };
+
+  // Helper Pemulihan Data Bersama
+  const executeRestore = async (data: z.infer<typeof BackupSchema>) => {
+    await db.transaction(
+      'rw',
+      [
+        db.settings,
+        db.ratePresets,
+        db.stockBatches,
+        db.stockMovements,
+        db.sales,
+        db.personalUsages,
+        db.cashLedger,
+        db.categories,
+        db.auditLogs,
+        db.investors,
+        db.investorPayouts,
+      ],
+      async () => {
+        if (data.settings) {
+          await db.settings.clear();
+          await db.settings.bulkPut(data.settings);
+        }
+        if (data.ratePresets) {
+          await db.ratePresets.clear();
+          await db.ratePresets.bulkPut(data.ratePresets);
+        }
+        if (data.stockBatches) {
+          await db.stockBatches.clear();
+          await db.stockBatches.bulkPut(data.stockBatches);
+        }
+        if (data.stockMovements) {
+          await db.stockMovements.clear();
+          await db.stockMovements.bulkPut(data.stockMovements);
+        }
+        if (data.sales) {
+          await db.sales.clear();
+          await db.sales.bulkPut(data.sales);
+        }
+        if (data.personalUsages) {
+          await db.personalUsages.clear();
+          await db.personalUsages.bulkPut(data.personalUsages);
+        }
+        if (data.cashLedger) {
+          await db.cashLedger.clear();
+          await db.cashLedger.bulkPut(data.cashLedger);
+        }
+        if (data.categories) {
+          await db.categories.clear();
+          await db.categories.bulkPut(data.categories);
+        }
+        if (data.auditLogs) {
+          await db.auditLogs.clear();
+          await db.auditLogs.bulkPut(data.auditLogs);
+        }
+        if (data.investors) {
+          await db.investors.clear();
+          await db.investors.bulkPut(data.investors);
+        }
+        if (data.investorPayouts) {
+          await db.investorPayouts.clear();
+          await db.investorPayouts.bulkPut(data.investorPayouts);
+        }
+      }
+    );
+
+    const nowIso = new Date().toISOString();
+    await repository.updateSettings({ lastBackupAt: nowIso });
+    await loadSettings();
+    if (onSettingsChanged) onSettingsChanged();
+
+    playSuccessSound();
+    await showSuccessAlert('Impor Berhasil', 'Seluruh data transaksi dan stok berhasil dipulihkan.');
+  };
+
+  // Impor / Pulihkan Database dari File JSON
+  const handleRestoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const rawJson = JSON.parse(event.target?.result as string);
+        const parsed = BackupSchema.safeParse(rawJson);
+
+        if (!parsed.success) {
+          throw new Error('Format file JSON tidak valid atau rusak!');
+        }
+
+        const ok = await showConfirmDialog({
+          title: 'Impor & Pulihkan Database?',
+          text: 'Data saat ini di aplikasi akan ditimpa dengan data dari file cadangan ini. Lanjutkan?',
+          confirmButtonText: 'Ya, Pulihkan Sekarang',
+          isDanger: true,
+        });
+
+        if (!ok) return;
+
+        await executeRestore(parsed.data);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'File tidak dapat diproses';
+        await showErrorAlert('Gagal Impor Data', msg);
+      } finally {
+        if (restoreInputRef.current) restoreInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Impor / Pulihkan Database dari Tempelan Teks JSON
+  const handleRestoreFromText = async () => {
+    if (!pasteJsonText.trim()) return;
+
+    setIsRestoringText(true);
+    try {
+      const rawJson = JSON.parse(pasteJsonText.trim());
+      const parsed = BackupSchema.safeParse(rawJson);
+
+      if (!parsed.success) {
+        throw new Error('Teks JSON tidak sesuai dengan skema backup JufaStore!');
+      }
+
+      const ok = await showConfirmDialog({
+        title: 'Impor dari Teks JSON?',
+        text: 'Data saat ini di aplikasi akan ditimpa dengan data JSON yang ditempel. Lanjutkan?',
+        confirmButtonText: 'Ya, Pulihkan Data',
+        isDanger: true,
+      });
+
+      if (!ok) {
+        setIsRestoringText(false);
+        return;
+      }
+
+      await executeRestore(parsed.data);
+      setShowPasteModal(false);
+      setPasteJsonText('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Format JSON tidak valid';
+      await showErrorAlert('Gagal Memproses JSON', msg);
+    } finally {
+      setIsRestoringText(false);
     }
   };
 
@@ -291,98 +518,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
     }
   };
 
-  // Impor / Pulihkan Database JSON
-  const handleRestoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const rawJson = JSON.parse(event.target?.result as string);
-        const parsed = BackupSchema.safeParse(rawJson);
-
-        if (!parsed.success) {
-          throw new Error('Format file cadangan tidak valid atau rusak!');
-        }
-
-        const ok = await showConfirmDialog({
-          title: 'Pulihkan Data Cadangan?',
-          text: 'Data saat ini di aplikasi akan ditimpa dengan data dari file cadangan ini. Lanjutkan?',
-          confirmButtonText: 'Ya, Pulihkan Sekarang',
-          isDanger: true,
-        });
-
-        if (!ok) return;
-
-        const data = parsed.data;
-
-        await db.transaction(
-          'rw',
-          [
-            db.settings,
-            db.ratePresets,
-            db.stockBatches,
-            db.stockMovements,
-            db.sales,
-            db.personalUsages,
-            db.cashLedger,
-            db.categories,
-            db.auditLogs,
-          ],
-          async () => {
-            if (data.settings) {
-              await db.settings.clear();
-              await db.settings.bulkPut(data.settings);
-            }
-            if (data.ratePresets) {
-              await db.ratePresets.clear();
-              await db.ratePresets.bulkPut(data.ratePresets);
-            }
-            if (data.stockBatches) {
-              await db.stockBatches.clear();
-              await db.stockBatches.bulkPut(data.stockBatches);
-            }
-            if (data.stockMovements) {
-              await db.stockMovements.clear();
-              await db.stockMovements.bulkPut(data.stockMovements);
-            }
-            if (data.sales) {
-              await db.sales.clear();
-              await db.sales.bulkPut(data.sales);
-            }
-            if (data.personalUsages) {
-              await db.personalUsages.clear();
-              await db.personalUsages.bulkPut(data.personalUsages);
-            }
-            if (data.cashLedger) {
-              await db.cashLedger.clear();
-              await db.cashLedger.bulkPut(data.cashLedger);
-            }
-            if (data.categories) {
-              await db.categories.clear();
-              await db.categories.bulkPut(data.categories);
-            }
-            if (data.auditLogs) {
-              await db.auditLogs.clear();
-              await db.auditLogs.bulkPut(data.auditLogs);
-            }
-          }
-        );
-
-        await loadSettings();
-        if (onSettingsChanged) onSettingsChanged();
-        await showSuccessAlert('Pemulihan Sukses', 'Seluruh data berhasil dipulihkan dari cadangan.');
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'File tidak dapat diproses';
-        await showErrorAlert('Gagal Memulihkan Data', msg);
-      } finally {
-        if (restoreInputRef.current) restoreInputRef.current.value = '';
-      }
-    };
-    reader.readAsText(file);
-  };
-
   // Reset Database Total ke NOL
   const handleResetDatabase = async () => {
     const ok = await showConfirmDialog({
@@ -403,6 +538,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
           db.cashLedger,
           db.auditLogs,
           db.ratePresets,
+          db.investors,
+          db.investorPayouts,
         ],
         async () => {
           await db.stockBatches.clear();
@@ -412,6 +549,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
           await db.cashLedger.clear();
           await db.auditLogs.clear();
           await db.ratePresets.clear();
+          await db.investors.clear();
+          await db.investorPayouts.clear();
         }
       );
 
@@ -597,16 +736,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         </div>
       </div>
 
-      {/* Bagian 3: Cadangan & Pemulihan Data */}
+      {/* Bagian 3: Sistem Ekspor & Impor Database */}
       <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-4">
-        <h2 className="text-xs font-bold theme-text-secondary uppercase tracking-wider flex items-center gap-2">
-          <ShieldCheck size={14} className="theme-text-muted" />
-          <span>Cadangan Database Lokal</span>
-        </h2>
-
-        <p className="text-xs theme-text-secondary leading-relaxed">
-          Seluruh data bisnis Anda disimpan 100% lokal di perangkat ini (IndexedDB).
-        </p>
+        <div className="flex items-center gap-2.5 pb-2 border-b theme-border">
+          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+            <Database size={17} />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold theme-text-primary tracking-tight">
+              Sistem Ekspor & Impor Database
+            </h2>
+            <p className="text-[11px] theme-text-secondary">
+              Cadangkan dan pulihkan seluruh data bisnis (transaksi, stok, dan kas) secara aman
+            </p>
+          </div>
+        </div>
 
         {/* Pengingat Status Cadangan Terakhir */}
         <div
@@ -633,49 +777,96 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {/* Unduh Cadangan JSON */}
-          <button
-            type="button"
-            onClick={handleExportBackup}
-            className="p-3 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card flex items-center gap-3 transition text-left"
-          >
-            <div className="p-2 rounded-lg theme-bg-card theme-text-secondary border theme-border">
-              <Download size={15} />
-            </div>
-            <div>
-              <span className="text-xs font-semibold theme-text-primary block">
-                Unduh Cadangan JSON
-              </span>
-              <span className="text-[10px] theme-text-muted">
-                Backup full database sistem
-              </span>
-            </div>
-          </button>
-
-          {/* Pulihkan Cadangan JSON */}
-          <div>
-            <input
-              type="file"
-              ref={restoreInputRef}
-              onChange={handleRestoreBackup}
-              accept=".json"
-              className="hidden"
-            />
+        {/* Grid 4 Opsi Cadangan & Pemulihan Database JSON */}
+        <div className="space-y-2">
+          <span className="text-xs font-semibold theme-text-secondary block">
+            Cadangan & Pemulihan Sistem Penuh (JSON)
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* Opsi 1: Ekspor File JSON */}
             <button
               type="button"
-              onClick={() => restoreInputRef.current?.click()}
-              className="w-full p-3 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card flex items-center gap-3 transition text-left"
+              onClick={handleExportBackup}
+              className="p-3 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card flex items-center gap-3 transition text-left shadow-sm"
             >
-              <div className="p-2 rounded-lg theme-bg-card theme-text-secondary border theme-border">
-                <Upload size={15} />
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                <Download size={16} />
+              </div>
+              <div>
+                <span className="text-xs font-bold theme-text-primary block">
+                  Ekspor Database (Unduh JSON)
+                </span>
+                <span className="text-[10px] theme-text-muted">
+                  Simpan file backup database utuh
+                </span>
+              </div>
+            </button>
+
+            {/* Opsi 2: Impor File JSON */}
+            <div>
+              <input
+                type="file"
+                ref={restoreInputRef}
+                onChange={handleRestoreBackup}
+                accept="application/json,.json,text/plain,*/*"
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => restoreInputRef.current?.click()}
+                className="w-full p-3 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card flex items-center gap-3 transition text-left shadow-sm"
+              >
+                <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                  <Upload size={16} />
+                </div>
+                <div>
+                  <span className="text-xs font-bold theme-text-primary block">
+                    Impor Database (Pilih File JSON)
+                  </span>
+                  <span className="text-[10px] theme-text-muted">
+                    Pulihkan data dari file cadangan
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            {/* Opsi 3: Salin Teks JSON ke Clipboard */}
+            <button
+              type="button"
+              onClick={handleCopyBackupJson}
+              className="p-3 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card flex items-center gap-3 transition text-left"
+            >
+              <div className="p-2.5 rounded-xl theme-bg-card theme-text-secondary border theme-border">
+                <Copy size={16} />
               </div>
               <div>
                 <span className="text-xs font-semibold theme-text-primary block">
-                  Pulihkan dari JSON
+                  Salin Teks Database (Copy)
                 </span>
                 <span className="text-[10px] theme-text-muted">
-                  Validasi ketat skema Zod
+                  Salin JSON ke clipboard / catatan
+                </span>
+              </div>
+            </button>
+
+            {/* Opsi 4: Tempel Teks JSON (Modal Input) */}
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setShowPasteModal(true);
+              }}
+              className="p-3 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card flex items-center gap-3 transition text-left"
+            >
+              <div className="p-2.5 rounded-xl theme-bg-card theme-text-secondary border theme-border">
+                <FileCode size={16} />
+              </div>
+              <div>
+                <span className="text-xs font-semibold theme-text-primary block">
+                  Tempel Teks JSON (Paste)
+                </span>
+                <span className="text-[10px] theme-text-muted">
+                  Impor data tanpa perlu milih file
                 </span>
               </div>
             </button>
@@ -782,6 +973,69 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 className="px-4 py-2 rounded-xl theme-btn-primary hover:opacity-90 text-xs font-semibold transition shadow-sm"
               >
                 Terapkan Logo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Tempel & Impor Teks Database JSON */}
+      {showPasteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-2xl theme-bg-card border theme-border p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b theme-border">
+              <div className="flex items-center gap-2">
+                <FileCode size={18} className="text-emerald-500" />
+                <h3 className="font-bold theme-text-primary text-sm">
+                  Tempel & Impor Teks Database JSON
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setShowPasteModal(false);
+                  setPasteJsonText('');
+                }}
+                className="text-xs theme-text-muted hover:theme-text-primary"
+              >
+                Tutup
+              </button>
+            </div>
+
+            <p className="text-xs theme-text-secondary leading-relaxed">
+              Tempelkan teks data cadangan JSON yang sebelumnya Anda salin. Sistem akan memvalidasi skema data secara otomatis sebelum memulihkan database.
+            </p>
+
+            <textarea
+              rows={8}
+              value={pasteJsonText}
+              onChange={(e) => setPasteJsonText(e.target.value)}
+              placeholder='Tempel teks JSON di sini (misal: {"version": 2, "settings": ...})'
+              className="w-full p-3 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t theme-border">
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setShowPasteModal(false);
+                  setPasteJsonText('');
+                }}
+                disabled={isRestoringText}
+                className="px-4 py-2 rounded-xl text-xs font-medium theme-text-secondary hover:theme-text-primary transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleRestoreFromText}
+                disabled={!pasteJsonText.trim() || isRestoringText}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              >
+                <Upload size={14} />
+                <span>{isRestoringText ? 'Memulihkan...' : 'Pulihkan Database Sekarang'}</span>
               </button>
             </div>
           </div>

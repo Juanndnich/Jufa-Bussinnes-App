@@ -13,6 +13,8 @@ import {
   DollarSign,
   User,
   FileText,
+  Edit3,
+  RotateCcw,
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { RatePreset, StockBatch } from '../../db/schema';
@@ -41,6 +43,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [inputMoney, setInputMoney] = useState<string>('');
   const [inputRobux, setInputRobux] = useState<string>('');
   const [inputRate, setInputRate] = useState<string>('');
+  const [customRevenue, setCustomRevenue] = useState<string>('');
 
   // Rate presets from IndexedDB
   const [ratePresets, setRatePresets] = useState<RatePreset[]>([]);
@@ -57,6 +60,11 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [customerName, setCustomerName] = useState('');
   const [saleNotes, setSaleNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Edit Preset State
+  const [editingPreset, setEditingPreset] = useState<RatePreset | null>(null);
+  const [editPresetRate, setEditPresetRate] = useState('');
+  const [editPresetLabel, setEditPresetLabel] = useState('');
 
   const loadData = async () => {
     try {
@@ -91,10 +99,37 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
     return calculateRobuxToMoney(robuxNum, rateNum);
   }, [inputRobux, inputRate]);
 
-  // Nominal hasil untuk penjualan
-  const targetRobux = calcMode === 'moneyToRobux' ? moneyToRobuxCalc.robuxDidapat : robuxToMoneyCalc.jumlahRobux;
-  const targetRevenue = calcMode === 'moneyToRobux' ? moneyToRobuxCalc.uangTerpakai : robuxToMoneyCalc.totalHarga;
-  const currentRate = parseFloat(inputRate) || 0;
+  // Target Robux yang dijual
+  const targetRobux = useMemo(() => {
+    if (calcMode === 'moneyToRobux') {
+      return moneyToRobuxCalc.robuxDidapat;
+    }
+    return Math.floor(parseFloat(inputRobux) || 0);
+  }, [calcMode, moneyToRobuxCalc.robuxDidapat, inputRobux]);
+
+  // Total bayar otomatis dari perhitungan formula rate
+  const autoRevenue = useMemo(() => {
+    if (calcMode === 'moneyToRobux') {
+      return moneyToRobuxCalc.uangTerpakai;
+    }
+    return robuxToMoneyCalc.totalHarga;
+  }, [calcMode, moneyToRobuxCalc.uangTerpakai, robuxToMoneyCalc.totalHarga]);
+
+  // Total uang ril bayar (mengakomodasi input ketik sendiri / jual nego / jual bebas)
+  const parsedCustomRevenue = Math.floor(parseFloat(customRevenue) || 0);
+  const isCustomRevenue = customRevenue.trim() !== '' && parsedCustomRevenue > 0;
+  const targetRevenue = isCustomRevenue ? parsedCustomRevenue : autoRevenue;
+
+  // Rate efektif yang digunakan
+  const enteredRate = parseFloat(inputRate) || 0;
+  const effectiveRate = useMemo(() => {
+    if (targetRobux > 0 && targetRevenue > 0) {
+      if (isCustomRevenue || enteredRate <= 0) {
+        return targetRevenue / targetRobux;
+      }
+    }
+    return enteredRate;
+  }, [targetRobux, targetRevenue, isCustomRevenue, enteredRate]);
 
   // Real-time FIFO simulation preview
   const fifoPreview = useMemo(() => {
@@ -162,6 +197,38 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
     }
   };
 
+  const handleStartEditPreset = (p: RatePreset) => {
+    playTapSound();
+    setEditingPreset(p);
+    setEditPresetRate(String(p.rate));
+    setEditPresetLabel(p.label || '');
+  };
+
+  const handleSaveEditPreset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPreset) return;
+    const r = parseFloat(editPresetRate);
+    if (!r || r <= 0) {
+      await showWarningAlert('Rate Tidak Valid', 'Masukkan nominal rate lebih dari 0.');
+      return;
+    }
+
+    try {
+      await repository.updateRatePreset(editingPreset.id, {
+        rate: r,
+        label: editPresetLabel,
+      });
+      playTapSound();
+      const p = await repository.getRatePresets();
+      setRatePresets(p);
+      setEditingPreset(null);
+      await showSuccessAlert('Preset Diperbarui', 'Preset rate berhasil diubah.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal mengubah preset';
+      await showErrorAlert('Gagal', msg);
+    }
+  };
+
   // Handler: Simpan Penjualan
   const handleConfirmSale = async () => {
     if (targetRobux <= 0) {
@@ -182,12 +249,17 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
 
     setIsSubmitting(true);
     try {
+      const finalRate = Math.round(effectiveRate * 100) / 100;
       await repository.recordSale({
         robuxSold: targetRobux,
-        rateUsed: currentRate,
+        rateUsed: finalRate,
         totalRevenueRupiah: targetRevenue,
         customerName: customerName.trim() || undefined,
-        notes: saleNotes.trim() || undefined,
+        notes: saleNotes.trim()
+          ? `${saleNotes.trim()}${isCustomRevenue ? ' (Harga Nego Manual)' : ''}`
+          : isCustomRevenue
+          ? 'Harga Nego Manual'
+          : undefined,
       });
 
       setShowSaleModal(false);
@@ -195,6 +267,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
       setSaleNotes('');
       setInputMoney('');
       setInputRobux('');
+      setCustomRevenue('');
       playSuccessSound();
       await loadData();
       if (onSaleSaved) onSaleSaved();
@@ -376,6 +449,14 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                     </button>
                     <button
                       type="button"
+                      onClick={() => handleStartEditPreset(p)}
+                      className="px-1.5 py-1 text-zinc-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition"
+                      title="Edit Preset"
+                    >
+                      <Edit3 size={11} />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleDeletePreset(p.id, p.rate)}
                       className="px-1.5 py-1 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition"
                       title="Hapus Preset"
@@ -430,6 +511,49 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
               </button>
             </form>
           )}
+
+          {/* Form Edit Preset */}
+          {editingPreset && (
+            <form
+              onSubmit={handleSaveEditPreset}
+              className="p-3 rounded-xl theme-bg-surface border border-emerald-500/30 space-y-2 mt-2"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-400">Edit Preset Rate</span>
+                <button
+                  type="button"
+                  onClick={() => setEditingPreset(null)}
+                  className="text-xs theme-text-muted hover:theme-text-primary"
+                >
+                  Batal
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="Rate (cth: 170)"
+                  value={editPresetRate}
+                  onChange={(e) => setEditPresetRate(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Label (opsional)"
+                  value={editPresetLabel}
+                  onChange={(e) => setEditPresetLabel(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition"
+              >
+                Simpan Perubahan Rate
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Right Card: Hasil Hitung & Simulasi Laba FIFO */}
@@ -471,23 +595,71 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
             </div>
 
             {/* Display Hasil Utama */}
-            <div className="grid grid-cols-2 gap-3 my-4">
+            <div className="grid grid-cols-2 gap-3 my-3">
               <div className="p-3 rounded-xl theme-bg-surface border theme-border">
-                <span className="text-[11px] theme-text-muted block">Robux Didapat</span>
+                <span className="text-[11px] theme-text-muted block">Robux Terjual</span>
                 <span className="text-xl font-mono font-extrabold text-amber-400 block mt-0.5">
                   {formatNumber(targetRobux)} <span className="text-xs font-sans font-normal theme-text-muted">R$</span>
                 </span>
               </div>
               <div className="p-3 rounded-xl theme-bg-surface border theme-border">
-                <span className="text-[11px] theme-text-muted block">Total Uang Bayar</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] theme-text-muted">Total Bayar</span>
+                  {isCustomRevenue && (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/15 text-amber-500 dark:text-amber-400 border border-amber-500/30">
+                      Nego
+                    </span>
+                  )}
+                </div>
                 <span className="text-xl font-mono font-extrabold theme-text-primary block mt-0.5">
                   {formatRupiah(targetRevenue)}
                 </span>
               </div>
             </div>
 
+            {/* Input Total Uang Bayar Ketik Sendiri (Nego / Jual Ngasal Bebas) */}
+            <div className="p-3 rounded-xl theme-bg-surface border theme-border space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold theme-text-primary flex items-center gap-1.5">
+                  <Edit3 size={13} className="text-emerald-500" />
+                  <span>Ketik Total Bayar Sendiri (Nego / Bebas)</span>
+                </label>
+                {customRevenue && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      setCustomRevenue('');
+                    }}
+                    className="text-[10px] text-red-500 hover:underline flex items-center gap-0.5 font-medium"
+                  >
+                    <RotateCcw size={10} />
+                    <span>Reset ke Rate</span>
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
+                  Rp
+                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  placeholder={autoRevenue > 0 ? `Otomatis: ${autoRevenue}` : 'Ketik uang bayar langsung...'}
+                  value={customRevenue}
+                  onChange={(e) => setCustomRevenue(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 rounded-lg theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
+                />
+              </div>
+              <p className="text-[10px] theme-text-muted">
+                {isCustomRevenue
+                  ? `Menggunakan harga ketik sendiri ${formatRupiah(targetRevenue)}. Rate dihitung Rp${formatDecimal(effectiveRate, 2)}/R$.`
+                  : 'Kosongkan jika ingin total uang bayar dihitung otomatis dari rate.'}
+              </p>
+            </div>
+
             {/* Detail Kembalian atau Rate Efektif */}
-            {calcMode === 'moneyToRobux' ? (
+            {calcMode === 'moneyToRobux' && !isCustomRevenue ? (
               <div className="flex items-center justify-between text-xs py-2 px-3 rounded-xl theme-bg-surface border theme-border-subtle">
                 <span className="theme-text-muted">Sisa Uang Kembalian:</span>
                 <span className="font-mono font-semibold text-emerald-400">
@@ -498,7 +670,12 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div className="flex items-center justify-between text-xs py-2 px-3 rounded-xl theme-bg-surface border theme-border-subtle">
                 <span className="theme-text-muted">Rate Efektif:</span>
                 <span className="font-mono font-semibold theme-text-primary">
-                  Rp{formatDecimal(robuxToMoneyCalc.rateEfektif, 2)} / R$
+                  Rp{formatDecimal(effectiveRate, 2)} / R${' '}
+                  {isCustomRevenue && (
+                    <span className="text-[10px] text-amber-500 font-sans font-medium">
+                      (Nego Manual)
+                    </span>
+                  )}
                 </span>
               </div>
             )}
@@ -599,7 +776,12 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div className="flex items-center justify-between text-xs">
                 <span className="theme-text-muted">Rate Jual:</span>
                 <span className="font-mono font-medium theme-text-primary">
-                  Rp{inputRate} / R$
+                  Rp{formatDecimal(effectiveRate, 2)} / R${' '}
+                  {isCustomRevenue && (
+                    <span className="text-[10px] text-amber-500 font-sans font-medium">
+                      (Nego Manual)
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs">
@@ -610,7 +792,11 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
               </div>
               <div className="flex items-center justify-between text-xs pt-2 border-t theme-border-subtle">
                 <span className="theme-text-muted">Laba Kotor Ril:</span>
-                <span className="font-mono font-bold theme-text-primary">
+                <span
+                  className={`font-mono font-bold ${
+                    fifoPreview.grossProfit >= 0 ? 'theme-text-primary' : 'text-red-400'
+                  }`}
+                >
                   {formatRupiah(fifoPreview.grossProfit)}
                 </span>
               </div>

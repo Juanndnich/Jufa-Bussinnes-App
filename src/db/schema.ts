@@ -112,3 +112,23 @@ export interface AuditLog {
   details: string;
   createdAt: string;
 }
+
+export interface Investor {
+  id: string;
+  name: string;
+  capitalAmountRupiah: number;
+  sharePercentage: number; // Persentase bagi hasil (misal: 30 untuk 30%)
+  joinDate: string; // YYYY-MM-DD
+  status: 'ACTIVE' | 'INACTIVE';
+  notes?: string;
+  createdAt: string;
+}
+
+export interface InvestorPayout {
+  id: string;
+  investorId: string;
+  investorName: string;
+  amountRupiah: number;
+  periodNotes?: string;
+  createdAt: string;
+}

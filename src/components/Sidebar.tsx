@@ -12,6 +12,10 @@ import {
   Menu,
   X,
   ChevronRight,
+  Database,
+  Users,
+  Tag,
+  Info,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { formatNumber } from '../utils/formatters';
@@ -20,11 +24,14 @@ import { playTapSound } from '../utils/sound';
 export type NavItem =
   | 'dashboard'
   | 'calculator'
+  | 'pricelist'
   | 'stock'
   | 'sales'
   | 'finance'
   | 'analysis'
-  | 'settings';
+  | 'investor'
+  | 'settings'
+  | 'info';
 
 export interface NavItemConfig {
   id: NavItem;
@@ -54,6 +61,12 @@ export const CATEGORIZED_NAV: NavCategory[] = [
         label: 'Kalkulator Robux',
         shortLabel: 'Kalkulator',
         icon: Calculator,
+      },
+      {
+        id: 'pricelist',
+        label: 'Pricelist Robux',
+        shortLabel: 'Pricelist',
+        icon: Tag,
       },
       {
         id: 'sales',
@@ -90,10 +103,22 @@ export const CATEGORIZED_NAV: NavCategory[] = [
         icon: BarChart3,
       },
       {
+        id: 'investor',
+        label: 'Investor & Bagi Hasil',
+        shortLabel: 'Investor',
+        icon: Users,
+      },
+      {
         id: 'settings',
-        label: 'Pengaturan & Backup',
+        label: 'Pengaturan',
         shortLabel: 'Pengaturan',
         icon: Settings,
+      },
+      {
+        id: 'info',
+        label: 'Info Aplikasi',
+        shortLabel: 'Info',
+        icon: Info,
       },
     ],
   },
@@ -248,7 +273,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             setShowDrawer(true);
           }}
           className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
-            currentTab === 'finance' || currentTab === 'analysis' || currentTab === 'settings'
+            currentTab === 'finance' || currentTab === 'analysis' || currentTab === 'investor' || currentTab === 'settings'
               ? 'text-emerald-500 dark:text-emerald-400 font-bold'
               : 'theme-text-muted hover:theme-text-secondary'
           }`}

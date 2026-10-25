@@ -35,21 +35,23 @@ html.light {
 }
 
 @layer base {
-  * {
-    font-family: 'Poppins', sans-serif;
-  }
-
   body {
     background-color: var(--bg-main);
     color: var(--text-primary);
+    font-family: 'Inter', 'Poppins', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     @apply antialiased transition-colors duration-150;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
-  /* Prevent awkward word-breaks */
-  h1, h2, h3, h4, h5, h6, p, label, span, strong, td, th {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Poppins', 'Inter', sans-serif;
     text-wrap: pretty;
     overflow-wrap: break-word;
+  }
+
+  .font-mono, code, kbd, samp, pre {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+    font-feature-settings: "tnum" 1;
   }
 
   /* Crisp minimalist scrollbar */
