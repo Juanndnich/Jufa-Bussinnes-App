@@ -15,8 +15,10 @@ describe('JufaStore - System & Utility Verification Tests', () => {
     expect(formatNumber(0)).toBe('0');
   });
 
-  it('3. Format Desimal: Presisi desimal rate kustom', () => {
+  it('3. Format Desimal: Presisi desimal rate kustom tanpa koma jika bilangan bulat', () => {
     expect(formatDecimal(163.3333, 2)).toBe('163,33');
+    expect(formatDecimal(130, 2)).toBe('130');
+    expect(formatDecimal(13, 2)).toBe('13');
   });
 
   it('4. Sound Preferences: Toggle pengaturan suara berjalan dengan baik', () => {

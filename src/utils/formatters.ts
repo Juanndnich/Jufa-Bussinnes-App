@@ -30,7 +30,7 @@ export function formatDecimal(val: number | null | undefined, decimals = 2): str
     return '0';
   }
   return val.toLocaleString('id-ID', {
-    minimumFractionDigits: decimals,
+    minimumFractionDigits: 0,
     maximumFractionDigits: decimals,
   });
 }

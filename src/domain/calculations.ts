@@ -19,6 +19,14 @@ export interface RobuxToMoneyResult {
   rateEfektif: number;
 }
 
+export interface CompetitorRateResult {
+  jumlahRobux: number;
+  totalHarga: number;
+  ratePerRobux: number;
+  ratePer100: number;
+  ratePer1k: number;
+}
+
 export interface FifoBatchInput {
   id: string;
   remainingRobux: number;
@@ -100,6 +108,81 @@ export function calculateRobuxToMoney(jumlahRobux: number, rateJual: number): Ro
     rateJual: safeRate,
     totalHarga,
     rateEfektif,
+  };
+}
+
+/**
+ * Parsing input angka dengan dukungan format shorthand (cth: '1k' -> 1000, '13k' -> 13000, '1.5m' -> 1500000)
+ */
+export function parseRobuxOrMoneyShorthand(input: string | number): number {
+  if (typeof input === 'number') return Math.max(0, input);
+  if (!input) return 0;
+
+  const clean = input
+    .trim()
+    .toLowerCase()
+    .replace(/rp\.?\s*/g, '')
+    .replace(/r\$\.?\s*/g, '')
+    .replace(/\s+/g, '')
+    .replace(/ribu/g, 'rb')
+    .replace(/juta/g, 'jt')
+    .replace(/,/g, '.');
+
+  if (clean.endsWith('k') || clean.endsWith('rb')) {
+    const numPart = parseFloat(clean.replace(/k|rb/g, ''));
+    return isNaN(numPart) ? 0 : Math.round(numPart * 1000);
+  }
+  if (clean.endsWith('m') || clean.endsWith('jt')) {
+    const numPart = parseFloat(clean.replace(/m|jt/g, ''));
+    return isNaN(numPart) ? 0 : Math.round(numPart * 1000000);
+  }
+
+  // Handle titik pemisah ribuan (misal 13.000 atau 1.000.000)
+  const dotCount = (clean.match(/\./g) || []).length;
+  if (dotCount === 1) {
+    const parts = clean.split('.');
+    if (parts[1].length === 3 && parseFloat(parts[0]) >= 1) {
+      return Math.round(parseFloat(clean.replace(/\./g, '')) || 0);
+    }
+  } else if (dotCount > 1) {
+    return Math.round(parseFloat(clean.replace(/\./g, '')) || 0);
+  }
+
+  const num = parseFloat(clean);
+  return isNaN(num) ? 0 : Math.max(0, num);
+}
+
+/**
+ * Mode 3: Hitung / Temukan Rate dari Jumlah Robux dan Total Harga Jual
+ * Berguna untuk menganalisis rate kompetitor/orang lain (misal 1k Robux seharga Rp13k -> rate Rp13 / R$)
+ */
+export function calculateRateFromRobuxAndPrice(
+  jumlahRobux: number,
+  totalHarga: number
+): CompetitorRateResult {
+  const safeRobux = Math.max(0, Math.floor(jumlahRobux || 0));
+  const safePrice = Math.max(0, Math.floor(totalHarga || 0));
+
+  if (safeRobux <= 0 || safePrice <= 0) {
+    return {
+      jumlahRobux: safeRobux,
+      totalHarga: safePrice,
+      ratePerRobux: 0,
+      ratePer100: 0,
+      ratePer1k: 0,
+    };
+  }
+
+  const ratePerRobux = safePrice / safeRobux;
+  const ratePer100 = ratePerRobux * 100;
+  const ratePer1k = ratePerRobux * 1000;
+
+  return {
+    jumlahRobux: safeRobux,
+    totalHarga: safePrice,
+    ratePerRobux,
+    ratePer100,
+    ratePer1k,
   };
 }
 

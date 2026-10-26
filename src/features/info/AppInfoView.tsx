@@ -228,11 +228,10 @@ export const AppInfoView: React.FC = () => {
             </div>
             <div>
               <span className="font-bold theme-text-primary block">
-                Hitung & Catat Penjualan di "Kalkulator Robux"
+                Hitung, Nego, & Cek Rate di "Kalkulator Robux"
               </span>
               <p className="theme-text-secondary text-[11px] mt-0.5 leading-relaxed">
-                Gunakan mode Robux ke Uang atau Uang ke Robux. Jika menjual dengan harga negosiasi khusus, ketik langsung total uang di kolom <em>Total Uang Bayar (Ketik Bebas / Nego)</em>.
-                Klik simpan penjualan untuk otomatis memotong stok FIFO dan menambah kas masuk toko.
+                Gunakan mode Robux ke Uang, Uang ke Robux, atau mode <strong>Cari Rate Pasar</strong> (untuk menganalisis harga orang lain, misal 1k Robux seharga Rp13k menghasilkan rate Rp13/R$). Anda juga bisa menjual dengan harga nego kustom bebas.
               </p>
             </div>
           </div>

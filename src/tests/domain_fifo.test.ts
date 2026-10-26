@@ -7,6 +7,8 @@ import {
   calculateProfit,
   calculateBreakEvenRate,
   simulateProfitScenario,
+  calculateRateFromRobuxAndPrice,
+  parseRobuxOrMoneyShorthand,
   FifoBatchInput,
 } from '../domain/calculations';
 
@@ -148,5 +150,45 @@ describe('JufaStore - Domain & FIFO Financial Engine Tests', () => {
     expect(scenario[1].robuxSold).toBe(500);
     expect(scenario[1].revenue).toBe(90000);
     expect(scenario[1].grossProfit).toBe(10000);
+  });
+
+  // Test 9: Mode 3 - Hitung / Temukan Rate Kompetitor & Pasar
+  it('9. Mode 3: 1k Robux seharga Rp13k -> rate Rp13 / R$, 1k Robux seharga Rp150.000 -> rate Rp150 / R$', () => {
+    // Skenario permintaan user: 1k robux harga 13k
+    const r1 = calculateRateFromRobuxAndPrice(1000, 13000);
+    expect(r1.ratePerRobux).toBe(13);
+    expect(r1.ratePer100).toBe(1300);
+    expect(r1.ratePer1k).toBe(13000);
+
+    // Skenario rate 150: 1000 robux harga 150.000
+    const r2 = calculateRateFromRobuxAndPrice(1000, 150000);
+    expect(r2.ratePerRobux).toBe(150);
+    expect(r2.ratePer100).toBe(15000);
+    expect(r2.ratePer1k).toBe(150000);
+
+    // Skenario retail: 50 robux harga Rp7.500
+    const r3 = calculateRateFromRobuxAndPrice(50, 7500);
+    expect(r3.ratePerRobux).toBe(150);
+
+    // Input kosong / 0
+    const r4 = calculateRateFromRobuxAndPrice(0, 0);
+    expect(r4.ratePerRobux).toBe(0);
+    expect(r4.ratePer1k).toBe(0);
+  });
+
+  // Test 10: Shorthand string parser ('1k' -> 1000, '13k' -> 13000, '1.5k' -> 1500)
+  it('10. Parser shorthand mengenali notasi k, rb, jt, dan titik ribuan dengan benar', () => {
+    expect(parseRobuxOrMoneyShorthand('1k')).toBe(1000);
+    expect(parseRobuxOrMoneyShorthand('13k')).toBe(13000);
+    expect(parseRobuxOrMoneyShorthand('130 ribu')).toBe(130000);
+    expect(parseRobuxOrMoneyShorthand('13 rb')).toBe(13000);
+    expect(parseRobuxOrMoneyShorthand('1.5 juta')).toBe(1500000);
+    expect(parseRobuxOrMoneyShorthand('2.5k')).toBe(2500);
+    expect(parseRobuxOrMoneyShorthand('10rb')).toBe(10000);
+    expect(parseRobuxOrMoneyShorthand('13.000')).toBe(13000);
+    expect(parseRobuxOrMoneyShorthand('Rp 150.000')).toBe(150000);
+    expect(parseRobuxOrMoneyShorthand('1jt')).toBe(1000000);
+    expect(parseRobuxOrMoneyShorthand('1.2m')).toBe(1200000);
+    expect(parseRobuxOrMoneyShorthand('')).toBe(0);
   });
 });

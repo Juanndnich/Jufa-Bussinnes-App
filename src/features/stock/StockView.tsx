@@ -20,9 +20,13 @@ import {
   FileSpreadsheet,
   Pencil,
   Trash2,
+  TrendingUp,
+  TrendingDown,
+  Sparkles,
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { StockBatch, PersonalUsage } from '../../db/schema';
+import { parseRobuxOrMoneyShorthand } from '../../domain/calculations';
 import { formatRupiah, formatNumber, formatDecimal, formatDateJakarta } from '../../utils/formatters';
 import { showSuccessAlert, showErrorAlert, showWarningAlert, showConfirmDialog } from '../../utils/alert';
 import { playTapSound, playSuccessSound, playDeleteSound } from '../../utils/sound';
@@ -60,6 +64,7 @@ export const StockView: React.FC = () => {
   const [restockRobux, setRestockRobux] = useState('');
   const [restockCost, setRestockCost] = useState('');
   const [restockNotes, setRestockNotes] = useState('');
+  const [targetSellRate, setTargetSellRate] = useState('');
   const [isSubmittingRestock, setIsSubmittingRestock] = useState(false);
 
   // Form: Sisa Robux Akun / Cocokkan Stok
@@ -98,8 +103,8 @@ export const StockView: React.FC = () => {
   // Handler: Restock Baru
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const robuxVal = Math.floor(parseFloat(restockRobux) || 0);
-    const costVal = Math.floor(parseFloat(restockCost) || 0);
+    const robuxVal = Math.floor(parsedRestockRobux);
+    const costVal = Math.floor(parsedRestockCost);
 
     if (robuxVal <= 0) {
       await showWarningAlert('Jumlah Robux Kosong', 'Masukkan jumlah Robux yang dibeli lebih dari 0.');
@@ -121,12 +126,13 @@ export const StockView: React.FC = () => {
       setRestockRobux('');
       setRestockCost('');
       setRestockNotes('');
+      setTargetSellRate('');
       playSuccessSound();
       await loadData();
       setActiveTab('batches');
       await showSuccessAlert(
         'Restock Berhasil Dicatat',
-        `Batch baru ${formatNumber(robuxVal)} R$ berhasil ditambahkan ke antrean FIFO.`
+        `Batch baru ${formatNumber(robuxVal)} R$ seharga ${formatRupiah(costVal)} (Modal Rp${formatDecimal(costVal / robuxVal, 2)}/R$) berhasil ditambahkan ke antrean FIFO.`
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal mencatat restock';
@@ -319,10 +325,34 @@ export const StockView: React.FC = () => {
     }
   };
 
+  const parsedRestockRobux = useMemo(() => parseRobuxOrMoneyShorthand(restockRobux), [restockRobux]);
+  const parsedRestockCost = useMemo(() => parseRobuxOrMoneyShorthand(restockCost), [restockCost]);
+  const parsedTargetSellRate = useMemo(() => parseFloat(targetSellRate) || 0, [targetSellRate]);
+
   const calculatedRestockAvg = 
-    parseFloat(restockRobux) > 0 && parseFloat(restockCost) > 0
-      ? parseFloat(restockCost) / parseFloat(restockRobux)
+    parsedRestockRobux > 0 && parsedRestockCost > 0
+      ? parsedRestockCost / parsedRestockRobux
       : 0;
+
+  const simulationProjection = useMemo(() => {
+    if (parsedRestockRobux <= 0 || parsedRestockCost <= 0 || parsedTargetSellRate <= 0) {
+      return null;
+    }
+    const targetRevenue = Math.round(parsedRestockRobux * parsedTargetSellRate);
+    const grossProfit = targetRevenue - parsedRestockCost;
+    const profitPerRobux = parsedTargetSellRate - calculatedRestockAvg;
+    const margin = targetRevenue > 0 ? (grossProfit / targetRevenue) * 100 : 0;
+
+    return {
+      targetRevenue,
+      grossProfit,
+      profitPerRobux,
+      margin,
+      isProfit: grossProfit > 0,
+      isLoss: grossProfit < 0,
+      isBreakEven: grossProfit === 0,
+    };
+  }, [parsedRestockRobux, parsedRestockCost, parsedTargetSellRate, calculatedRestockAvg]);
 
   // Filtered Personal Usages
   const filteredUsages = useMemo(() => {
@@ -646,21 +676,28 @@ export const StockView: React.FC = () => {
           </div>
 
           <p className="text-xs theme-text-secondary leading-relaxed">
-            Catat uang ril yang Anda keluarkan untuk membeli Robux. Uang ini otomatis tercatat sebagai 
+            Catat uang ril yang Anda keluarkan untuk membeli Robux dari supplier/kulakan. Uang ini otomatis tercatat sebagai 
             <strong> Pengeluaran Kas (Buku Kas)</strong> dan menambah persediaan batch FIFO Anda.
           </p>
 
+          {/* Input Jumlah Robux */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium theme-text-secondary">
-              Jumlah Robux yang Dibeli (R$)
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium theme-text-secondary">
+                Jumlah Robux yang Dibeli (R$)
+              </label>
+              {parsedRestockRobux > 0 && (
+                <span className="text-[11px] font-mono font-bold text-amber-400">
+                  {formatNumber(parsedRestockRobux)} R$
+                </span>
+              )}
+            </div>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400">
                 R$
               </span>
               <input
-                type="number"
-                inputMode="numeric"
+                type="text"
                 placeholder="0"
                 value={restockRobux}
                 onChange={(e) => setRestockRobux(e.target.value)}
@@ -668,19 +705,29 @@ export const StockView: React.FC = () => {
                 required
               />
             </div>
+            <span className="text-[10px] theme-text-muted block">
+              Mendukung ketikan langsung atau format cepat: contoh <span className="font-mono">1000</span>, <span className="font-mono">1k</span>, <span className="font-mono">5k</span>.
+            </span>
           </div>
 
+          {/* Input Biaya Beli */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium theme-text-secondary">
-              Total Uang Ril Dikeluarkan (Rp)
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium theme-text-secondary">
+                Total Uang Ril Dikeluarkan (Rp)
+              </label>
+              {parsedRestockCost > 0 && (
+                <span className="text-[11px] font-mono font-bold text-emerald-400">
+                  {formatRupiah(parsedRestockCost)}
+                </span>
+              )}
+            </div>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
                 Rp
               </span>
               <input
-                type="number"
-                inputMode="numeric"
+                type="text"
                 placeholder="0"
                 value={restockCost}
                 onChange={(e) => setRestockCost(e.target.value)}
@@ -688,15 +735,122 @@ export const StockView: React.FC = () => {
                 required
               />
             </div>
-          </div>
-
-          {/* Kalkulasi Otomatis Modal Per Robux */}
-          <div className="p-3 rounded-xl theme-bg-surface border theme-border-subtle flex items-center justify-between text-xs">
-            <span className="theme-text-muted">Rata-rata Modal per Robux:</span>
-            <span className="font-mono font-bold text-emerald-400">
-              Rp{formatDecimal(calculatedRestockAvg, 2)} / R$
+            <span className="text-[10px] theme-text-muted block">
+              Mendukung ketikan langsung atau format cepat: contoh <span className="font-mono">130000</span>, <span className="font-mono">130k</span>, <span className="font-mono">130 ribu</span>.
             </span>
           </div>
+
+          {/* Analisis Modal Kulakan Batch Ini */}
+          {calculatedRestockAvg > 0 && (
+            <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                  Modal Kulakan Batch Ini:
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300">
+                  Rate {formatDecimal(calculatedRestockAvg, 2)}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-mono font-extrabold text-emerald-400">
+                  Rp{formatDecimal(calculatedRestockAvg, 2)}
+                </span>
+                <span className="text-xs theme-text-secondary">per 1 Robux (Modal HPP)</span>
+              </div>
+              <p className="text-[11px] theme-text-muted">
+                Artinya setiap 1 Robux Anda beli dengan modal <strong>Rp{formatDecimal(calculatedRestockAvg, 2)} per Robux</strong> (Total {formatNumber(parsedRestockRobux)} R$ senilai {formatRupiah(parsedRestockCost)}).
+              </p>
+            </div>
+          )}
+
+          {/* SIMULASI PROYEKSI LABA JUAL (Live Simulation) */}
+          {calculatedRestockAvg > 0 && (
+            <div className="p-4 rounded-xl theme-bg-surface border theme-border space-y-3">
+              <div className="flex items-center gap-1.5">
+                <Sparkles size={14} className="text-cyan-400" />
+                <span className="text-xs font-bold uppercase tracking-wider theme-text-primary">
+                  Simulasi Proyeksi Laba Jual (Berapa Rupiah Untungnya)
+                </span>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium theme-text-secondary">
+                  Target Rate Jual yang Anda Inginkan (Rp / R$)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
+                    Rp
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    inputMode="decimal"
+                    placeholder="Ketik target rate jual (contoh: 140, 150...)"
+                    value={targetSellRate}
+                    onChange={(e) => setTargetSellRate(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-cyan-500 font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              {simulationProjection && (
+                <div className="space-y-2 pt-1">
+                  {simulationProjection.isProfit && (
+                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs space-y-2">
+                      <div className="flex items-center justify-between text-emerald-400 font-bold">
+                        <span className="flex items-center gap-1">
+                          <TrendingUp size={15} />
+                          <span>Estimasi Keuntungan Toko (Laba Bersih Batch):</span>
+                        </span>
+                        <span className="text-sm font-mono font-extrabold">
+                          +{formatRupiah(simulationProjection.grossProfit)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-emerald-500/20 text-[11px]">
+                        <div>
+                          <span className="theme-text-muted block">Target Omzet Jual:</span>
+                          <span className="font-mono font-bold text-white dark:text-white theme-text-primary">
+                            {formatRupiah(simulationProjection.targetRevenue)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="theme-text-muted block">Untung per 1 Robux:</span>
+                          <span className="font-mono font-bold text-emerald-400">
+                            +Rp{formatDecimal(simulationProjection.profitPerRobux, 2)} / R$
+                          </span>
+                        </div>
+                        <div>
+                          <span className="theme-text-muted block">Margin Untung:</span>
+                          <span className="font-mono font-bold text-emerald-400">
+                            +{formatDecimal(simulationProjection.margin, 1)}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {simulationProjection.isBreakEven && (
+                    <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
+                      Target rate sama dengan modal kulakan (Rp0 keuntungan, hanya balik modal).
+                    </div>
+                  )}
+
+                  {simulationProjection.isLoss && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <TrendingDown size={15} />
+                        <span>Peringatan Bahaya Kerugian!</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed">
+                        Target rate jual (Rate {targetSellRate}) lebih murah dari modal kulakan Anda (Rate {formatDecimal(calculatedRestockAvg, 2)}).
+                        Jika Anda menjual di rate ini, Anda akan <strong>RUGI -{formatRupiah(Math.abs(simulationProjection.grossProfit))}</strong> (-Rp{formatDecimal(Math.abs(simulationProjection.profitPerRobux), 2)} per Robux). Jangan jual di bawah modal!
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium theme-text-secondary">
@@ -713,7 +867,7 @@ export const StockView: React.FC = () => {
 
           <button
             type="submit"
-            disabled={isSubmittingRestock}
+            disabled={isSubmittingRestock || parsedRestockRobux <= 0 || parsedRestockCost <= 0}
             className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition active:scale-98 shadow-md"
           >
             <CheckCircle2 size={17} />

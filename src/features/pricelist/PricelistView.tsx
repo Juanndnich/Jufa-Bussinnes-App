@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { RatePreset } from '../../db/schema';
-import { formatRupiah, formatNumber } from '../../utils/formatters';
+import { formatRupiah, formatNumber, formatDecimal } from '../../utils/formatters';
 import { showSuccessAlert, showWarningAlert } from '../../utils/alert';
 import { playTapSound, playSuccessSound } from '../../utils/sound';
 
@@ -28,11 +28,13 @@ export const PricelistView: React.FC = () => {
   const [robuxItems, setRobuxItems] = useState<number[]>([]);
   const [newRobuxInput, setNewRobuxInput] = useState<string>('');
   const [ratePresets, setRatePresets] = useState<RatePreset[]>([]);
+  const [storeAvgCost, setStoreAvgCost] = useState<number>(0);
   const [copied, setCopied] = useState(false);
 
-  // Load saved rate presets
+  // Load saved rate presets & store stock summary
   useEffect(() => {
     repository.getRatePresets().then(setRatePresets).catch(() => {});
+    repository.getTotalStockSummary().then((s) => setStoreAvgCost(s.averageCostPerRobux)).catch(() => {});
     
     // Load last saved pricelist preferences if any
     try {
@@ -60,17 +62,24 @@ export const PricelistView: React.FC = () => {
 
   const numRate = parseFloat(rate) || 0;
 
-  // Calculated items with matching price
+  // Calculated items with matching price & estimated profit
   const pricelistData = useMemo(() => {
     return robuxItems.map((robux) => {
       const totalPrice = Math.round(robux * numRate);
+      const estimatedCost = storeAvgCost > 0 ? Math.round(robux * storeAvgCost) : 0;
+      const estimatedProfit = storeAvgCost > 0 ? totalPrice - estimatedCost : 0;
+      const margin = totalPrice > 0 && storeAvgCost > 0 ? (estimatedProfit / totalPrice) * 100 : null;
       return {
         robux,
         rate: numRate,
         price: totalPrice,
+        estimatedCost,
+        estimatedProfit,
+        margin,
+        isLoss: storeAvgCost > 0 && estimatedProfit < 0,
       };
     });
-  }, [robuxItems, numRate]);
+  }, [robuxItems, numRate, storeAvgCost]);
 
   // Handlers
   const handleAddCustomRobux = (e: React.FormEvent) => {
@@ -199,54 +208,38 @@ export const PricelistView: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick Preset Buttons */}
+          {/* Preset Rate Tersimpan */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium theme-text-secondary">
-              Pilihan Cepat Rate Umum:
+              Pilihan Preset Rate Tersimpan:
             </label>
-            <div className="flex flex-wrap gap-1.5">
-              {[140, 150, 155, 160, 165, 170, 175, 180].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => {
-                    playTapSound();
-                    setRate(String(preset));
-                  }}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold border transition ${
-                    numRate === preset
-                      ? 'bg-cyan-500 text-white border-cyan-400 shadow-sm'
-                      : 'theme-bg-surface border-theme theme-text-secondary hover:theme-text-primary hover:border-cyan-500/40'
-                  }`}
-                >
-                  {preset}
-                </button>
-              ))}
-            </div>
+            {ratePresets.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {ratePresets.map((rp) => (
+                  <button
+                    key={rp.id}
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      setRate(String(rp.rate));
+                    }}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold border transition ${
+                      numRate === rp.rate
+                        ? 'bg-cyan-500 text-white border-cyan-400 shadow-sm'
+                        : 'theme-bg-surface border-theme theme-text-secondary hover:theme-text-primary hover:border-cyan-500/40'
+                    }`}
+                  >
+                    {rp.label ? `${rp.label} (${rp.rate})` : `Rate ${rp.rate}`}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs theme-text-muted leading-relaxed">
+                Belum ada preset tersimpan. Anda dapat menyimpan rate favorit Anda langsung di menu Kalkulator.
+              </p>
+            )}
           </div>
         </div>
-
-        {/* Database Saved Presets if available */}
-        {ratePresets.length > 0 && (
-          <div className="pt-1">
-            <span className="text-[11px] theme-text-muted block mb-1">Preset Tersimpan Anda:</span>
-            <div className="flex flex-wrap gap-1.5">
-              {ratePresets.map((rp) => (
-                <button
-                  key={rp.id}
-                  type="button"
-                  onClick={() => {
-                    playTapSound();
-                    setRate(String(rp.rate));
-                  }}
-                  className="px-2.5 py-1 rounded-lg text-xs font-mono theme-bg-surface border theme-border theme-text-primary hover:border-cyan-500 transition"
-                >
-                  {rp.label || `Rate Rp${rp.rate}`}: Rp{rp.rate}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Konfigurasi Nominal Robux */}
@@ -378,7 +371,11 @@ export const PricelistView: React.FC = () => {
               {pricelistData.map((item) => (
                 <div
                   key={item.robux}
-                  className="p-3.5 rounded-xl theme-bg-surface border theme-border hover:border-cyan-500/40 transition flex flex-col justify-between space-y-2"
+                  className={`p-3.5 rounded-xl theme-bg-surface border transition flex flex-col justify-between space-y-2 ${
+                    item.isLoss
+                      ? 'border-red-500/50 bg-red-500/5 shadow-sm'
+                      : 'theme-border hover:border-cyan-500/40'
+                  }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-base font-mono font-extrabold text-amber-400">
@@ -394,10 +391,29 @@ export const PricelistView: React.FC = () => {
                     <span className="text-[10px] uppercase font-bold theme-text-muted block">
                       Harga Jual Cocok:
                     </span>
-                    <span className="text-base font-mono font-extrabold text-emerald-400 block">
+                    <span className="text-base font-mono font-extrabold text-cyan-400 block">
                       {formatRupiah(item.price)}
                     </span>
                   </div>
+
+                  {storeAvgCost > 0 && (
+                    <div className="pt-1.5 border-t theme-border-subtle flex items-center justify-between text-[11px]">
+                      <span className="theme-text-muted">Est. Untung:</span>
+                      <span
+                        className={`font-mono font-bold ${
+                          item.estimatedProfit > 0
+                            ? 'text-emerald-400'
+                            : item.isLoss
+                            ? 'text-red-400 font-extrabold'
+                            : 'theme-text-muted'
+                        }`}
+                      >
+                        {item.estimatedProfit > 0 ? '+' : ''}
+                        {formatRupiah(item.estimatedProfit)}
+                        {item.margin !== null && ` (${formatDecimal(item.margin, 1)}%)`}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

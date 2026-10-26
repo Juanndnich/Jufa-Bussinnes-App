@@ -15,6 +15,12 @@ import {
   FileText,
   Edit3,
   RotateCcw,
+  Search,
+  Copy,
+  Sparkles,
+  Check,
+  HelpCircle,
+  Info,
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { RatePreset, StockBatch } from '../../db/schema';
@@ -23,6 +29,8 @@ import {
   calculateRobuxToMoney,
   allocateFifoCost,
   calculateProfit,
+  parseRobuxOrMoneyShorthand,
+  calculateRateFromRobuxAndPrice,
 } from '../../domain/calculations';
 import { formatRupiah, formatNumber, formatDecimal } from '../../utils/formatters';
 import { showSuccessAlert, showErrorAlert, showWarningAlert, showConfirmDialog } from '../../utils/alert';
@@ -37,13 +45,19 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
   onSaleSaved,
   onNavigateToStock,
 }) => {
-  const [calcMode, setCalcMode] = useState<'moneyToRobux' | 'robuxToMoney'>('moneyToRobux');
+  const [calcMode, setCalcMode] = useState<'moneyToRobux' | 'robuxToMoney' | 'findRate'>('moneyToRobux');
   
   // Input fields (Strict Zero/Empty Default)
   const [inputMoney, setInputMoney] = useState<string>('');
   const [inputRobux, setInputRobux] = useState<string>('');
   const [inputRate, setInputRate] = useState<string>('');
   const [customRevenue, setCustomRevenue] = useState<string>('');
+
+  // Mode 3: Cari / Cek Rate Orang Lain (Rate Finder / Detector)
+  const [rateFinderRobuxInput, setRateFinderRobuxInput] = useState<string>('');
+  const [rateFinderPriceInput, setRateFinderPriceInput] = useState<string>('');
+  const [resellTargetRate, setResellTargetRate] = useState<string>('');
+  const [rateFinderCopied, setRateFinderCopied] = useState(false);
 
   // Rate presets from IndexedDB
   const [ratePresets, setRatePresets] = useState<RatePreset[]>([]);
@@ -65,6 +79,53 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [editingPreset, setEditingPreset] = useState<RatePreset | null>(null);
   const [editPresetRate, setEditPresetRate] = useState('');
   const [editPresetLabel, setEditPresetLabel] = useState('');
+
+  // Parsed Rate Finder values
+  const parsedFinderRobux = useMemo(() => {
+    return parseRobuxOrMoneyShorthand(rateFinderRobuxInput);
+  }, [rateFinderRobuxInput]);
+
+  const parsedFinderPrice = useMemo(() => {
+    return parseRobuxOrMoneyShorthand(rateFinderPriceInput);
+  }, [rateFinderPriceInput]);
+
+  const competitorRateResult = useMemo(() => {
+    return calculateRateFromRobuxAndPrice(parsedFinderRobux, parsedFinderPrice);
+  }, [parsedFinderRobux, parsedFinderPrice]);
+
+  const parsedResellTargetRate = parseFloat(resellTargetRate) || 0;
+  const resellSimulation = useMemo(() => {
+    if (competitorRateResult.ratePerRobux <= 0 || parsedResellTargetRate <= 0) {
+      return null;
+    }
+    const buyPrice = parsedFinderPrice;
+    const sellRevenue = Math.round(parsedFinderRobux * parsedResellTargetRate);
+    const profit = sellRevenue - buyPrice;
+    const profitPerRobux = parsedResellTargetRate - competitorRateResult.ratePerRobux;
+    const margin = sellRevenue > 0 ? (profit / sellRevenue) * 100 : 0;
+
+    return {
+      buyPrice,
+      sellRevenue,
+      profit,
+      profitPerRobux,
+      margin,
+      isProfit: profit > 0,
+      isLoss: profit < 0,
+      isBreakEven: profit === 0,
+    };
+  }, [competitorRateResult.ratePerRobux, parsedFinderPrice, parsedFinderRobux, parsedResellTargetRate]);
+
+  // Average modal per Robux from store's current stock
+  const storeAverageCostPerRobux = useMemo(() => {
+    let totalCost = 0;
+    let totalRobux = 0;
+    for (const b of batches) {
+      totalCost += b.remainingCostRupiah;
+      totalRobux += b.remainingRobux;
+    }
+    return totalRobux > 0 ? totalCost / totalRobux : 0;
+  }, [batches]);
 
   const loadData = async () => {
     try {
@@ -229,6 +290,67 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
     }
   };
 
+  // Handlers: Mode 3 Rate Finder
+  const handleApplyFinderRateToCalc = () => {
+    if (competitorRateResult.ratePerRobux <= 0) return;
+    playTapSound();
+    const formattedRate = Number(competitorRateResult.ratePerRobux.toFixed(2));
+    setInputRate(String(formattedRate));
+    if (parsedFinderRobux > 0) {
+      setInputRobux(String(parsedFinderRobux));
+    }
+    setCalcMode('robuxToMoney');
+    showSuccessAlert(
+      'Rate Diterapkan',
+      `Rate Rp${formattedRate} / R$ berhasil diterapkan ke Kalkulator Penjualan.`
+    );
+  };
+
+  const handleSaveFinderRateAsPreset = async () => {
+    if (competitorRateResult.ratePerRobux <= 0) return;
+    const roundedRate = Number(competitorRateResult.ratePerRobux.toFixed(2));
+    const label = `Pasar ${formatNumber(parsedFinderRobux)} R$`;
+    try {
+      await repository.addRatePreset(roundedRate, label);
+      playSuccessSound();
+      const p = await repository.getRatePresets();
+      setRatePresets(p);
+      await showSuccessAlert(
+        'Preset Disimpan',
+        `Rate Rp${roundedRate} (${label}) berhasil ditambahkan ke daftar preset favorit.`
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal menyimpan preset';
+      await showErrorAlert('Gagal', msg);
+    }
+  };
+
+  const handleCopyFinderResult = async () => {
+    if (competitorRateResult.ratePerRobux <= 0) return;
+    const lines = [
+      'ANALISIS RATE ROBUX (JUFASTORE)',
+      `• Jumlah Robux    : ${formatNumber(parsedFinderRobux)} R$`,
+      `• Total Uang Bayar: ${formatRupiah(parsedFinderPrice)}`,
+      '──────────────────────────────',
+      `• Rate Penjualan  : Rate ${formatDecimal(competitorRateResult.ratePerRobux, 2)}`,
+      `• Harga 1 Robux   : Rp${formatDecimal(competitorRateResult.ratePerRobux, 2)}`,
+      `• Harga 100 Robux : ${formatRupiah(Math.round(competitorRateResult.ratePer100))}`,
+      `• Harga 1.000 R$  : ${formatRupiah(Math.round(competitorRateResult.ratePer1k))}`,
+      '──────────────────────────────',
+      'Dihitung via JufaStore',
+    ];
+    const text = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      playSuccessSound();
+      setRateFinderCopied(true);
+      setTimeout(() => setRateFinderCopied(false), 2500);
+      await showSuccessAlert('Tersalin!', 'Rincian analisis rate berhasil disalin ke clipboard.');
+    } catch {
+      window.prompt('Salin rincian rate:', text);
+    }
+  };
+
   // Handler: Simpan Penjualan
   const handleConfirmSale = async () => {
     if (targetRobux <= 0) {
@@ -293,10 +415,10 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
           </div>
           <div>
             <h1 className="text-lg font-bold theme-text-primary tracking-tight">
-              Kalkulator Robux 2 Arah
+              Kalkulator Robux & Cek Rate
             </h1>
             <p className="text-xs theme-text-secondary">
-              Hitung nominal uang ril & simulasi laba FIFO sebelum mencatat penjualan
+              Hitung transaksi jual-beli, simulasi laba FIFO, & cek rate pasaran orang lain
             </p>
           </div>
         </div>
@@ -312,20 +434,20 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
       </div>
 
       {/* Mode Switcher */}
-      <div className="grid grid-cols-2 p-1 rounded-2xl theme-bg-surface border theme-border">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 p-1 rounded-2xl theme-bg-surface border theme-border">
         <button
           type="button"
           onClick={() => {
             playTapSound();
             setCalcMode('moneyToRobux');
           }}
-          className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 ${
+          className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 ${
             calcMode === 'moneyToRobux'
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'theme-text-secondary hover:theme-text-primary'
           }`}
         >
-          Mode 1: Uang (Rp) ke Robux
+          Mode 1: Uang ke Robux
         </button>
         <button
           type="button"
@@ -333,18 +455,426 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
             playTapSound();
             setCalcMode('robuxToMoney');
           }}
-          className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 ${
+          className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 ${
             calcMode === 'robuxToMoney'
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'theme-text-secondary hover:theme-text-primary'
           }`}
         >
-          Mode 2: Robux ke Uang (Rp)
+          Mode 2: Robux ke Uang
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            playTapSound();
+            setCalcMode('findRate');
+          }}
+          className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 flex items-center justify-center gap-1.5 ${
+            calcMode === 'findRate'
+              ? 'bg-cyan-600 text-white shadow-sm'
+              : 'theme-text-secondary hover:theme-text-primary'
+          }`}
+        >
+          <Search size={14} />
+          <span>Mode 3: Cari Rate Pasar</span>
         </button>
       </div>
 
-      {/* Calculator Body Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Content View: Mode 3 Rate Finder ATAU Mode 1/2 Calculator */}
+      {calcMode === 'findRate' ? (
+        <div className="space-y-4">
+          {/* Header Banner Mode 3 */}
+          <div className="p-4 rounded-2xl theme-bg-card border theme-border flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shrink-0 mt-0.5">
+              <Search size={18} />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-sm font-bold theme-text-primary">
+                Kalkulator Deteksi & Cek Rate Pasaran / Kompetitor
+              </h2>
+              <p className="text-xs theme-text-secondary leading-relaxed">
+                Ketahui rate jual orang lain secara instan dengan memasukkan jumlah Robux dan harga total yang mereka tawarkan (contoh: <strong>1k Robux seharga Rp13k</strong>, maka ratenya adalah <strong>Rp13 / R$</strong>).
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Left Card: Input Form */}
+            <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b theme-border">
+                <span className="text-xs font-bold uppercase tracking-wider theme-text-primary">
+                  1. Masukkan Penawaran Orang Lain
+                </span>
+                <span className="text-[10px] theme-text-muted">Bisa ketik 1k, 13k, dsb.</span>
+              </div>
+
+              {/* Input 1: Jumlah Robux */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium theme-text-secondary">
+                    Jumlah Robux yang Dijual (R$)
+                  </label>
+                  {parsedFinderRobux > 0 && (
+                    <span className="text-[11px] font-mono font-bold text-amber-400">
+                      = {formatNumber(parsedFinderRobux)} R$
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400 font-mono">
+                    R$
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 1k, 1000, 500, 2.5k"
+                    value={rateFinderRobuxInput}
+                    onChange={(e) => setRateFinderRobuxInput(e.target.value)}
+                    className="w-full pl-11 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-cyan-500 font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Input 2: Total Harga Jual */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium theme-text-secondary">
+                    Total Harga yang Dijual Orang Lain (Rp)
+                  </label>
+                  {parsedFinderPrice > 0 && (
+                    <span className="text-[11px] font-mono font-bold text-emerald-400">
+                      = {formatRupiah(parsedFinderPrice)}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted font-mono">
+                    Rp
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 13k, 13000, 150k, 80k"
+                    value={rateFinderPriceInput}
+                    onChange={(e) => setRateFinderPriceInput(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-cyan-500 font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <p className="text-[11px] theme-text-muted leading-relaxed pt-1">
+                Ketik jumlah Robux dan harga yang ditawarkan orang lain. Mendukung format angka langsung atau notasi cepat seperti <span className="font-mono text-cyan-400 font-semibold">1k</span>, <span className="font-mono text-cyan-400 font-semibold">130k</span>, atau <span className="font-mono text-cyan-400 font-semibold">130 ribu</span>.
+              </p>
+
+              {(rateFinderRobuxInput || rateFinderPriceInput) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTapSound();
+                    setRateFinderRobuxInput('');
+                    setRateFinderPriceInput('');
+                  }}
+                  className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 pt-1"
+                >
+                  <RotateCcw size={12} />
+                  <span>Kosongkan Input</span>
+                </button>
+              )}
+            </div>
+
+            {/* Right Card: Hasil Kalkulasi & Analisis Komparasi */}
+            <div className="p-5 rounded-2xl theme-bg-card border theme-border flex flex-col justify-between space-y-4">
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b theme-border">
+                  <span className="text-xs font-bold uppercase tracking-wider theme-text-primary flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-cyan-400" />
+                    <span>2. Hasil Rate Pasaran & Analisis</span>
+                  </span>
+                  {competitorRateResult.ratePerRobux > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleCopyFinderResult}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 font-medium flex items-center gap-1"
+                    >
+                      {rateFinderCopied ? <Check size={13} /> : <Copy size={13} />}
+                      <span>{rateFinderCopied ? 'Tersalin' : 'Salin Hasil'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {competitorRateResult.ratePerRobux <= 0 ? (
+                  <div className="p-8 text-center space-y-2">
+                    <div className="w-12 h-12 mx-auto rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
+                      <Search size={22} />
+                    </div>
+                    <p className="text-sm font-semibold theme-text-primary">
+                      Menunggu Input Robux & Harga
+                    </p>
+                    <p className="text-xs theme-text-muted max-w-xs mx-auto">
+                      Ketik berapa Robux yang dijual dan berapa total harganya di sebelah kiri untuk melihat berapa ratenya.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4 pt-1">
+                    {/* Hasil Rate Utama */}
+                    <div className="p-4 rounded-xl theme-bg-surface border border-cyan-500/30 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                          <Sparkles size={13} />
+                          <span>Hasil Rate Penjualan:</span>
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                          Rate {formatDecimal(competitorRateResult.ratePerRobux, 2)}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider theme-text-muted font-semibold block">
+                            Harga 1 Robux
+                          </span>
+                          <span className="text-2xl sm:text-3xl font-mono font-extrabold text-cyan-400 block mt-0.5">
+                            Rp{formatDecimal(competitorRateResult.ratePerRobux, 2)}
+                          </span>
+                          <span className="text-[10px] theme-text-secondary block">
+                            per 1 Robux
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider theme-text-muted font-semibold block">
+                            Rate Jual
+                          </span>
+                          <span className="text-2xl sm:text-3xl font-mono font-extrabold theme-text-primary block mt-0.5">
+                            {formatDecimal(competitorRateResult.ratePerRobux, 2)}
+                          </span>
+                          <span className="text-[10px] theme-text-secondary block">
+                            (Harga ÷ Robux)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-cyan-500/10 text-xs theme-text-secondary flex items-start gap-2">
+                        <Info size={14} className="text-cyan-400 shrink-0 mt-0.5" />
+                        <p className="text-[11px] leading-relaxed">
+                          Penjual ini menjual dengan <strong>Rate {formatDecimal(competitorRateResult.ratePerRobux, 2)}</strong>, artinya setiap <strong>1 Robux dihargai sebesar Rp{formatDecimal(competitorRateResult.ratePerRobux, 2)}</strong>.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Breakdown Tabel: 1 Robux, 100 Robux, dan 1.000 Robux */}
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-bold uppercase tracking-wider theme-text-secondary block">
+                        Rincian Nominal Robux Sesuai Rate:
+                      </span>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        {/* 1 Robux */}
+                        <div className="p-3 rounded-xl theme-bg-surface border border-cyan-500/40 bg-cyan-500/5">
+                          <span className="text-[10px] font-bold text-cyan-400 block uppercase">1 Robux</span>
+                          <span className="text-sm sm:text-base font-mono font-bold text-cyan-400 block mt-1">
+                            Rp{formatDecimal(competitorRateResult.ratePerRobux, 2)}
+                          </span>
+                          <span className="text-[10px] theme-text-muted block mt-0.5">
+                            Rate {formatDecimal(competitorRateResult.ratePerRobux, 2)}
+                          </span>
+                        </div>
+                        {/* 100 Robux */}
+                        <div className="p-3 rounded-xl theme-bg-surface border border-amber-500/30 bg-amber-500/5">
+                          <span className="text-[10px] font-bold text-amber-400 block uppercase">100 Robux</span>
+                          <span className="text-sm sm:text-base font-mono font-bold text-amber-400 block mt-1">
+                            {formatRupiah(Math.round(competitorRateResult.ratePer100))}
+                          </span>
+                          <span className="text-[10px] theme-text-muted block mt-0.5">
+                            100 R$
+                          </span>
+                        </div>
+                        {/* 1.000 Robux */}
+                        <div className="p-3 rounded-xl theme-bg-surface border border-emerald-500/30 bg-emerald-500/5">
+                          <span className="text-[10px] font-bold text-emerald-400 block uppercase">1.000 Robux</span>
+                          <span className="text-sm sm:text-base font-mono font-bold text-emerald-400 block mt-1">
+                            {formatRupiah(Math.round(competitorRateResult.ratePer1k))}
+                          </span>
+                          <span className="text-[10px] theme-text-muted block mt-0.5">
+                            1.000 R$ (1k)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Komparasi dengan Modal Toko Sendiri (Jika ada stok) */}
+                    {storeAverageCostPerRobux > 0 && (
+                      <div className="p-3.5 rounded-xl border text-xs space-y-1.5 transition">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider theme-text-secondary">
+                            Komparasi Modal Kulakan JufaStore
+                          </span>
+                          <span className="font-mono text-[11px] text-zinc-400">
+                            Modal: Rp{formatDecimal(storeAverageCostPerRobux, 1)}/R$
+                          </span>
+                        </div>
+
+                        {competitorRateResult.ratePerRobux > storeAverageCostPerRobux ? (
+                          <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-start gap-2">
+                            <TrendingUp size={15} className="shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-bold block">Harga Kompetitor Untung!</span>
+                              <span className="text-[11px] opacity-90 leading-relaxed block">
+                                Rate ini lebih tinggi Rp{formatDecimal(competitorRateResult.ratePerRobux - storeAverageCostPerRobux, 1)}/R$ dari modal toko Anda. Jika Anda menjual dengan rate ini, Anda untung margin sekitar{' '}
+                                <strong>
+                                  {formatDecimal(
+                                    ((competitorRateResult.ratePerRobux - storeAverageCostPerRobux) /
+                                      competitorRateResult.ratePerRobux) *
+                                      100,
+                                    1
+                                  )}
+                                  %
+                                </strong>.
+                              </span>
+                            </div>
+                          </div>
+                        ) : competitorRateResult.ratePerRobux < storeAverageCostPerRobux ? (
+                          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2">
+                            <TrendingDown size={15} className="shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-bold block">Harga Kompetitor di Bawah Modal Toko Anda!</span>
+                              <span className="text-[11px] opacity-90 leading-relaxed block">
+                                Rate ini lebih murah Rp{formatDecimal(storeAverageCostPerRobux - competitorRateResult.ratePerRobux, 1)}/R$ dibandingkan modal stok Anda. Hati-hati jangan meniru harga ini kecuali Anda sudah mendapatkan supplier kulakan yang lebih murah.
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs">
+                            Harga sama persis dengan modal kulakan Anda (Break-even Rp0 laba).
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Simulasi Jual Kembali / Reseller Arbitrase */}
+                    <div className="p-3.5 rounded-xl theme-bg-surface border theme-border space-y-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles size={14} className="text-cyan-400" />
+                        <span className="text-xs font-bold uppercase tracking-wider theme-text-primary">
+                          Simulasi Jika Beli Dari Orang Ini Lalu Dijual Kembali:
+                        </span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium theme-text-secondary">
+                          Target Rate Jual Kembali (Rp / R$)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
+                            Rp
+                          </span>
+                          <input
+                            type="number"
+                            step="any"
+                            inputMode="decimal"
+                            placeholder="Ketik rate jual kembali..."
+                            value={resellTargetRate}
+                            onChange={(e) => setResellTargetRate(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-cyan-500 font-mono font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      {resellSimulation && (
+                        <div className="space-y-2 pt-1">
+                          {resellSimulation.isProfit && (
+                            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs space-y-1.5">
+                              <div className="flex items-center justify-between text-emerald-400 font-bold">
+                                <span className="flex items-center gap-1">
+                                  <TrendingUp size={15} />
+                                  <span>Potensi Keuntungan Reseller:</span>
+                                </span>
+                                <span className="text-sm font-mono font-extrabold">
+                                  +{formatRupiah(resellSimulation.profit)}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-emerald-500/20 text-[11px]">
+                                <div>
+                                  <span className="theme-text-muted block">Omzet Jual:</span>
+                                  <span className="font-mono font-bold theme-text-primary">
+                                    {formatRupiah(resellSimulation.sellRevenue)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="theme-text-muted block">Untung per 1 R$:</span>
+                                  <span className="font-mono font-bold text-emerald-400">
+                                    +Rp{formatDecimal(resellSimulation.profitPerRobux, 2)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="theme-text-muted block">Margin:</span>
+                                  <span className="font-mono font-bold text-emerald-400">
+                                    +{formatDecimal(resellSimulation.margin, 1)}%
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {resellSimulation.isBreakEven && (
+                            <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
+                              Target rate sama dengan harga beli orang ini (Rp0 laba).
+                            </div>
+                          )}
+
+                          {resellSimulation.isLoss && (
+                            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 space-y-1">
+                              <div className="flex items-center gap-1.5 font-bold">
+                                <TrendingDown size={15} />
+                                <span>Peringatan Rugi!</span>
+                              </div>
+                              <p className="text-[11px] leading-relaxed">
+                                Rate jual kembali (Rate {resellTargetRate}) lebih murah dari harga beli orang ini (Rate {formatDecimal(competitorRateResult.ratePerRobux, 2)}).
+                                Anda akan <strong>RUGI -{formatRupiah(Math.abs(resellSimulation.profit))}</strong> (-Rp{formatDecimal(Math.abs(resellSimulation.profitPerRobux), 2)}/R$).
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              {competitorRateResult.ratePerRobux > 0 && (
+                <div className="space-y-2 pt-2 border-t theme-border">
+                  <button
+                    type="button"
+                    onClick={handleApplyFinderRateToCalc}
+                    className="w-full py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
+                  >
+                    <ArrowRight size={14} />
+                    <span>Terapkan Rate Ini ke Kalkulator Jual JufaStore</span>
+                  </button>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveFinderRateAsPreset}
+                      className="flex-1 py-2 px-3 rounded-xl theme-bg-surface border theme-border hover:border-cyan-500/50 text-xs font-semibold theme-text-primary transition flex items-center justify-center gap-1.5"
+                    >
+                      <Plus size={13} className="text-cyan-400" />
+                      <span>Simpan Jadi Preset</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyFinderResult}
+                      className="flex-1 py-2 px-3 rounded-xl theme-bg-surface border theme-border hover:border-cyan-500/50 text-xs font-semibold theme-text-primary transition flex items-center justify-center gap-1.5"
+                    >
+                      <Copy size={13} className="text-cyan-400" />
+                      <span>Salin Rincian</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Calculator Body Cards (Mode 1 & Mode 2) */
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Left Card: Input Form */}
         <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-4">
           <h2 className="text-sm font-semibold theme-text-primary flex items-center gap-2">
@@ -746,6 +1276,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
           </button>
         </div>
       </div>
+      )}
 
       {/* Modal / Bottom Sheet Konfirmasi Penjualan */}
       {showSaleModal && (
