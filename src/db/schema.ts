@@ -7,6 +7,10 @@ export interface AppSettings {
   customLogoUrl: string | null;
   schemaVersion: number;
   lastBackupAt?: string;
+  googleSheetsUrl?: string;
+  googleSpreadsheetDocUrl?: string;
+  autoSyncFrequency?: 'REALTIME' | 'DAILY' | 'MONTHLY' | 'MANUAL';
+  lastSyncAt?: string;
 }
 
 export interface RatePreset {
@@ -27,6 +31,10 @@ export interface StockBatch {
   totalCostRupiah: number;
   remainingCostRupiah: number;
   unitCostDisplay: number;
+  fundingSource?: 'OWN_FUNDS' | 'LOAN' | 'COMBINED';
+  ownFundsRupiah?: number;
+  loanFundsRupiah?: number;
+  loanId?: string;
   notes?: string;
 }
 
@@ -131,4 +139,25 @@ export interface InvestorPayout {
   amountRupiah: number;
   periodNotes?: string;
   createdAt: string;
+}
+
+export interface LoanPayment {
+  id: string;
+  amountRupiah: number;
+  date: string;
+  source: 'AUTO_SALE' | 'MANUAL';
+  notes?: string;
+}
+
+export interface Loan {
+  id: string;
+  batchId?: string;
+  borrowerOrLender: string; // Pemberi pinjaman / kreditor
+  loanAmountRupiah: number; // Pokok utang
+  remainingLoanRupiah: number; // Sisa pokok utang
+  dueDate: string; // YYYY-MM-DD
+  status: 'ACTIVE' | 'PAID';
+  notes?: string;
+  createdAt: string;
+  payments: LoanPayment[];
 }

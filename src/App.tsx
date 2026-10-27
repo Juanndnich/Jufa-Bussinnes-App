@@ -13,6 +13,7 @@ import { SettingsView } from './features/settings/SettingsView';
 import { PricelistView } from './features/pricelist/PricelistView';
 import { AppInfoView } from './features/info/AppInfoView';
 import { SplashScreen } from './components/SplashScreen';
+import { QuickSaleModal } from './features/sales/QuickSaleModal';
 import { repository } from './db/repository';
 import { AppSettings } from './db/schema';
 import { applyTheme } from './utils/theme';
@@ -23,6 +24,20 @@ export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<NavItem>('dashboard');
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [currentStock, setCurrentStock] = useState<number>(0);
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [showGlobalQuickSale, setShowGlobalQuickSale] = useState(false);
+
+  // Network online/offline listener
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Load state umum (stok & pengaturan)
   const refreshGlobalState = useCallback(async () => {
@@ -89,8 +104,10 @@ export const App: React.FC = () => {
           <Header
             currentStock={currentStock}
             currentTheme={settings?.theme || 'dark'}
+            isOnline={isOnline}
             onToggleTheme={handleToggleTheme}
             onNavigateTab={handleSelectTab}
+            onOpenQuickSale={() => setShowGlobalQuickSale(true)}
             storeName={settings?.storeName}
             customLogoUrl={settings?.customLogoUrl}
           />
@@ -145,6 +162,13 @@ export const App: React.FC = () => {
           onSelectTab={handleSelectTab}
         />
       </div>
+
+      {/* Global Quick Sale Modal */}
+      <QuickSaleModal
+        isOpen={showGlobalQuickSale}
+        onClose={() => setShowGlobalQuickSale(false)}
+        onSaleSaved={refreshGlobalState}
+      />
     </>
   );
 };

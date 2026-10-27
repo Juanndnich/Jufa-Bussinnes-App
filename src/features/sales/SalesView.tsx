@@ -16,7 +16,9 @@ import {
   X,
   Pencil,
   Trash2,
+  Plus,
 } from 'lucide-react';
+import { QuickSaleModal } from './QuickSaleModal';
 import { repository } from '../../db/repository';
 import { Sale } from '../../db/schema';
 import {
@@ -36,6 +38,7 @@ export const SalesView: React.FC = () => {
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedSaleDetail, setSelectedSaleDetail] = useState<Sale | null>(null);
+  const [showQuickSaleModal, setShowQuickSaleModal] = useState(false);
 
   // Edit Sale State
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
@@ -168,20 +171,33 @@ export const SalesView: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick CSV Export Button */}
-        <button
-          type="button"
-          onClick={() => {
-            playTapSound();
-            exportSalesToCsv(filteredSales);
-          }}
-          disabled={filteredSales.length === 0}
-          className="px-3.5 py-2 rounded-xl theme-bg-card border theme-border hover:theme-bg-card-hover disabled:opacity-40 disabled:cursor-not-allowed theme-text-primary text-xs font-semibold flex items-center gap-2 transition active:scale-98 self-start sm:self-auto shadow-sm"
-          title="Unduh laporan penjualan terfilter ke format CSV / Excel"
-        >
-          <FileSpreadsheet size={15} className="text-emerald-500" />
-          <span>Ekspor CSV ({filteredSales.length})</span>
-        </button>
+        {/* Actions: Catat Penjualan & Ekspor CSV */}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => {
+              playTapSound();
+              setShowQuickSaleModal(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-98 shadow-sm"
+          >
+            <Plus size={15} />
+            <span>Catat Jual Baru</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              playTapSound();
+              exportSalesToCsv(filteredSales);
+            }}
+            disabled={filteredSales.length === 0}
+            className="px-3.5 py-2 rounded-xl theme-bg-card border theme-border hover:theme-bg-card-hover disabled:opacity-40 disabled:cursor-not-allowed theme-text-primary text-xs font-semibold flex items-center gap-2 transition active:scale-98 shadow-sm"
+            title="Unduh laporan penjualan terfilter ke format CSV / Excel"
+          >
+            <FileSpreadsheet size={15} className="text-emerald-500" />
+            <span>Ekspor CSV ({filteredSales.length})</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter & Search Bar */}
@@ -571,6 +587,13 @@ export const SalesView: React.FC = () => {
           </form>
         </div>
       )}
+
+      {/* Quick Sale Modal */}
+      <QuickSaleModal
+        isOpen={showQuickSaleModal}
+        onClose={() => setShowQuickSaleModal(false)}
+        onSaleSaved={loadSales}
+      />
     </div>
   );
 };

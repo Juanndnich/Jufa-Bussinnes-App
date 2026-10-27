@@ -20,6 +20,13 @@ import {
   Database,
   Copy,
   FileCode,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  ExternalLink,
+  Check,
+  Globe,
+  Radio,
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { z } from 'zod';
@@ -36,6 +43,7 @@ import {
   showWarningAlert,
   showConfirmDialog,
 } from '../../utils/alert';
+import { testGoogleSheetsUrl, syncAllDataToGoogleSheets, initializeGoogleSheetTable, getSpreadsheetOpenUrl, GOOGLE_APPS_SCRIPT_TEMPLATE } from '../../utils/googleSheets';
 
 const APP_VERSION = '2.1.0';
 
@@ -54,6 +62,7 @@ const BackupSchema = z.object({
   auditLogs: z.array(z.any()).optional(),
   investors: z.array(z.any()).optional(),
   investorPayouts: z.array(z.any()).optional(),
+  loans: z.array(z.any()).optional(),
 });
 
 interface SettingsViewProps {
@@ -65,6 +74,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
   const [storeName, setStoreName] = useState('JufaStore');
   const [themeMode, setThemeMode] = useState<'system' | 'light' | 'dark'>('dark');
   const [soundEnabled, setSoundActive] = useState<boolean>(() => isSoundEnabled());
+
+  // Google Sheets Cloud Sync State
+  const [googleSheetsUrl, setGoogleSheetsUrl] = useState('');
+  const [googleSpreadsheetDocUrl, setGoogleSpreadsheetDocUrl] = useState('');
+  const [autoSyncFrequency, setAutoSyncFrequency] = useState<'MANUAL' | 'REALTIME' | 'DAILY' | 'MONTHLY'>('MANUAL');
+  const [isTestingSheets, setIsTestingSheets] = useState(false);
+  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
+  const [isInitializingTable, setIsInitializingTable] = useState(false);
+  const [isSavingSheetsConfig, setIsSavingSheetsConfig] = useState(false);
+  const [showScriptGuideModal, setShowScriptGuideModal] = useState(false);
+  const [isSheetsVerified, setIsSheetsVerified] = useState(false);
 
   // Cropper state
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -87,6 +107,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
       setSettings(s);
       setStoreName(s.storeName || 'JufaStore');
       setThemeMode(s.theme || 'dark');
+      setGoogleSheetsUrl(s.googleSheetsUrl || '');
+      setGoogleSpreadsheetDocUrl(s.googleSpreadsheetDocUrl || '');
+      setAutoSyncFrequency(s.autoSyncFrequency || 'MANUAL');
+      if (s.googleSheetsUrl && s.googleSheetsUrl.includes('/exec')) {
+        setIsSheetsVerified(true);
+      }
     } catch (err) {
       console.error('Failed to load settings:', err);
     }
@@ -131,6 +157,194 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
     applyTheme(mode);
     await repository.updateSettings({ theme: mode });
     if (onSettingsChanged) onSettingsChanged();
+  };
+
+
+  // Handler: Buka Spreadsheet di Tab Baru
+  const handleOpenSpreadsheetDoc = () => {
+    playTapSound();
+    const docUrl = googleSpreadsheetDocUrl.trim();
+    if (!docUrl) {
+      showWarningAlert('Tautan Belum Diisi', 'Masukkan link Google Spreadsheet Anda terlebih dahulu.');
+      return;
+    }
+    const finalUrl = getSpreadsheetOpenUrl(docUrl);
+    window.open(finalUrl, '_blank');
+  };
+
+  // Handler: Uji Koneksi Google Sheets
+  const handleTestSheetsConnection = async () => {
+    playTapSound();
+    const cleanUrl = googleSheetsUrl.trim();
+    if (!cleanUrl) {
+      await showWarningAlert('URL Masih Kosong', 'Masukkan URL Web App Apps Script (berakhiran /exec) terlebih dahulu.');
+      return;
+    }
+
+    // Jika pengguna tidak sengaja menempel link Google Spreadsheet dokumen ke kolom Web App
+    if (cleanUrl.includes('docs.google.com/spreadsheets')) {
+      setGoogleSpreadsheetDocUrl(cleanUrl);
+      setGoogleSheetsUrl('');
+      await repository.updateSettings({ googleSpreadsheetDocUrl: cleanUrl });
+      await showWarningAlert(
+        'Tautan Tersimpan sebagai Link Dokumen',
+        'Tautan yang Anda masukkan adalah link Spreadsheet Anda. Kami telah memindahkannya ke kolom Link Dokumen. Untuk mengirim data otomatis, silakan buat Web App Apps Script dengan mengikuti tombol Panduan.'
+      );
+      setShowScriptGuideModal(true);
+      return;
+    }
+
+    setIsTestingSheets(true);
+    try {
+      const res = await testGoogleSheetsUrl(cleanUrl);
+      if (res.ok) {
+        setIsSheetsVerified(true);
+        await repository.updateSettings({
+          googleSheetsUrl: cleanUrl,
+          googleSpreadsheetDocUrl: googleSpreadsheetDocUrl.trim() || undefined,
+        });
+        await loadSettings();
+        playSuccessSound();
+        await showSuccessAlert('Koneksi Berhasil & Terverifikasi!', res.message);
+      } else {
+        setIsSheetsVerified(false);
+        await showErrorAlert('Koneksi Gagal', res.message);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal menguji koneksi';
+      await showErrorAlert('Gagal', msg);
+    } finally {
+      setIsTestingSheets(false);
+    }
+  };
+
+  // Handler: Buat Struktur Tabel Kolom Otomatis di Spreadsheet
+  const handleInitializeTable = async () => {
+    playTapSound();
+    if (!googleSheetsUrl.trim()) {
+      await showWarningAlert('Web App Belum Diatur', 'Hubungkan URL Web App Apps Script terlebih dahulu.');
+      return;
+    }
+
+    setIsInitializingTable(true);
+    try {
+      const res = await initializeGoogleSheetTable(googleSheetsUrl);
+      if (res.success) {
+        playSuccessSound();
+        const ok = await showConfirmDialog({
+          title: '6 Tabel Terpisah Berhasil Dibuat!',
+          text: 'Semua 6 sheet tabel (Penjualan, Stok FIFO, Buku Kas, Pinjaman Modal, Investor, dan Pemakaian Pribadi) telah berhasil dibuat di tab masing-masing dengan jarak kolom yang lapang. Buka spreadsheet sekarang untuk melihat hasilnya?',
+          confirmButtonText: 'Buka Spreadsheet',
+          cancelButtonText: 'Tutup',
+        });
+        if (ok && googleSpreadsheetDocUrl.trim()) {
+          window.open(getSpreadsheetOpenUrl(googleSpreadsheetDocUrl.trim()), '_blank');
+        }
+      } else {
+        await showErrorAlert('Gagal Membuat Tabel', res.message);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Terjadi kesalahan';
+      await showErrorAlert('Gagal', msg);
+    } finally {
+      setIsInitializingTable(false);
+    }
+  };
+
+  // Handler: Simpan Pengaturan Google Sheets
+  const handleSaveSheetsConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    playTapSound();
+    setIsSavingSheetsConfig(true);
+    try {
+      await repository.updateSettings({
+        googleSheetsUrl: googleSheetsUrl.trim(),
+        googleSpreadsheetDocUrl: googleSpreadsheetDocUrl.trim(),
+        autoSyncFrequency,
+      });
+      await loadSettings();
+      playSuccessSound();
+      await showSuccessAlert('Pengaturan Disimpan', 'Konfigurasi Google Sheets berhasil disimpan ke database lokal.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal menyimpan pengaturan';
+      await showErrorAlert('Gagal', msg);
+    } finally {
+      setIsSavingSheetsConfig(false);
+    }
+  };
+
+  // Handler: Salin Template Script Google Apps Script (Dengan Fallback Handal)
+  const handleCopyAppsScript = async () => {
+    playTapSound();
+    let copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_TEMPLATE);
+        copied = true;
+      }
+    } catch (err) {
+      copied = false;
+    }
+
+    if (!copied) {
+      try {
+        const textarea = document.getElementById('appsScriptTextArea') as HTMLTextAreaElement;
+        if (textarea) {
+          textarea.select();
+          document.execCommand('copy');
+          copied = true;
+        }
+      } catch (err) {
+        copied = false;
+      }
+    }
+
+    if (copied) {
+      playSuccessSound();
+      await showSuccessAlert(
+        'Kode Berhasil Disalin!',
+        'Tempelkan kode ini ke editor Google Apps Script di spreadsheet Anda, lalu Deploy sebagai Web App dengan izin "Anyone".'
+      );
+    } else {
+      await showWarningAlert(
+        'Seleksi Manual',
+        'Silakan seleksi seluruh teks pada kotak kode di bawah dan tekan Ctrl+C pada keyboard Anda.'
+      );
+    }
+  };
+
+  // Handler: Sinkronisasikan Sekarang
+  const handleSyncSheetsNow = async () => {
+    playTapSound();
+    if (!googleSheetsUrl.trim()) {
+      await showWarningAlert('URL Belum Diatur', 'Masukkan dan simpan URL Web App Google Sheets terlebih dahulu.');
+      return;
+    }
+
+    setIsSyncingSheets(true);
+    try {
+      const res = await syncAllDataToGoogleSheets(googleSheetsUrl);
+      if (res.success) {
+        await loadSettings();
+        playSuccessSound();
+        const ok = await showConfirmDialog({
+          title: 'Sinkronisasi Berhasil!',
+          text: res.message + ' Ingin membuka spreadsheet sekarang untuk melihat hasil kerja pencadangan?',
+          confirmButtonText: 'Buka Spreadsheet',
+          cancelButtonText: 'Tutup',
+        });
+        if (ok && googleSpreadsheetDocUrl.trim()) {
+          window.open(getSpreadsheetOpenUrl(googleSpreadsheetDocUrl.trim()), '_blank');
+        }
+      } else {
+        await showErrorAlert('Sinkronisasi Gagal', res.message);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal melakukan sinkronisasi';
+      await showErrorAlert('Gagal', msg);
+    } finally {
+      setIsSyncingSheets(false);
+    }
   };
 
   // Save store name
@@ -222,6 +436,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         logs,
         invs,
         pays,
+        allLoans,
       ] = await Promise.all([
         db.settings.toArray(),
         db.ratePresets.toArray(),
@@ -234,10 +449,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         db.auditLogs.toArray(),
         db.investors.toArray(),
         db.investorPayouts.toArray(),
+        db.loans.toArray(),
       ]);
 
       const backupData = {
-        version: 2,
+        version: 3,
         exportedAt: new Date().toISOString(),
         settings: s,
         ratePresets: presets,
@@ -250,6 +466,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         auditLogs: logs,
         investors: invs,
         investorPayouts: pays,
+        loans: allLoans,
       };
 
       const jsonStr = JSON.stringify(backupData, null, 2);
@@ -291,6 +508,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         logs,
         invs,
         pays,
+        allLoans,
       ] = await Promise.all([
         db.settings.toArray(),
         db.ratePresets.toArray(),
@@ -303,10 +521,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         db.auditLogs.toArray(),
         db.investors.toArray(),
         db.investorPayouts.toArray(),
+        db.loans.toArray(),
       ]);
 
       const backupData = {
-        version: 2,
+        version: 3,
         exportedAt: new Date().toISOString(),
         settings: s,
         ratePresets: presets,
@@ -319,6 +538,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         auditLogs: logs,
         investors: invs,
         investorPayouts: pays,
+        loans: allLoans,
       };
 
       const jsonStr = JSON.stringify(backupData, null, 2);
@@ -356,6 +576,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         db.auditLogs,
         db.investors,
         db.investorPayouts,
+        db.loans,
       ],
       async () => {
         if (data.settings) {
@@ -401,6 +622,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         if (data.investorPayouts) {
           await db.investorPayouts.clear();
           await db.investorPayouts.bulkPut(data.investorPayouts);
+        }
+        if (data.loans) {
+          await db.loans.clear();
+          await db.loans.bulkPut(data.loans);
         }
       }
     );
@@ -937,6 +1162,331 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
           </button>
         </div>
       </div>
+
+      {/* Bagian 4: Sinkronisasi Cloud Google Spreadsheet */}
+      <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b theme-border">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+              <Cloud size={17} />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold theme-text-primary tracking-tight">
+                Sinkronisasi Cloud Google Spreadsheet
+              </h2>
+              <p className="text-[11px] theme-text-secondary">
+                Cadangkan data transaksi, restock, kas, & pinjaman ke Google Spreadsheet secara online
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isSheetsVerified ? (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                <Check size={11} />
+                <span>Terhubung</span>
+              </span>
+            ) : (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold theme-bg-surface theme-text-muted border theme-border">
+                Belum Terhubung
+              </span>
+            )}
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveSheetsConfig} className="space-y-4">
+          {/* Kolom 1: Link Google Spreadsheet Dokumen Pengguna */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold theme-text-secondary">
+                1. Link Google Spreadsheet Anda (Tempat Melihat Hasil)
+              </label>
+              {googleSpreadsheetDocUrl.trim() && (
+                <button
+                  type="button"
+                  onClick={handleOpenSpreadsheetDoc}
+                  className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
+                >
+                  <ExternalLink size={12} />
+                  <span>Buka Spreadsheet di Tab Baru</span>
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                placeholder="Contoh: https://docs.google.com/spreadsheets/d/1eh5OCM.../edit"
+                value={googleSpreadsheetDocUrl}
+                onChange={(e) => setGoogleSpreadsheetDocUrl(e.target.value)}
+                className="flex-1 px-3.5 py-2.5 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={handleOpenSpreadsheetDoc}
+                disabled={!googleSpreadsheetDocUrl.trim()}
+                className="px-3.5 py-2.5 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card disabled:opacity-40 text-xs font-semibold theme-text-primary transition flex items-center gap-1.5 shrink-0"
+                title="Buka dokumen spreadsheet"
+              >
+                <ExternalLink size={13} className="text-emerald-400" />
+                <span className="hidden sm:inline">Buka Sheet</span>
+              </button>
+            </div>
+            <p className="text-[10px] theme-text-muted">
+              Tempelkan link Google Spreadsheet Anda di sini agar bisa dibuka langsung dengan 1 klik kapan saja.
+            </p>
+          </div>
+
+          {/* Kolom 2: URL Web App Apps Script (Jembatan Kirim Data) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold theme-text-secondary">
+                2. URL Web App Google Apps Script (Jembatan Kirim Data)
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setShowScriptGuideModal(true);
+                }}
+                className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
+              >
+                <FileCode size={12} />
+                <span>Panduan & Salin Kode Apps Script</span>
+              </button>
+            </div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <input
+                type="url"
+                placeholder="https://script.google.com/macros/s/.../exec"
+                value={googleSheetsUrl}
+                onChange={(e) => setGoogleSheetsUrl(e.target.value)}
+                className="flex-1 px-3.5 py-2.5 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={handleTestSheetsConnection}
+                disabled={isTestingSheets || !googleSheetsUrl.trim()}
+                className="px-4 py-2.5 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card disabled:opacity-40 text-xs font-semibold theme-text-primary transition flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <Radio size={14} className={isTestingSheets ? 'animate-pulse text-emerald-400' : 'text-emerald-400'} />
+                <span>{isTestingSheets ? 'Menguji...' : 'Uji Koneksi'}</span>
+              </button>
+            </div>
+            <p className="text-[10px] theme-text-muted">
+              URL Web App didapat setelah Anda memasang kode di menu <strong>Ekstensi &gt; Apps Script</strong> pada spreadsheet Anda (berakhiran <span className="font-mono text-emerald-400 font-bold">/exec</span>).
+            </p>
+          </div>
+
+          {/* Frekuensi Cadangan Otomatis */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold theme-text-secondary block">
+              Jadwal Cadangan Otomatis Cloud
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(
+                [
+                  { id: 'REALTIME', label: 'Realtime (Online)', desc: 'Tiap transaksi selesai' },
+                  { id: 'DAILY', label: 'Harian (WIB)', desc: 'Pencadangan tiap hari' },
+                  { id: 'MONTHLY', label: 'Bulanan', desc: 'Pencadangan tiap bulan' },
+                  { id: 'MANUAL', label: 'Manual Saja', desc: 'Hanya jika tombol ditekan' },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    playTapSound();
+                    setAutoSyncFrequency(f.id);
+                  }}
+                  className={`p-2.5 rounded-xl border text-left transition ${
+                    autoSyncFrequency === f.id
+                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400 font-bold shadow-sm'
+                      : 'theme-border theme-bg-surface theme-text-secondary hover:theme-text-primary'
+                  }`}
+                >
+                  <span className="text-xs block">{f.label}</span>
+                  <span className="text-[10px] opacity-75 font-normal block">{f.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tombol Aksi Lengkap */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t theme-border">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Tombol Buat Tabel Otomatis */}
+              <button
+                type="button"
+                onClick={handleInitializeTable}
+                disabled={isInitializingTable || !googleSheetsUrl.trim()}
+                className="px-3.5 py-2 rounded-xl theme-bg-surface border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                title="Buat tabel dan header kolom otomatis di spreadsheet"
+              >
+                <FileSpreadsheet size={14} className={isInitializingTable ? 'animate-spin' : ''} />
+                <span>{isInitializingTable ? 'Membuat Tabel...' : 'Buat Tabel di Spreadsheet'}</span>
+              </button>
+
+              {/* Tombol Buka Panduan Kode */}
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setShowScriptGuideModal(true);
+                }}
+                className="px-3 py-2 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card text-xs font-medium theme-text-primary flex items-center gap-1.5 transition"
+              >
+                <FileCode size={13} className="text-amber-400" />
+                <span>Panduan & Kode Script</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Tombol Sinkronkan Sekarang */}
+              <button
+                type="button"
+                onClick={handleSyncSheetsNow}
+                disabled={isSyncingSheets || !googleSheetsUrl.trim()}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              >
+                <RefreshCw size={13} className={isSyncingSheets ? 'animate-spin' : ''} />
+                <span>{isSyncingSheets ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}</span>
+              </button>
+
+              <button
+                type="submit"
+                disabled={isSavingSheetsConfig}
+                className="px-4 py-2 rounded-xl theme-btn-primary hover:opacity-90 disabled:opacity-40 text-xs font-semibold transition shadow-sm"
+              >
+                {isSavingSheetsConfig ? 'Menyimpan...' : 'Simpan Pengaturan'}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Modal Panduan & Salin Kode Apps Script */}
+      {showScriptGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-xl rounded-2xl theme-bg-card border theme-border p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b theme-border">
+              <div className="flex items-center gap-2">
+                <FileCode size={18} className="text-emerald-500" />
+                <h3 className="font-bold theme-text-primary text-sm">
+                  Panduan Menghubungkan Google Spreadsheet
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowScriptGuideModal(false)}
+                className="text-xs theme-text-muted hover:theme-text-primary"
+              >
+                Tutup
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 space-y-1">
+                <span className="font-bold block">Hanya Perlu Dilakukan 1 Kali:</span>
+                <p className="text-[11px] leading-relaxed opacity-95">
+                  Spreadsheet Anda membutuhkan jembatan Web App Apps Script agar JufaStore dapat mengirim data transaksi, membuat tabel, dan melakukan pencadangan otomatis secara aman.
+                </p>
+              </div>
+
+              {/* Langkah-langkah */}
+              <div className="space-y-2">
+                <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">1</span>
+                  <div className="space-y-1">
+                    <span className="font-semibold theme-text-primary block">Buka Spreadsheet Anda</span>
+                    <p className="text-[11px] theme-text-muted">Buka Google Spreadsheet kosong Anda di browser.</p>
+                    {googleSpreadsheetDocUrl.trim() && (
+                      <button
+                        type="button"
+                        onClick={handleOpenSpreadsheetDoc}
+                        className="text-[11px] text-emerald-400 underline font-semibold flex items-center gap-1 mt-1"
+                      >
+                        <ExternalLink size={11} />
+                        <span>Klik di sini untuk membuka Spreadsheet Anda</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">2</span>
+                  <div>
+                    <span className="font-semibold theme-text-primary block">Buka Editor Apps Script</span>
+                    <p className="text-[11px] theme-text-muted">Pada menu atas Spreadsheet, klik menu <strong>Ekstensi</strong> lalu pilih <strong>Apps Script</strong>.</p>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">3</span>
+                  <div>
+                    <span className="font-semibold theme-text-primary block">Hapus Kode Lama &amp; Tempelkan Kode di Bawah</span>
+                    <p className="text-[11px] theme-text-muted">Hapus kode bawaan yang ada di editor Apps Script, lalu tempel kode lengkap yang disediakan di bawah ini.</p>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">4</span>
+                  <div>
+                    <span className="font-semibold theme-text-primary block">Deploy Sebagai Web App</span>
+                    <p className="text-[11px] theme-text-muted leading-relaxed">
+                      Klik tombol biru <strong>Deploy</strong> (Terapkan) di kanan atas &gt; pilih <strong>New Deployment</strong> (Penerapan baru).
+                      Pilih jenis <strong>Web App</strong>. Pada bagian <em>Who has access</em> (Siapa yang memiliki akses), pilih <strong>Anyone</strong> (Siapa saja). Lalu klik <strong>Deploy</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">5</span>
+                  <div>
+                    <span className="font-semibold theme-text-primary block">Salin Web App URL</span>
+                    <p className="text-[11px] theme-text-muted">Salin Web App URL yang berakhiran <strong className="text-emerald-400">/exec</strong> dan tempelkan ke kolom URL Web App di JufaStore.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Kotak Kode Apps Script */}
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold theme-text-primary">Kode Google Apps Script:</span>
+                  <button
+                    type="button"
+                    onClick={handleCopyAppsScript}
+                    className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm"
+                  >
+                    <Copy size={12} />
+                    <span>Salin Kode</span>
+                  </button>
+                </div>
+
+                <textarea
+                  id="appsScriptTextArea"
+                  readOnly
+                  rows={8}
+                  value={GOOGLE_APPS_SCRIPT_TEMPLATE}
+                  className="w-full p-3 rounded-xl theme-bg-input border theme-border text-[11px] font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[10px] theme-text-muted">
+                  Jika tombol salin otomatis terhalang oleh pengaturan privasi browser Anda, Anda dapat menyeleksi seluruh teks di dalam kotak di atas dan tekan <strong className="theme-text-primary">Ctrl + C</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t theme-border">
+              <button
+                type="button"
+                onClick={() => setShowScriptGuideModal(false)}
+                className="px-4 py-2 rounded-xl text-xs theme-btn-primary font-bold shadow-sm"
+              >
+                Saya Mengerti, Tutup Panduan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Cropper Logo */}
       {showCropModal && imageSrc && (

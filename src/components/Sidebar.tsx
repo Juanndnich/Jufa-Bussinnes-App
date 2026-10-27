@@ -116,8 +116,8 @@ export const CATEGORIZED_NAV: NavCategory[] = [
       },
       {
         id: 'info',
-        label: 'Info Aplikasi',
-        shortLabel: 'Info',
+        label: 'Tentang Aplikasi',
+        shortLabel: 'Tentang',
         icon: Info,
       },
     ],

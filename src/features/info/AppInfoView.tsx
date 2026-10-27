@@ -16,6 +16,12 @@ import {
   BookOpen,
   ArrowRight,
   Sparkles,
+  Landmark,
+  FileCode,
+  Lock,
+  Globe,
+  Receipt,
+  Wallet,
 } from 'lucide-react';
 import { db } from '../../db/db';
 import { formatNumber } from '../../utils/formatters';
@@ -28,6 +34,7 @@ export const AppInfoView: React.FC = () => {
     cashLedger: 0,
     personalUsages: 0,
     investors: 0,
+    loans: 0,
     auditLogs: 0,
   });
 
@@ -38,17 +45,21 @@ export const AppInfoView: React.FC = () => {
       db.cashLedger.count(),
       db.personalUsages.count(),
       db.investors.count(),
+      db.loans.count(),
       db.auditLogs.count(),
-    ]).then(([batches, sales, ledger, usages, investors, logs]) => {
-      setStats({
-        stockBatches: batches,
-        sales,
-        cashLedger: ledger,
-        personalUsages: usages,
-        investors,
-        auditLogs: logs,
-      });
-    }).catch(() => {});
+    ])
+      .then(([batches, sales, ledger, usages, investors, loans, logs]) => {
+        setStats({
+          stockBatches: batches,
+          sales,
+          cashLedger: ledger,
+          personalUsages: usages,
+          investors,
+          loans,
+          auditLogs: logs,
+        });
+      })
+      .catch(() => {});
   }, []);
 
   return (
@@ -56,15 +67,15 @@ export const AppInfoView: React.FC = () => {
       {/* Header View */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b theme-border">
         <div className="flex items-center gap-2.5">
-          <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
             <Info size={20} />
           </div>
           <div>
             <h1 className="text-lg font-bold theme-text-primary tracking-tight">
-              Info Aplikasi JufaStore
+              Tentang Aplikasi JufaStore
             </h1>
             <p className="text-xs theme-text-secondary">
-              Informasi sistem, arsitektur teknis, privasi data lokal, & panduan penggunaan
+              Informasi sistem pembukuan, prinsip akuntansi FIFO, lisensi resmi, & arsitektur lokal
             </p>
           </div>
         </div>
@@ -78,16 +89,16 @@ export const AppInfoView: React.FC = () => {
       <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-3 relative overflow-hidden">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <span className="text-[11px] uppercase tracking-wider font-bold text-indigo-400 block">
-              Sistem Pembukuan & Kalkulator Pribadi
+            <span className="text-[11px] uppercase tracking-wider font-bold text-emerald-500 block">
+              Sistem Manajemen Inventaris & Keuangan Mandiri
             </span>
             <h2 className="text-xl font-bold theme-text-primary">
               JufaStore
             </h2>
             <p className="text-xs theme-text-secondary leading-relaxed max-w-2xl">
-              Aplikasi mandiri khusus pemilik bisnis Robux untuk mencatat persediaan modal FIFO,
-              menghitung transaksi secara fleksibel (rate maupun harga kesepakatan nego), mengelola arus kas riil,
-              dan memantau pembagian dividen pemodal internal tanpa ketergantungan server luar.
+              Aplikasi pembukuan dan kalkulator khusus pemilik bisnis Robux yang dirancang untuk
+              mencatat persediaan modal FIFO presisi tanpa selisih desimal, menghitung penjualan fleksibel (rate maupun harga nego bebas),
+              mengelola arus kas riil, melacak pinjaman modal restock otomatis, serta menyinkronkan data ke Google Spreadsheet secara aman.
             </p>
           </div>
         </div>
@@ -99,7 +110,7 @@ export const AppInfoView: React.FC = () => {
           </div>
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border">
             <span className="text-[10px] theme-text-muted block">Metode Stok</span>
-            <span className="text-xs font-bold text-amber-400">FIFO Presisi Rp0</span>
+            <span className="text-xs font-bold text-amber-400">FIFO Presisi Rp0 Selisih</span>
           </div>
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border">
             <span className="text-[10px] theme-text-muted block">Privasi Data</span>
@@ -107,52 +118,7 @@ export const AppInfoView: React.FC = () => {
           </div>
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border">
             <span className="text-[10px] theme-text-muted block">Format Nominal</span>
-            <span className="text-xs font-bold text-cyan-400">Integer Rupiah Murni</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Keamanan & Privasi Data Lokal */}
-      <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-3">
-        <div className="flex items-center gap-2 pb-2 border-b theme-border">
-          <ShieldCheck size={18} className="text-emerald-400" />
-          <h3 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
-            Keamanan Data & Privasi Terjamin
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div className="p-3 rounded-xl theme-bg-surface border theme-border space-y-1.5">
-            <span className="font-bold theme-text-primary flex items-center gap-1.5">
-              <HardDrive size={14} className="text-indigo-400" />
-              100% Data di Perangkat
-            </span>
-            <p className="theme-text-secondary leading-relaxed text-[11px]">
-              Semua database transaksi, stok, kas, dan investor tersimpan di IndexedDB browser perangkat Anda.
-              Tidak ada data yang diunggah ke server cloud mana pun.
-            </p>
-          </div>
-
-          <div className="p-3 rounded-xl theme-bg-surface border theme-border space-y-1.5">
-            <span className="font-bold theme-text-primary flex items-center gap-1.5">
-              <ShieldCheck size={14} className="text-emerald-400" />
-              Nol Telemetri & Bebas Iklan
-            </span>
-            <p className="theme-text-secondary leading-relaxed text-[11px]">
-              Aplikasi ini tidak memiliki pelacak, analitik pihak ketiga, ataupun iklan. Kecepatan maksimal
-              dan privasi finansial bisnis Anda terjaga seutuhnya.
-            </p>
-          </div>
-
-          <div className="p-3 rounded-xl theme-bg-surface border theme-border space-y-1.5">
-            <span className="font-bold theme-text-primary flex items-center gap-1.5">
-              <Database size={14} className="text-cyan-400" />
-              Cadangan Mandiri Kapan Saja
-            </span>
-            <p className="theme-text-secondary leading-relaxed text-[11px]">
-              Anda dapat mencadangkan seluruh data kapan saja ke berkas JSON atau menyalin teks langsung,
-              serta mengekspor transaksi ke format CSV untuk Microsoft Excel.
-            </p>
+            <span className="text-xs font-bold theme-text-primary">Integer Rupiah Murni</span>
           </div>
         </div>
       </div>
@@ -161,29 +127,29 @@ export const AppInfoView: React.FC = () => {
       <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-3">
         <div className="flex items-center justify-between pb-2 border-b theme-border">
           <div className="flex items-center gap-2">
-            <Database size={18} className="text-cyan-400" />
+            <Database size={18} className="text-emerald-500" />
             <h3 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
-              Status Penyimpanan Lokal Aktif
+              Status Data Aktif di Database Lokal Perangkat
             </h3>
           </div>
-          <span className="text-[11px] theme-text-muted">IndexedDB (Dexie v2)</span>
+          <span className="text-[11px] theme-text-muted">IndexedDB (Dexie v3)</span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
           <div className="p-3 rounded-xl theme-bg-surface border theme-border text-center">
             <span className="text-base font-mono font-bold text-amber-400">{formatNumber(stats.stockBatches)}</span>
-            <span className="text-[10px] theme-text-muted block mt-0.5">Batch Restock</span>
+            <span className="text-[10px] theme-text-muted block mt-0.5">Batch Stok</span>
           </div>
           <div className="p-3 rounded-xl theme-bg-surface border theme-border text-center">
             <span className="text-base font-mono font-bold text-emerald-400">{formatNumber(stats.sales)}</span>
             <span className="text-[10px] theme-text-muted block mt-0.5">Penjualan</span>
           </div>
           <div className="p-3 rounded-xl theme-bg-surface border theme-border text-center">
-            <span className="text-base font-mono font-bold text-cyan-400">{formatNumber(stats.cashLedger)}</span>
+            <span className="text-base font-mono font-bold theme-text-primary">{formatNumber(stats.cashLedger)}</span>
             <span className="text-[10px] theme-text-muted block mt-0.5">Buku Kas</span>
           </div>
           <div className="p-3 rounded-xl theme-bg-surface border theme-border text-center">
-            <span className="text-base font-mono font-bold text-indigo-400">{formatNumber(stats.personalUsages)}</span>
+            <span className="text-base font-mono font-bold text-amber-400">{formatNumber(stats.personalUsages)}</span>
             <span className="text-[10px] theme-text-muted block mt-0.5">Prive Pribadi</span>
           </div>
           <div className="p-3 rounded-xl theme-bg-surface border theme-border text-center">
@@ -191,106 +157,166 @@ export const AppInfoView: React.FC = () => {
             <span className="text-[10px] theme-text-muted block mt-0.5">Investor</span>
           </div>
           <div className="p-3 rounded-xl theme-bg-surface border theme-border text-center">
-            <span className="text-base font-mono font-bold theme-text-primary">{formatNumber(stats.auditLogs)}</span>
+            <span className="text-base font-mono font-bold text-amber-400">{formatNumber(stats.loans)}</span>
+            <span className="text-[10px] theme-text-muted block mt-0.5">Pinjaman</span>
+          </div>
+          <div className="p-3 rounded-xl theme-bg-surface border theme-border text-center">
+            <span className="text-base font-mono font-bold theme-text-secondary">{formatNumber(stats.auditLogs)}</span>
             <span className="text-[10px] theme-text-muted block mt-0.5">Log Audit</span>
           </div>
+        </div>
+      </div>
+
+      {/* 4 Pilar Utama JufaStore */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Pilar 1: Zero-Default Principle */}
+        <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-2">
+          <div className="flex items-center gap-2 text-emerald-500 font-bold text-xs uppercase tracking-wider">
+            <ShieldCheck size={16} />
+            <span>1. Prinsip Nol Data Bawaan (Strict Zero-Default)</span>
+          </div>
+          <p className="text-xs theme-text-secondary leading-relaxed">
+            Aplikasi selalu dimulai dari <strong>0 murni</strong> tanpa ada angka dummy bawaan, tanpa preset rate palsu, dan tanpa saldo awal fiktif. Seluruh angka yang tampil adalah fakta riil dari input operasional Anda sendiri.
+          </p>
+        </div>
+
+        {/* Pilar 2: FIFO Accounting Precision */}
+        <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-2">
+          <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+            <Layers size={16} />
+            <span>2. Akuntansi FIFO & Integer Rupiah Murni</span>
+          </div>
+          <p className="text-xs theme-text-secondary leading-relaxed">
+            Setiap restock membentuk antrean batch tersendiri. Ketika Robux dijual, modal HPP dialokasikan dengan rumus sisa pembulatan bilangan bulat (*integer remainder allocation*) sehingga saat batch habis, selisih modal adalah <strong>tepat Rp0</strong>.
+          </p>
+        </div>
+
+        {/* Pilar 3: Sumber Dana Sendiri vs Pinjaman Modal */}
+        <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-2">
+          <div className="flex items-center gap-2 text-emerald-500 font-bold text-xs uppercase tracking-wider">
+            <Landmark size={16} />
+            <span>3. Fleksibilitas Restock & Utang Modal</span>
+          </div>
+          <p className="text-xs theme-text-secondary leading-relaxed">
+            Dukung pembelian restock menggunakan <strong>Dana Sendiri</strong> (memotong kas toko) maupun <strong>Pinjaman Modal</strong>. Saat Robux dari batch pinjaman terjual, bagian modal HPP otomatis dialokasikan melunasi pokok utang kreditor hingga Rp0.
+          </p>
+        </div>
+
+        {/* Pilar 4: Privasi & Cloud Sync Bebas Terputus */}
+        <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-2">
+          <div className="flex items-center gap-2 text-purple-400 font-bold text-xs uppercase tracking-wider">
+            <Globe size={16} />
+            <span>4. Offline-First & Sinkronisasi Spreadsheet</span>
+          </div>
+          <p className="text-xs theme-text-secondary leading-relaxed">
+            Bekerja 100% tanpa internet. Jika perangkat online, Anda dapat menyinkronkan data langsung ke Google Spreadsheet Anda secara realtime, harian, atau bulanan melalui jembatan Web App Apps Script mandiri.
+          </p>
         </div>
       </div>
 
       {/* Panduan Alur Kerja Praktis */}
       <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-3">
         <div className="flex items-center gap-2 pb-2 border-b theme-border">
-          <BookOpen size={18} className="text-amber-400" />
+          <BookOpen size={18} className="text-emerald-500" />
           <h3 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
-            Panduan Singkat Alur Kerja Pemilik Toko
+            Panduan Alur Kerja Operasional Toko
           </h3>
         </div>
 
-        <div className="space-y-2 text-xs">
+        <div className="space-y-2.5 text-xs">
           <div className="p-3 rounded-xl theme-bg-surface border theme-border flex items-start gap-3">
             <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
               1
             </div>
             <div>
               <span className="font-bold theme-text-primary block">
-                Catat Kulakan di Menu "Stok & Batch"
+                Catat Kulakan di Menu "Stok & Batch FIFO"
               </span>
               <p className="theme-text-secondary text-[11px] mt-0.5 leading-relaxed">
-                Setiap kali membeli Robux dari supplier, masukkan jumlah Robux dan total uang ril yang dibayar.
-                Sistem akan membuat batch FIFO baru dan memotong saldo kas secara otomatis tanpa sisa desimal pembulatan.
+                Pilih sumber dana: Kas Sendiri atau Pinjaman Modal. Masukkan jumlah Robux dan total modal beli. Sistem otomatis menghitung modal per 1 Robux dan menyediakan simulasi proyeksi keuntungan sebelum disimpan.
               </p>
             </div>
           </div>
 
           <div className="p-3 rounded-xl theme-bg-surface border theme-border flex items-start gap-3">
-            <div className="w-6 h-6 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
               2
             </div>
             <div>
               <span className="font-bold theme-text-primary block">
-                Hitung, Nego, & Cek Rate di "Kalkulator Robux"
+                Hitung Transaksi atau Cek Rate di "Kalkulator Robux"
               </span>
               <p className="theme-text-secondary text-[11px] mt-0.5 leading-relaxed">
-                Gunakan mode Robux ke Uang, Uang ke Robux, atau mode <strong>Cari Rate Pasar</strong> (untuk menganalisis harga orang lain, misal 1k Robux seharga Rp13k menghasilkan rate Rp13/R$). Anda juga bisa menjual dengan harga nego kustom bebas.
+                Gunakan Mode Robux ke Uang, Uang ke Robux, atau <strong>Cari Rate Pasar</strong> untuk membedah penawaran orang lain (misal: 1k Robux seharga Rp13k = Rate Rp13/R$). Anda juga bisa menjual langsung dengan harga nego manual.
               </p>
             </div>
           </div>
 
           <div className="p-3 rounded-xl theme-bg-surface border theme-border flex items-start gap-3">
-            <div className="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
               3
             </div>
             <div>
               <span className="font-bold theme-text-primary block">
-                Buat Daftar Harga di Menu "Pricelist"
+                Catat Penjualan Langsung via Tombol "Jual"
               </span>
               <p className="theme-text-secondary text-[11px] mt-0.5 leading-relaxed">
-                Tentukan rate yang diinginkan, pilih paket nominal atau ketik nominal sendiri. Salin teks daftar harga dengan 1 klik untuk promosi atau catatan pribadi.
+                Klik tombol <strong>Jual</strong> di bilah atas aplikasi kapan saja untuk mencatat penjualan baru tanpa harus membuka kalkulator. Stok Robux langsung terpotong urut dari batch FIFO terlama.
               </p>
             </div>
           </div>
 
           <div className="p-3 rounded-xl theme-bg-surface border theme-border flex items-start gap-3">
-            <div className="w-6 h-6 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
               4
             </div>
             <div>
               <span className="font-bold theme-text-primary block">
-                Lakukan Cadangan Rutin di Menu "Pengaturan"
+                Buat Pricelist & Pantau Laporan Keuangan
               </span>
               <p className="theme-text-secondary text-[11px] mt-0.5 leading-relaxed">
-                Cadangkan data secara berkala (minimal 1 minggu sekali) dengan mengunduh file JSON atau menyalin teks database ke tempat aman.
+                Susun daftar harga promosi di menu <strong>Pricelist</strong>, kelola investor di menu <strong>Investor</strong>, dan pantau grafik laba bersih serta arus kas di menu <strong>Analisis & Laporan</strong>.
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Spesifikasi Teknis / Komponen */}
+      {/* Lisensi Resmi & Informasi Hak Cipta */}
       <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-3">
-        <div className="flex items-center gap-2 pb-2 border-b theme-border">
-          <Cpu size={18} className="text-indigo-400" />
-          <h3 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
-            Spesifikasi & Fondasi Teknologi
-          </h3>
+        <div className="flex items-center justify-between pb-2 border-b theme-border">
+          <div className="flex items-center gap-2">
+            <FileCode size={18} className="text-emerald-500" />
+            <h3 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
+              Lisensi Perangkat Lunak Bebas (MIT License)
+            </h3>
+          </div>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+            Open Source
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+        <p className="text-xs theme-text-secondary leading-relaxed">
+          Hak Cipta &copy; 2026 <strong>JufaStore</strong>. Diterbitkan di bawah lisensi resmi <strong>MIT License</strong>.
+          Memberikan kebebasan penuh kepada pemilik untuk menggunakan, memodifikasi, menggabungkan, dan mendistribusikan kode secara aman tanpa royalti.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs pt-1">
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-center justify-between">
             <span className="theme-text-secondary">Framework & Bahasa</span>
-            <span className="font-mono font-semibold theme-text-primary">React 18 + TypeScript 5.9</span>
+            <span className="font-mono font-semibold theme-text-primary">React 18 + TypeScript 5.7</span>
           </div>
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-center justify-between">
             <span className="theme-text-secondary">Bundler & Styling</span>
             <span className="font-mono font-semibold theme-text-primary">Vite 5 + Tailwind CSS 3.4</span>
           </div>
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-center justify-between">
-            <span className="theme-text-secondary">Tipografi Terintegrasi</span>
-            <span className="font-mono font-semibold theme-text-primary">Inter, Poppins & JetBrains Mono</span>
+            <span className="theme-text-secondary">Tipografi Lokal</span>
+            <span className="font-mono font-semibold theme-text-primary">Inter, Poppins, JetBrains Mono</span>
           </div>
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-center justify-between">
-            <span className="theme-text-secondary">Platform Mobile</span>
-            <span className="font-mono font-semibold theme-text-primary">PWA + Capacitor Android</span>
+            <span className="theme-text-secondary">Platform Android</span>
+            <span className="font-mono font-semibold theme-text-primary">Capacitor 6 + PWA Service Worker</span>
           </div>
         </div>
       </div>

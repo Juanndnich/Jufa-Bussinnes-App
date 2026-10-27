@@ -1,5 +1,5 @@
 import React from 'react';
-import { Coins, Moon, Sun, BarChart3, Settings } from 'lucide-react';
+import { Coins, Moon, Sun, BarChart3, Settings, Plus, Wifi, WifiOff } from 'lucide-react';
 import { NavItem } from './Sidebar';
 import { formatNumber } from '../utils/formatters';
 import { playTapSound } from '../utils/sound';
@@ -7,8 +7,10 @@ import { playTapSound } from '../utils/sound';
 interface HeaderProps {
   currentStock: number;
   currentTheme: 'system' | 'light' | 'dark';
+  isOnline?: boolean;
   onToggleTheme: () => void;
   onNavigateTab: (tab: NavItem) => void;
+  onOpenQuickSale?: () => void;
   storeName?: string;
   customLogoUrl?: string | null;
 }
@@ -16,13 +18,15 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   currentStock,
   currentTheme,
+  isOnline = true,
   onToggleTheme,
   onNavigateTab,
+  onOpenQuickSale,
   storeName = 'JufaStore',
   customLogoUrl,
 }) => {
   return (
-    <header className="sticky top-0 z-30 w-full theme-bg-surface/90 backdrop-blur-md border-b theme-border px-4 sm:px-6 py-2.5 select-none transition-colors duration-200">
+    <header className="sticky top-0 z-30 w-full theme-bg-surface/90 backdrop-blur-md border-b theme-border px-3 sm:px-6 py-2.5 select-none transition-colors duration-200">
       <div className="max-w-5xl mx-auto flex items-center justify-between">
         {/* Brand Logo & Name */}
         <button
@@ -48,8 +52,37 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </button>
 
-        {/* Right Info: Stock Badge & Actions */}
+        {/* Right Info: Online/Offline Badge, Quick Jual, Stock Badge & Theme Toggle */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Status Online/Offline */}
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border transition ${
+              isOnline
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+            }`}
+            title={isOnline ? 'Terhubung ke Internet (Mode Online)' : 'Mode Offline (Data tersimpan aman di perangkat)'}
+          >
+            {isOnline ? <Wifi size={11} className="text-emerald-400" /> : <WifiOff size={11} className="text-amber-400" />}
+            <span>{isOnline ? 'Online' : 'Offline'}</span>
+          </div>
+
+          {/* Quick Sale Button */}
+          {onOpenQuickSale && (
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                onOpenQuickSale();
+              }}
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition active:scale-95 shadow-sm"
+              title="Catat Penjualan Robux Cepat"
+            >
+              <Plus size={13} />
+              <span>Jual</span>
+            </button>
+          )}
+
           {/* Quick Stock Indicator */}
           <button
             type="button"
@@ -67,32 +100,6 @@ export const Header: React.FC<HeaderProps> = ({
                 R$
               </span>
             </span>
-          </button>
-
-          {/* Quick Access to Analysis */}
-          <button
-            type="button"
-            onClick={() => {
-              playTapSound();
-              onNavigateTab('analysis');
-            }}
-            className="p-2 rounded-xl theme-bg-card border theme-border theme-text-secondary hover:theme-text-primary hover:theme-bg-card-hover transition active:scale-95"
-            title="Analisis & Laporan"
-          >
-            <BarChart3 size={15} />
-          </button>
-
-          {/* Quick Access to Settings */}
-          <button
-            type="button"
-            onClick={() => {
-              playTapSound();
-              onNavigateTab('settings');
-            }}
-            className="p-2 rounded-xl theme-bg-card border theme-border theme-text-secondary hover:theme-text-primary hover:theme-bg-card-hover transition active:scale-95"
-            title="Pengaturan"
-          >
-            <Settings size={15} />
           </button>
 
           {/* Theme Toggle Button */}

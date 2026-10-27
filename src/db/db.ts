@@ -11,6 +11,7 @@ import {
   AuditLog,
   Investor,
   InvestorPayout,
+  Loan,
 } from './schema';
 
 export class JufaStoreDatabase extends Dexie {
@@ -25,6 +26,7 @@ export class JufaStoreDatabase extends Dexie {
   auditLogs!: Table<AuditLog, string>;
   investors!: Table<Investor, string>;
   investorPayouts!: Table<InvestorPayout, string>;
+  loans!: Table<Loan, string>;
 
   constructor() {
     super('JufaStoreDB');
@@ -55,6 +57,27 @@ export class JufaStoreDatabase extends Dexie {
       auditLogs: 'id, entity, entityId, createdAt',
       investors: 'id, name, status, createdAt',
       investorPayouts: 'id, investorId, createdAt',
+    });
+
+    // Versi 3: Penambahan Sumber Dana Pinjaman/Utang Modal
+    this.version(3).stores({
+      settings: 'id',
+      ratePresets: 'id, rate, createdAt',
+      stockBatches: 'id, sourceType, createdAt, remainingRobux, fundingSource, loanId',
+      stockMovements: 'id, batchId, type, referenceId, createdAt',
+      sales: 'id, invoiceNumber, createdAt, status',
+      personalUsages: 'id, categoryId, createdAt',
+      cashLedger: 'id, dateKey, createdAt, type, sourceType, categoryId',
+      categories: 'id, name, type, createdAt',
+      auditLogs: 'id, entity, entityId, createdAt',
+      investors: 'id, name, status, createdAt',
+      investorPayouts: 'id, investorId, createdAt',
+      loans: 'id, batchId, status, dueDate, createdAt',
+    });
+
+    // Versi 4: Index sourceId pada cashLedger untuk relasi transaksi & hapus batch
+    this.version(4).stores({
+      cashLedger: 'id, dateKey, createdAt, type, sourceType, sourceId, categoryId',
     });
   }
 }

@@ -12,6 +12,20 @@ dist
 dist-ssr
 *.local
 
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+google-services.json
+
+# Local database exports & sensitive test dumps
+*.json.bak
+jufastore-backup-*.json
+JufaStore_Backup_*.json
+*.tmp
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

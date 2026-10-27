@@ -471,7 +471,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
           }}
           className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 flex items-center justify-center gap-1.5 ${
             calcMode === 'findRate'
-              ? 'bg-cyan-600 text-white shadow-sm'
+              ? 'bg-emerald-600 text-white shadow-sm'
               : 'theme-text-secondary hover:theme-text-primary'
           }`}
         >
@@ -485,7 +485,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
         <div className="space-y-4">
           {/* Header Banner Mode 3 */}
           <div className="p-4 rounded-2xl theme-bg-card border theme-border flex items-start gap-3">
-            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shrink-0 mt-0.5">
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0 mt-0.5">
               <Search size={18} />
             </div>
             <div className="space-y-1">
@@ -529,7 +529,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                     placeholder="Contoh: 1k, 1000, 500, 2.5k"
                     value={rateFinderRobuxInput}
                     onChange={(e) => setRateFinderRobuxInput(e.target.value)}
-                    className="w-full pl-11 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-cyan-500 font-mono font-bold"
+                    className="w-full pl-11 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
                   />
                 </div>
               </div>
@@ -555,13 +555,13 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                     placeholder="Contoh: 13k, 13000, 150k, 80k"
                     value={rateFinderPriceInput}
                     onChange={(e) => setRateFinderPriceInput(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-cyan-500 font-mono font-bold"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
                   />
                 </div>
               </div>
 
               <p className="text-[11px] theme-text-muted leading-relaxed pt-1">
-                Ketik jumlah Robux dan harga yang ditawarkan orang lain. Mendukung format angka langsung atau notasi cepat seperti <span className="font-mono text-cyan-400 font-semibold">1k</span>, <span className="font-mono text-cyan-400 font-semibold">130k</span>, atau <span className="font-mono text-cyan-400 font-semibold">130 ribu</span>.
+                Ketik jumlah Robux dan harga yang ditawarkan orang lain. Mendukung format angka langsung atau notasi cepat seperti <span className="font-mono text-emerald-400 font-semibold">1k</span>, <span className="font-mono text-emerald-400 font-semibold">130k</span>, atau <span className="font-mono text-emerald-400 font-semibold">130 ribu</span>.
               </p>
 
               {(rateFinderRobuxInput || rateFinderPriceInput) && (
@@ -585,14 +585,14 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div>
                 <div className="flex items-center justify-between pb-3 border-b theme-border">
                   <span className="text-xs font-bold uppercase tracking-wider theme-text-primary flex items-center gap-1.5">
-                    <Sparkles size={14} className="text-cyan-400" />
+                    <Sparkles size={14} className="text-emerald-400" />
                     <span>2. Hasil Rate Pasaran & Analisis</span>
                   </span>
                   {competitorRateResult.ratePerRobux > 0 && (
                     <button
                       type="button"
                       onClick={handleCopyFinderResult}
-                      className="text-xs text-cyan-400 hover:text-cyan-300 font-medium flex items-center gap-1"
+                      className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1"
                     >
                       {rateFinderCopied ? <Check size={13} /> : <Copy size={13} />}
                       <span>{rateFinderCopied ? 'Tersalin' : 'Salin Hasil'}</span>
@@ -602,7 +602,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
 
                 {competitorRateResult.ratePerRobux <= 0 ? (
                   <div className="p-8 text-center space-y-2">
-                    <div className="w-12 h-12 mx-auto rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
+                    <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
                       <Search size={22} />
                     </div>
                     <p className="text-sm font-semibold theme-text-primary">
@@ -615,23 +615,23 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                 ) : (
                   <div className="space-y-4 pt-1">
                     {/* Hasil Rate Utama */}
-                    <div className="p-4 rounded-xl theme-bg-surface border border-cyan-500/30 space-y-3">
+                    <div className="p-4 rounded-xl theme-bg-surface border border-emerald-500/30 space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
                           <Sparkles size={13} />
                           <span>Hasil Rate Penjualan:</span>
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                           Rate {formatDecimal(competitorRateResult.ratePerRobux, 2)}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
+                      <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
                         <div>
                           <span className="text-[10px] uppercase tracking-wider theme-text-muted font-semibold block">
                             Harga 1 Robux
                           </span>
-                          <span className="text-2xl sm:text-3xl font-mono font-extrabold text-cyan-400 block mt-0.5">
+                          <span className="text-2xl sm:text-3xl font-mono font-extrabold text-emerald-400 block mt-0.5">
                             Rp{formatDecimal(competitorRateResult.ratePerRobux, 2)}
                           </span>
                           <span className="text-[10px] theme-text-secondary block">
@@ -651,8 +651,8 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                         </div>
                       </div>
 
-                      <div className="p-2.5 rounded-lg bg-cyan-500/10 text-xs theme-text-secondary flex items-start gap-2">
-                        <Info size={14} className="text-cyan-400 shrink-0 mt-0.5" />
+                      <div className="p-2.5 rounded-lg bg-emerald-500/10 text-xs theme-text-secondary flex items-start gap-2">
+                        <Info size={14} className="text-emerald-400 shrink-0 mt-0.5" />
                         <p className="text-[11px] leading-relaxed">
                           Penjual ini menjual dengan <strong>Rate {formatDecimal(competitorRateResult.ratePerRobux, 2)}</strong>, artinya setiap <strong>1 Robux dihargai sebesar Rp{formatDecimal(competitorRateResult.ratePerRobux, 2)}</strong>.
                         </p>
@@ -666,9 +666,9 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                       </span>
                       <div className="grid grid-cols-3 gap-2 text-xs">
                         {/* 1 Robux */}
-                        <div className="p-3 rounded-xl theme-bg-surface border border-cyan-500/40 bg-cyan-500/5">
-                          <span className="text-[10px] font-bold text-cyan-400 block uppercase">1 Robux</span>
-                          <span className="text-sm sm:text-base font-mono font-bold text-cyan-400 block mt-1">
+                        <div className="p-3 rounded-xl theme-bg-surface border border-emerald-500/40 bg-emerald-500/5">
+                          <span className="text-[10px] font-bold text-emerald-400 block uppercase">1 Robux</span>
+                          <span className="text-sm sm:text-base font-mono font-bold text-emerald-400 block mt-1">
                             Rp{formatDecimal(competitorRateResult.ratePerRobux, 2)}
                           </span>
                           <span className="text-[10px] theme-text-muted block mt-0.5">
@@ -740,7 +740,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                             </div>
                           </div>
                         ) : (
-                          <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs">
+                          <div className="p-2 rounded-lg bg-zinc-500/10 border border-zinc-500/20 theme-text-secondary text-xs">
                             Harga sama persis dengan modal kulakan Anda (Break-even Rp0 laba).
                           </div>
                         )}
@@ -750,7 +750,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                     {/* Simulasi Jual Kembali / Reseller Arbitrase */}
                     <div className="p-3.5 rounded-xl theme-bg-surface border theme-border space-y-2.5">
                       <div className="flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-cyan-400" />
+                        <Sparkles size={14} className="text-emerald-400" />
                         <span className="text-xs font-bold uppercase tracking-wider theme-text-primary">
                           Simulasi Jika Beli Dari Orang Ini Lalu Dijual Kembali:
                         </span>
@@ -771,7 +771,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                             placeholder="Ketik rate jual kembali..."
                             value={resellTargetRate}
                             onChange={(e) => setResellTargetRate(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-cyan-500 font-mono font-bold"
+                            className="w-full pl-9 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
                           />
                         </div>
                       </div>
@@ -813,7 +813,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                           )}
 
                           {resellSimulation.isBreakEven && (
-                            <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">
+                            <div className="p-2.5 rounded-xl bg-zinc-500/10 border border-zinc-500/20 text-xs theme-text-secondary">
                               Target rate sama dengan harga beli orang ini (Rp0 laba).
                             </div>
                           )}
@@ -843,7 +843,7 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <button
                     type="button"
                     onClick={handleApplyFinderRateToCalc}
-                    className="w-full py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
+                    className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
                   >
                     <ArrowRight size={14} />
                     <span>Terapkan Rate Ini ke Kalkulator Jual JufaStore</span>
@@ -853,17 +853,17 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                     <button
                       type="button"
                       onClick={handleSaveFinderRateAsPreset}
-                      className="flex-1 py-2 px-3 rounded-xl theme-bg-surface border theme-border hover:border-cyan-500/50 text-xs font-semibold theme-text-primary transition flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2 px-3 rounded-xl theme-bg-surface border theme-border hover:border-emerald-500/50 text-xs font-semibold theme-text-primary transition flex items-center justify-center gap-1.5"
                     >
-                      <Plus size={13} className="text-cyan-400" />
+                      <Plus size={13} className="text-emerald-400" />
                       <span>Simpan Jadi Preset</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleCopyFinderResult}
-                      className="flex-1 py-2 px-3 rounded-xl theme-bg-surface border theme-border hover:border-cyan-500/50 text-xs font-semibold theme-text-primary transition flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2 px-3 rounded-xl theme-bg-surface border theme-border hover:border-emerald-500/50 text-xs font-semibold theme-text-primary transition flex items-center justify-center gap-1.5"
                     >
-                      <Copy size={13} className="text-cyan-400" />
+                      <Copy size={13} className="text-emerald-400" />
                       <span>Salin Rincian</span>
                     </button>
                   </div>

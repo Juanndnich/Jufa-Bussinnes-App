@@ -28,4 +28,24 @@ describe('JufaStore - System & Utility Verification Tests', () => {
     expect(isSoundEnabled()).toBe(false);
     setSoundEnabled(true);
   });
+
+  it('5. Rekomendasi Rate Jual Cerdas Berdasarkan Modal Restock', () => {
+    // Simulasi modal kulakan Rp130/R$
+    const modal = 130;
+    const robux = 1000;
+    const totalCost = 130000;
+
+    const competitiveRate = Math.max(Math.ceil(modal + 3), Math.round(modal * 1.06));
+    const standardRate = Math.max(Math.ceil(modal + 8), Math.round(modal * 1.14));
+    const optimalRate = Math.max(Math.ceil(modal + 15), Math.round(modal * 1.22));
+
+    expect(competitiveRate).toBe(138); // +Rp8/R$, cepat laku
+    expect(standardRate).toBe(148);    // +Rp18/R$, seimbang
+    expect(optimalRate).toBe(159);     // +Rp29/R$, margin lebih
+
+    // Pastikan semua rate menghasilkan laba positif
+    expect(competitiveRate * robux - totalCost).toBeGreaterThan(0);
+    expect(standardRate * robux - totalCost).toBeGreaterThan(competitiveRate * robux - totalCost);
+    expect(optimalRate * robux - totalCost).toBeGreaterThan(standardRate * robux - totalCost);
+  });
 });

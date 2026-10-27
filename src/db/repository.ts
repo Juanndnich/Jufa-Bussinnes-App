@@ -11,6 +11,8 @@ import {
   AppSettings,
   Investor,
   InvestorPayout,
+  Loan,
+  LoanPayment,
 } from './schema';
 import {
   allocateFifoCost,
@@ -122,12 +124,20 @@ export const repository = {
 
   /**
    * Catat Pembelian Stok Baru (Restock)
-   * Mengurangi Kas (Buku Kas OUT) dan Menambah Batch Persediaan.
+   * Mendukung sumber dana sendiri (Kas Toko) atau pinjaman (Utang Modal).
    */
   async createRestockBatch(params: {
     robux: number;
     totalCostRupiah: number;
     notes?: string;
+    fundingSource?: 'OWN_FUNDS' | 'LOAN' | 'COMBINED';
+    ownFundsRupiah?: number;
+    loanFundsRupiah?: number;
+    loanDetails?: {
+      lenderName: string;
+      dueDate: string; // YYYY-MM-DD
+      notes?: string;
+    };
   }): Promise<StockBatch> {
     const robux = Math.max(0, Math.floor(params.robux || 0));
     const totalCost = Math.max(0, Math.floor(params.totalCostRupiah || 0));
@@ -138,6 +148,23 @@ export const repository = {
     const now = new Date().toISOString();
     const batchId = generateBatchCode();
     const unitCostDisplay = robux > 0 ? totalCost / robux : 0;
+    const fundingSource = params.fundingSource || 'OWN_FUNDS';
+
+    let ownFunds = 0;
+    let loanFunds = 0;
+
+    if (fundingSource === 'OWN_FUNDS') {
+      ownFunds = totalCost;
+      loanFunds = 0;
+    } else if (fundingSource === 'LOAN') {
+      ownFunds = 0;
+      loanFunds = totalCost;
+    } else if (fundingSource === 'COMBINED') {
+      ownFunds = Math.max(0, Math.floor(params.ownFundsRupiah ?? 0));
+      loanFunds = Math.max(0, Math.floor(params.loanFundsRupiah ?? (totalCost - ownFunds)));
+    }
+
+    let loanId: string | undefined = undefined;
 
     const newBatch: StockBatch = {
       id: batchId,
@@ -148,8 +175,30 @@ export const repository = {
       totalCostRupiah: totalCost,
       remainingCostRupiah: totalCost,
       unitCostDisplay,
+      fundingSource,
+      ownFundsRupiah: ownFunds,
+      loanFundsRupiah: loanFunds,
+      loanId: undefined,
       notes: params.notes?.trim() || undefined,
     };
+
+    let newLoan: Loan | null = null;
+    if (loanFunds > 0) {
+      loanId = `LOAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      newBatch.loanId = loanId;
+      newLoan = {
+        id: loanId,
+        batchId,
+        borrowerOrLender: params.loanDetails?.lenderName.trim() || 'Pinjaman Modal',
+        loanAmountRupiah: loanFunds,
+        remainingLoanRupiah: loanFunds,
+        dueDate: params.loanDetails?.dueDate || getTodayKey(),
+        status: 'ACTIVE',
+        notes: params.loanDetails?.notes?.trim() || params.notes?.trim() || undefined,
+        createdAt: now,
+        payments: [],
+      };
+    }
 
     const movement: StockMovement = {
       id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -166,10 +215,13 @@ export const repository = {
       dateKey: getTodayKey(),
       createdAt: now,
       type: 'OUT',
-      amountRupiah: totalCost,
+      amountRupiah: ownFunds,
       sourceType: 'RESTOCK',
       sourceId: batchId,
-      notes: `Restock ${robux.toLocaleString('id-ID')} R$`,
+      notes:
+        fundingSource === 'COMBINED'
+          ? `Restock ${robux.toLocaleString('id-ID')} R$ (Porsi Kas Sendiri Rp${ownFunds.toLocaleString('id-ID')})`
+          : `Restock ${robux.toLocaleString('id-ID')} R$`,
     };
 
     const audit: AuditLog = {
@@ -177,14 +229,24 @@ export const repository = {
       action: 'CREATE_RESTOCK',
       entity: 'stockBatches',
       entityId: batchId,
-      details: `Restock ${robux} R$ modal Rp${totalCost.toLocaleString('id-ID')}`,
+      details: `Restock ${robux} R$ modal Rp${totalCost.toLocaleString('id-ID')} (Sumber: ${
+        fundingSource === 'COMBINED'
+          ? `Gabungan Kas Rp${ownFunds.toLocaleString('id-ID')} + Utang Rp${loanFunds.toLocaleString('id-ID')}`
+          : fundingSource === 'LOAN'
+          ? 'Pinjaman'
+          : 'Dana Sendiri'
+      })`,
       createdAt: now,
     };
 
-    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs], async () => {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs, db.loans], async () => {
       await db.stockBatches.put(newBatch);
       await db.stockMovements.put(movement);
-      if (totalCost > 0) {
+      if (newLoan) {
+        await db.loans.put(newLoan);
+      }
+      if (ownFunds > 0) {
+        // Hanya memotong kas toko untuk porsi uang sendiri
         await db.cashLedger.put(cashEntry);
       }
       await db.auditLogs.put(audit);
@@ -277,7 +339,7 @@ export const repository = {
    * Jika batch bertipe RESTOCK, entri pengeluaran kas otomatis terkait akan dibatalkan/dihapus.
    */
   async deleteStockBatch(batchId: string): Promise<void> {
-    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs], async () => {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs, db.loans], async () => {
       const batch = await db.stockBatches.get(batchId);
       if (!batch) throw new Error('Batch tidak ditemukan');
 
@@ -285,11 +347,15 @@ export const repository = {
         throw new Error('Batch ini sudah terpakai sebagian dan tidak dapat dihapus demi menjaga integritas alokasi FIFO.');
       }
 
-      // Jika restock, hapus juga pengeluaran kas terkait
-      if (batch.sourceType === 'RESTOCK') {
+      // Jika ada pinjaman terkait batch ini, hapus juga pinjamannya
+      if (batch.loanId) {
+        await db.loans.delete(batch.loanId);
+      }
+
+      // Jika restock dengan dana sendiri atau gabungan, hapus juga pengeluaran kas terkait
+      if (batch.sourceType === 'RESTOCK' && batch.fundingSource !== 'LOAN') {
         const relatedCash = await db.cashLedger
-          .where('sourceId')
-          .equals(batchId)
+          .filter((c) => c.sourceId === batchId)
           .toArray();
         for (const c of relatedCash) {
           await db.cashLedger.delete(c.id);
@@ -318,6 +384,65 @@ export const repository = {
     });
   },
 
+  /**
+   * Sesuaikan sisa Robux batch yang masih ada di akun (misal sisa 50 R$)
+   */
+  async adjustBatchRemainingStock(batchId: string, newRemainingRobux: number, notes?: string): Promise<StockBatch> {
+    const targetRobux = Math.max(0, Math.floor(newRemainingRobux || 0));
+
+    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.auditLogs], async () => {
+      const batch = await db.stockBatches.get(batchId);
+      if (!batch) throw new Error('Batch tidak ditemukan');
+
+      const oldRemaining = batch.remainingRobux;
+      const oldCost = batch.remainingCostRupiah;
+      batch.remainingRobux = targetRobux;
+
+      // Jika targetRobux 0, habiskan modal tersisa
+      if (targetRobux === 0) {
+        batch.remainingCostRupiah = 0;
+      } else if (oldRemaining > 0) {
+        // Alokasi proporsional sisa modal
+        batch.remainingCostRupiah = Math.round((targetRobux / oldRemaining) * oldCost);
+      }
+
+      if (notes) {
+        batch.notes = batch.notes ? `${batch.notes} | ${notes}` : notes;
+      }
+      await db.stockBatches.put(batch);
+
+      const movement: StockMovement = {
+        id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        batchId,
+        type: 'RECONCILE_ADD',
+        robuxAmount: targetRobux - oldRemaining,
+        costAllocatedRupiah: batch.remainingCostRupiah - oldCost,
+        referenceId: `ADJUST-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+      };
+      await db.stockMovements.put(movement);
+
+      const audit: AuditLog = {
+        id: `LOG-${Date.now()}`,
+        action: 'ADJUST_BATCH_STOCK',
+        entity: 'stockBatches',
+        entityId: batchId,
+        details: `Penyesuaian stok batch ${batchId} dari ${oldRemaining} R$ menjadi ${targetRobux} R$`,
+        createdAt: new Date().toISOString(),
+      };
+      await db.auditLogs.put(audit);
+
+      return batch;
+    });
+  },
+
+  /**
+   * Tandai batch habis total (0 R$)
+   */
+  async closeBatchTotal(batchId: string, notes = 'Ditandai habis total'): Promise<StockBatch> {
+    return this.adjustBatchRemainingStock(batchId, 0, notes);
+  },
+
   // ===================== PENJUALAN (SALES) & FIFO =====================
   async recordSale(params: {
     robuxSold: number;
@@ -336,7 +461,7 @@ export const repository = {
     const now = new Date().toISOString();
     const invoiceNumber = generateTransactionCode();
 
-    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs], async () => {
+    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs, db.loans], async () => {
       // 1. Ambil antrean FIFO
       const activeBatches = await db.stockBatches
         .where('remainingRobux')
@@ -365,6 +490,26 @@ export const repository = {
         batch.remainingRobux = item.batchRemainingRobuxAfter;
         batch.remainingCostRupiah = item.batchRemainingCostAfter;
         await db.stockBatches.put(batch);
+
+        // Cicilan otomatis jika batch ini didanai pinjaman luar
+        if ((batch.fundingSource === 'LOAN' || batch.fundingSource === 'COMBINED') && batch.loanId) {
+          const loan = await db.loans.get(batch.loanId);
+          if (loan && loan.remainingLoanRupiah > 0) {
+            const payAmount = Math.min(item.costAllocatedRupiah, loan.remainingLoanRupiah);
+            loan.remainingLoanRupiah = Math.max(0, loan.remainingLoanRupiah - payAmount);
+            if (loan.remainingLoanRupiah === 0) {
+              loan.status = 'PAID';
+            }
+            loan.payments.push({
+              id: `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              amountRupiah: payAmount,
+              date: now,
+              source: 'AUTO_SALE',
+              notes: `Cicilan pokok dari penjualan ${robuxSold} R$ (${invoiceNumber})`,
+            });
+            await db.loans.put(loan);
+          }
+        }
 
         const movement: StockMovement = {
           id: `MOV-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
@@ -436,7 +581,7 @@ export const repository = {
    * Kembalikan stok dan HPP ke batch masing-masing secara presisi!
    */
   async voidSale(saleId: string, reason = 'Pembatalan transaksi'): Promise<void> {
-    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs], async () => {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs, db.loans], async () => {
       const sale = await db.sales.get(saleId);
       if (!sale) throw new Error('Data penjualan tidak ditemukan');
       if (sale.status === 'VOID') throw new Error('Transaksi ini sudah berstatus BATAL');
@@ -463,6 +608,20 @@ export const repository = {
           batch.remainingCostRupiah = restored.remainingCostRupiah;
           await db.stockBatches.put(batch);
 
+          // Rollback cicilan pinjaman jika batch ini didanai pinjaman
+          if ((batch.fundingSource === 'LOAN' || batch.fundingSource === 'COMBINED') && batch.loanId) {
+            const loan = await db.loans.get(batch.loanId);
+            if (loan) {
+              loan.remainingLoanRupiah = Math.min(
+                loan.loanAmountRupiah,
+                loan.remainingLoanRupiah + alloc.costAllocatedRupiah
+              );
+              loan.status = 'ACTIVE';
+              loan.payments = loan.payments.filter((p) => !p.notes?.includes(sale.invoiceNumber));
+              await db.loans.put(loan);
+            }
+          }
+
           // Catat pergerakan pembatalan
           const movement: StockMovement = {
             id: `MOV-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
@@ -484,8 +643,7 @@ export const repository = {
 
       // 3. Batalkan entri buku kas terkait penjualan ini (hapus entri kas terkait agar saldo kas ril sinkron)
       const relatedCash = await db.cashLedger
-        .where('sourceId')
-        .equals(saleId)
+        .filter((c) => c.sourceId === saleId)
         .toArray();
       for (const c of relatedCash) {
         await db.cashLedger.delete(c.id);
@@ -973,5 +1131,74 @@ export const repository = {
 
   async deleteInvestorPayout(id: string): Promise<void> {
     await db.investorPayouts.delete(id);
+  },
+
+  // ===================== PINJAMAN / UTANG MODAL RESTOCK =====================
+  async getLoans(): Promise<Loan[]> {
+    return db.loans.orderBy('createdAt').reverse().toArray();
+  },
+
+  async getLoanById(id: string): Promise<Loan | undefined> {
+    return db.loans.get(id);
+  },
+
+  async payLoanManual(loanId: string, amountRupiah: number, notes?: string): Promise<Loan> {
+    const amount = Math.max(0, Math.floor(amountRupiah || 0));
+    if (amount <= 0) throw new Error('Nominal pembayaran cicilan harus lebih dari 0');
+
+    return await db.transaction('rw', [db.loans, db.cashLedger, db.auditLogs], async () => {
+      const loan = await db.loans.get(loanId);
+      if (!loan) throw new Error('Data pinjaman tidak ditemukan');
+      if (loan.status === 'PAID') throw new Error('Pinjaman ini sudah lunas');
+
+      const payAmount = Math.min(amount, loan.remainingLoanRupiah);
+      loan.remainingLoanRupiah = Math.max(0, loan.remainingLoanRupiah - payAmount);
+      if (loan.remainingLoanRupiah === 0) {
+        loan.status = 'PAID';
+      }
+
+      const now = new Date().toISOString();
+      loan.payments.push({
+        id: `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        amountRupiah: payAmount,
+        date: now,
+        source: 'MANUAL',
+        notes: notes?.trim() || 'Pembayaran manual pokok pinjaman',
+      });
+
+      await db.loans.put(loan);
+
+      // Catat pengeluaran kas pelunasan pinjaman
+      const cashEntry: CashLedgerEntry = {
+        id: `CASH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        dateKey: getTodayKey(),
+        createdAt: now,
+        type: 'OUT',
+        amountRupiah: payAmount,
+        sourceType: 'MANUAL',
+        notes: `Pelunasan Pinjaman: ${loan.borrowerOrLender} (${notes || 'Manual'})`,
+      };
+      await db.cashLedger.put(cashEntry);
+
+      return loan;
+    });
+  },
+
+  async deleteLoan(loanId: string): Promise<void> {
+    await db.transaction('rw', [db.loans, db.stockBatches, db.auditLogs], async () => {
+      const loan = await db.loans.get(loanId);
+      if (!loan) throw new Error('Pinjaman tidak ditemukan');
+
+      if (loan.batchId) {
+        const batch = await db.stockBatches.get(loan.batchId);
+        if (batch) {
+          batch.fundingSource = 'OWN_FUNDS';
+          batch.loanId = undefined;
+          await db.stockBatches.put(batch);
+        }
+      }
+
+      await db.loans.delete(loanId);
+    });
   },
 };
