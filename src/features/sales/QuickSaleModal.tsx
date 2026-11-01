@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { StockBatch, Investor, Sale } from '../../db/schema';
+import { NumberInput } from '../../components/NumberInput';
 import {
   allocateFifoCost,
   calculateProfit,
@@ -255,31 +256,14 @@ export const QuickSaleModal: React.FC<QuickSaleModalProps> = ({
           </div>
 
           {/* Jumlah Robux yang Dijual */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium theme-text-secondary">
-                Jumlah Robux yang Dijual (R$)
-              </label>
-              {parsedRobux > 0 && (
-                <span className="text-[11px] font-mono font-bold text-amber-400">
-                  {formatNumber(parsedRobux)} R$
-                </span>
-              )}
-            </div>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400">
-                R$
-              </span>
-              <input
-                type="text"
-                placeholder="Contoh: 1000 atau 1k"
-                value={robuxInput}
-                onChange={(e) => setRobuxInput(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                required
-              />
-            </div>
-          </div>
+          <NumberInput
+            label="Jumlah Robux yang Dijual (R$)"
+            suffix="R$"
+            value={parsedRobux || ''}
+            onChange={(val) => setRobuxInput(val === '' ? '' : String(val))}
+            placeholder="Contoh: 1000 atau 1k"
+            required
+          />
 
           {/* Pilihan Mode Harga */}
           <div className="space-y-2">
@@ -315,21 +299,16 @@ export const QuickSaleModal: React.FC<QuickSaleModalProps> = ({
 
             {pricingMode === 'rate' ? (
               <div className="space-y-1">
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                    Rp
-                  </span>
-                  <input
-                    type="number"
-                    step="any"
-                    inputMode="decimal"
-                    placeholder="Contoh: 150 atau 160"
-                    value={rateInput}
-                    onChange={(e) => setRateInput(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                    required
-                  />
-                </div>
+                <NumberInput
+                  prefix="Rp"
+                  suffix="/R$"
+                  allowDecimals={true}
+                  maxDecimals={2}
+                  value={rateInput === '' ? '' : parseFloat(rateInput)}
+                  onChange={(val) => setRateInput(val === '' ? '' : String(val))}
+                  placeholder="Contoh: 150 atau 160"
+                  required
+                />
                 {parsedRobux > 0 && parsedRate > 0 && (
                   <span className="text-[11px] theme-text-muted block">
                     Total yang harus dibayar pembeli: <strong className="text-emerald-400 font-mono">{formatRupiah(finalRevenue)}</strong>
@@ -338,19 +317,13 @@ export const QuickSaleModal: React.FC<QuickSaleModalProps> = ({
               </div>
             ) : (
               <div className="space-y-1">
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                    Rp
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Contoh: 150000 atau 150k"
-                    value={totalInput}
-                    onChange={(e) => setTotalInput(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                    required
-                  />
-                </div>
+                <NumberInput
+                  isCurrency={true}
+                  value={parsedTotal || ''}
+                  onChange={(val) => setTotalInput(val === '' ? '' : String(val))}
+                  placeholder="Contoh: 150000 atau 150k"
+                  required
+                />
                 {parsedRobux > 0 && parsedTotal > 0 && (
                   <span className="text-[11px] theme-text-muted block">
                     Rate efektif dihitung: <strong className="text-cyan-400 font-mono">Rate {formatDecimal(effectiveRate, 2)}</strong> (Rp{formatDecimal(effectiveRate, 2)}/R$)

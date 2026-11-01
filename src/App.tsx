@@ -17,8 +17,10 @@ import { QuickSaleModal } from './features/sales/QuickSaleModal';
 import { repository } from './db/repository';
 import { AppSettings } from './db/schema';
 import { applyTheme } from './utils/theme';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { playTapSound } from './utils/sound';
-import { checkForUpdates, cleanupOldUpdateApks } from './services/updateChecker';
+import { checkForUpdates, cleanupOldUpdateApks, checkPendingInstall } from './services/updateChecker';
 
 export const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
@@ -60,6 +62,19 @@ export const App: React.FC = () => {
 
     // Pembersihan berkas APK update lama & Cek pembaruan berkala (maks 1x per 6 jam)
     cleanupOldUpdateApks().catch(() => {});
+    checkPendingInstall().catch(() => {});
+
+    let appResumeListener: any = null;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('appStateChange', (state) => {
+        if (state.isActive) {
+          checkPendingInstall().catch(() => {});
+        }
+      }).then((handle) => {
+        appResumeListener = handle;
+      });
+    }
+
     const timer = setTimeout(() => {
       checkForUpdates({
         manual: false,
@@ -67,7 +82,12 @@ export const App: React.FC = () => {
       }).catch(() => {});
     }, 2500);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (appResumeListener) {
+        appResumeListener.remove();
+      }
+    };
   }, [refreshGlobalState]);
 
   // Handler pergantian tab dengan suara tekan
@@ -112,7 +132,7 @@ export const App: React.FC = () => {
         />
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
           <Header
             currentStock={currentStock}
             currentTheme={settings?.theme || 'dark'}

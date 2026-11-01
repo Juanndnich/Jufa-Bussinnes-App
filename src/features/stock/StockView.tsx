@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { StockBatch, PersonalUsage, Loan, StockMovement } from '../../db/schema';
+import { NumberInput } from '../../components/NumberInput';
 import { parseRobuxOrMoneyShorthand } from '../../domain/calculations';
 import { formatRupiah, formatNumber, formatDecimal, formatDateJakarta } from '../../utils/formatters';
 import { showSuccessAlert, showErrorAlert, showWarningAlert, showConfirmDialog, showCustomAlert } from '../../utils/alert';
@@ -1556,80 +1557,38 @@ export const StockView: React.FC = () => {
           </div>
 
           {/* Input Jumlah Robux */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium theme-text-secondary">
-                Jumlah Robux yang Dibeli (R$)
-              </label>
-              {parsedRestockRobux > 0 && (
-                <span className="text-[11px] font-mono font-bold text-amber-400">
-                  {formatNumber(parsedRestockRobux)} R$
-                </span>
-              )}
-            </div>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400">
-                R$
-              </span>
-              <input
-                type="text"
-                placeholder="0"
-                value={restockRobux}
-                onChange={(e) => setRestockRobux(e.target.value)}
-                className="w-full pl-11 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                required
-              />
-            </div>
-            <span className="text-[10px] theme-text-muted block">
-              Mendukung ketikan langsung atau format cepat: contoh <span className="font-mono">1000</span>, <span className="font-mono">1k</span>, <span className="font-mono">5k</span>.
-            </span>
-          </div>
+          <NumberInput
+            label="Jumlah Robux yang Dibeli (R$)"
+            suffix="R$"
+            value={parsedRestockRobux || ''}
+            onChange={(val) => setRestockRobux(val === '' ? '' : String(val))}
+            placeholder="0"
+            helperText="Mendukung ketikan langsung atau format cepat: contoh 1000, 1k, 5k."
+            required
+          />
 
           {/* Input Biaya Beli / Pokok Pinjaman / Total Gabungan */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium theme-text-secondary">
-                {fundingSource === 'COMBINED'
-                  ? 'Total Biaya Modal Keseluruhan (Rp)'
-                  : fundingSource === 'LOAN'
-                  ? 'Jumlah Pokok Pinjaman Modal (Rp)'
-                  : 'Total Uang Ril Dikeluarkan (Rp)'}
-              </label>
-              {parsedRestockCost > 0 && (
-                <span
-                  className={`text-[11px] font-mono font-bold ${
-                    fundingSource === 'COMBINED'
-                      ? 'text-purple-400'
-                      : fundingSource === 'LOAN'
-                      ? 'text-amber-400'
-                      : 'text-emerald-400'
-                  }`}
-                >
-                  {formatRupiah(parsedRestockCost)}
-                </span>
-              )}
-            </div>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                Rp
-              </span>
-              <input
-                type="text"
-                placeholder="0"
-                value={restockCost}
-                onChange={(e) => setRestockCost(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                required
-              />
-            </div>
-            <span className="text-[10px] theme-text-muted block">
-              {fundingSource === 'COMBINED'
+          <NumberInput
+            label={
+              fundingSource === 'COMBINED'
+                ? 'Total Biaya Modal Keseluruhan (Rp)'
+                : fundingSource === 'LOAN'
+                ? 'Jumlah Pokok Pinjaman Modal (Rp)'
+                : 'Total Uang Ril Dikeluarkan (Rp)'
+            }
+            isCurrency={true}
+            value={parsedRestockCost || ''}
+            onChange={(val) => setRestockCost(val === '' ? '' : String(val))}
+            placeholder="0"
+            helperText={
+              fundingSource === 'COMBINED'
                 ? 'Total nilai modal Robux yang dibeli (akan dibagi antara uang ril kas toko dan pinjaman modal).'
                 : fundingSource === 'LOAN'
                 ? 'Nominal pokok uang pinjaman yang harus dikembalikan kepada kreditor/pemberi pinjaman.'
-                : 'Uang keluar ini akan otomatis memotong saldo kas toko di Buku Kas.'}
-            </span>
-          </div>
+                : 'Uang keluar ini akan otomatis memotong saldo kas toko di Buku Kas.'
+            }
+            required
+          />
 
           {/* Form Pembagian Modal Jika Memilih Sumber Dana Gabungan */}
           {fundingSource === 'COMBINED' && (
@@ -1649,30 +1608,14 @@ export const StockView: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Porsi Uang Ril (Kas Toko) */}
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold theme-text-primary flex items-center gap-1.5">
-                      <DollarSign size={13} className="text-emerald-400" />
-                      <span>Uang Ril / Kas Sendiri (Rp) <span className="text-red-400">*</span></span>
-                    </label>
-                    {parsedOwnFunds > 0 && (
-                      <span className="text-[10px] font-mono font-bold text-emerald-400">
-                        {formatRupiah(parsedOwnFunds)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-400">
-                      Rp
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="0"
-                      value={ownFundsInput}
-                      onChange={(e) => setOwnFundsInput(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs font-mono font-bold theme-text-primary focus:outline-none focus:border-emerald-500"
-                      required={fundingSource === 'COMBINED'}
-                    />
-                  </div>
+                  <NumberInput
+                    label="Uang Ril / Kas Sendiri (Rp)"
+                    isCurrency={true}
+                    value={parsedOwnFunds || ''}
+                    onChange={(val) => setOwnFundsInput(val === '' ? '' : String(val))}
+                    placeholder="0"
+                    required={fundingSource === 'COMBINED'}
+                  />
                   <div className="flex items-center justify-between text-[10px]">
                     <span className="theme-text-muted">Memotong kas toko</span>
                     {parsedRestockCost > 0 && parsedLoanFunds > 0 && parsedRestockCost > parsedLoanFunds && (
@@ -1692,30 +1635,14 @@ export const StockView: React.FC = () => {
 
                 {/* Porsi Pinjaman Modal (Utang) */}
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold theme-text-primary flex items-center gap-1.5">
-                      <Landmark size={13} className="text-amber-400" />
-                      <span>Pinjaman Modal / Utang (Rp) <span className="text-red-400">*</span></span>
-                    </label>
-                    {parsedLoanFunds > 0 && (
-                      <span className="text-[10px] font-mono font-bold text-amber-400">
-                        {formatRupiah(parsedLoanFunds)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400">
-                      Rp
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="0"
-                      value={loanFundsInput}
-                      onChange={(e) => setLoanFundsInput(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs font-mono font-bold theme-text-primary focus:outline-none focus:border-amber-500"
-                      required={fundingSource === 'COMBINED'}
-                    />
-                  </div>
+                  <NumberInput
+                    label="Pinjaman Modal / Utang (Rp)"
+                    isCurrency={true}
+                    value={parsedLoanFunds || ''}
+                    onChange={(val) => setLoanFundsInput(val === '' ? '' : String(val))}
+                    placeholder="0"
+                    required={fundingSource === 'COMBINED'}
+                  />
                   <div className="flex items-center justify-between text-[10px]">
                     <span className="theme-text-muted">Masuk buku utang pinjaman</span>
                     {parsedRestockCost > 0 && parsedOwnFunds > 0 && parsedRestockCost > parsedOwnFunds && (
@@ -1746,10 +1673,15 @@ export const StockView: React.FC = () => {
                   <span>
                     Kas: <strong>{formatRupiah(parsedOwnFunds)}</strong> + Pinjaman: <strong>{formatRupiah(parsedLoanFunds)}</strong> = <strong>{formatRupiah(parsedOwnFunds + parsedLoanFunds)}</strong>
                   </span>
-                  <span className="font-bold">
-                    {parsedOwnFunds + parsedLoanFunds === parsedRestockCost
-                      ? '✓ Total Cocok'
-                      : `Selisih: ${formatRupiah(Math.abs(parsedRestockCost - (parsedOwnFunds + parsedLoanFunds)))}`}
+                  <span className="font-bold flex items-center gap-1">
+                    {parsedOwnFunds + parsedLoanFunds === parsedRestockCost ? (
+                      <>
+                        <Check size={13} className="text-emerald-400" />
+                        <span>Total Cocok</span>
+                      </>
+                    ) : (
+                      `Selisih: ${formatRupiah(Math.abs(parsedRestockCost - (parsedOwnFunds + parsedLoanFunds)))}`
+                    )}
                   </span>
                 </div>
               )}
@@ -1958,23 +1890,16 @@ export const StockView: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-medium theme-text-secondary">
-                  Target Rate Jual yang Anda Inginkan (Rp / R$)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                    Rp
-                  </span>
-                  <input
-                    type="number"
-                    step="any"
-                    inputMode="decimal"
-                    placeholder="Ketik target rate jual (contoh: 140, 150...)"
-                    value={targetSellRate}
-                    onChange={(e) => setTargetSellRate(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-cyan-500 font-mono font-bold"
-                  />
-                </div>
+                <NumberInput
+                  label="Target Rate Jual yang Anda Inginkan (Rp / R$)"
+                  prefix="Rp"
+                  suffix="/R$"
+                  allowDecimals={true}
+                  maxDecimals={2}
+                  placeholder="Ketik target rate jual (contoh: 140, 150...)"
+                  value={targetSellRate === '' ? '' : parseFloat(targetSellRate)}
+                  onChange={(val) => setTargetSellRate(val === '' ? '' : String(val))}
+                />
               </div>
 
               {simulationProjection && (
@@ -2654,48 +2579,26 @@ export const StockView: React.FC = () => {
             </p>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium theme-text-secondary">
-              Jumlah Sisa Robux (R$)
-            </label>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400">
-                R$
-              </span>
-              <input
-                type="number"
-                inputMode="numeric"
-                placeholder="0"
-                value={accountRobux}
-                onChange={(e) => setAccountRobux(e.target.value)}
-                className="w-full pl-11 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                required
-              />
-            </div>
-          </div>
+          <NumberInput
+            label="Jumlah Sisa Robux (R$)"
+            suffix="R$"
+            value={accountRobux === '' ? '' : parseInt(accountRobux, 10)}
+            onChange={(val) => setAccountRobux(val === '' ? '' : String(val))}
+            placeholder="0"
+            required
+          />
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium theme-text-secondary">
-              Modal Dasar per Robux (Rp)
-            </label>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                Rp
-              </span>
-              <input
-                type="number"
-                step="any"
-                inputMode="decimal"
-                placeholder="0 (boleh Rp0)"
-                value={accountModalPerRobux}
-                onChange={(e) => setAccountModalPerRobux(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-              />
-            </div>
-            <p className="text-[11px] theme-text-muted">
-              Boleh diisi Rp0 jika dianggap tanpa modal.
-            </p>
-          </div>
+          <NumberInput
+            label="Modal Dasar per Robux (Rp)"
+            prefix="Rp"
+            suffix="/R$"
+            allowDecimals={true}
+            maxDecimals={2}
+            value={accountModalPerRobux === '' ? '' : parseFloat(accountModalPerRobux)}
+            onChange={(val) => setAccountModalPerRobux(val === '' ? '' : String(val))}
+            placeholder="0 (boleh Rp0)"
+            helperText="Boleh diisi Rp0 jika dianggap tanpa modal."
+          />
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium theme-text-secondary">
@@ -2742,28 +2645,15 @@ export const StockView: React.FC = () => {
             </p>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium theme-text-secondary">
-              Jumlah Robux yang Diambil (R$)
-            </label>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400">
-                R$
-              </span>
-              <input
-                type="number"
-                inputMode="numeric"
-                placeholder="0"
-                value={priveRobux}
-                onChange={(e) => setPriveRobux(e.target.value)}
-                className="w-full pl-11 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                required
-              />
-            </div>
-            <p className="text-[11px] theme-text-muted">
-              Maksimal tersedia: {formatNumber(summary.totalRemainingRobux)} R$
-            </p>
-          </div>
+          <NumberInput
+            label="Jumlah Robux yang Diambil (R$)"
+            suffix="R$"
+            value={priveRobux === '' ? '' : parseInt(priveRobux, 10)}
+            onChange={(val) => setPriveRobux(val === '' ? '' : String(val))}
+            placeholder="0"
+            helperText={`Maksimal tersedia: ${formatNumber(summary.totalRemainingRobux)} R$`}
+            required
+          />
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium theme-text-secondary">
@@ -3591,29 +3481,21 @@ export const StockView: React.FC = () => {
               </div>
 
               {/* Input Jumlah Robux Baru */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold theme-text-secondary flex items-center justify-between">
-                  <span>Jumlah Robux Awal yang Benar (R$) *</span>
-                  <span className="text-[10px] theme-text-muted">
-                    Minimal: {formatNumber(usedRobux)} R$
-                  </span>
-                </label>
-                <input
-                  type="number"
-                  min={usedRobux}
-                  step={1}
-                  required
-                  placeholder={`Contoh: ${editingRobuxBatch.initialRobux}`}
-                  value={editNewInitialRobux}
-                  onChange={(e) => setEditNewInitialRobux(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm font-mono font-bold theme-text-primary focus:outline-none focus:border-indigo-500"
-                />
-                {parsedNewRobux < usedRobux && (
-                  <p className="text-[11px] text-rose-400">
-                    Jumlah baru tidak boleh lebih kecil dari {formatNumber(usedRobux)} R$ (Robux yang sudah terjual/terpakai).
-                  </p>
-                )}
-              </div>
+              <NumberInput
+                label="Jumlah Robux Awal yang Benar (R$)"
+                suffix="R$"
+                min={usedRobux}
+                required
+                placeholder={`Contoh: ${editingRobuxBatch.initialRobux}`}
+                value={editNewInitialRobux === '' ? '' : parseInt(editNewInitialRobux, 10)}
+                onChange={(val) => setEditNewInitialRobux(val === '' ? '' : String(val))}
+                helperText={`Minimal: ${formatNumber(usedRobux)} R$ (Robux yang sudah terjual/terpakai)`}
+                error={
+                  parsedNewRobux < usedRobux
+                    ? `Jumlah baru tidak boleh lebih kecil dari ${formatNumber(usedRobux)} R$ (Robux yang sudah terjual/terpakai).`
+                    : undefined
+                }
+              />
 
               {/* Pilihan Perlakuan Modal */}
               <div className="space-y-2 pt-1">
@@ -3677,8 +3559,9 @@ export const StockView: React.FC = () => {
                           Harga per Robux tetap Rp{formatDecimal(editingRobuxBatch.unitCostDisplay, 2)}/R$. Total modal bertambah/berkurang proporsional dan pengeluaran kas toko ikut disesuaikan.
                         </p>
                         {isOptionBDisabled && (
-                          <p className="text-[10px] text-amber-400 font-semibold mt-1">
-                            ⚠️ {disabledOptionBReason}
+                          <p className="text-[10px] text-amber-400 font-semibold mt-1 flex items-center gap-1">
+                            <AlertTriangle size={11} className="shrink-0" />
+                            <span>{disabledOptionBReason}</span>
                           </p>
                         )}
                       </div>

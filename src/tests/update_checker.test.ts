@@ -1,11 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { Browser } from '@capacitor/browser';
 import {
   parseSemver,
   compareSemver,
   isNewerVersion,
   findApkAsset,
+  verifyApkMagicBytes,
+  openInSystemBrowser,
   GitHubReleaseResponse,
 } from '../services/updateChecker';
+
+vi.mock('@capacitor/browser', () => ({
+  Browser: {
+    open: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 
 describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
   // =========================================================================
@@ -189,6 +198,77 @@ describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
 
       const hasUpdate = isNewerVersion(latestRelease.tag_name, installedVersion);
       expect(hasUpdate).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // 5. APK MAGIC BYTES (PK\x03\x04) & INTEGRITY VERIFICATION
+  // =========================================================================
+  describe('5. APK Magic Bytes & Integrity Verification', () => {
+    it('5.1. Mengenali header file APK/ZIP yang sah (0x50, 0x4B, 0x03, 0x04)', () => {
+      // Buffer APK valid diawali [0x50, 0x4b, 0x03, 0x04, ...]
+      const validApkBinary = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x08, 0x00]);
+      const base64Data = validApkBinary.toString('base64');
+
+      const result = verifyApkMagicBytes(base64Data);
+      expect(result.isValid).toBe(true);
+      expect(result.hex).toBe('50 4B 03 04');
+      expect(result.ascii).toBe('PK\\x03\\x04');
+      expect(result.rawBase64Header.startsWith('UEsDB')).toBe(true);
+    });
+
+    it('5.2. Mendukung data URL base64 dengan prefix mime type', () => {
+      const validApkBinary = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]);
+      const dataUrl = `data:application/vnd.android.package-archive;base64,${validApkBinary.toString('base64')}`;
+
+      const result = verifyApkMagicBytes(dataUrl);
+      expect(result.isValid).toBe(true);
+      expect(result.hex).toBe('50 4B 03 04');
+    });
+
+    it('5.3. Menolak file jika server merespons dengan HTML error (<!DOCTYPE html>)', () => {
+      const htmlResponse = '<!DOCTYPE html><html><head><title>404 Not Found</title></head></html>';
+      const base64Html = Buffer.from(htmlResponse).toString('base64');
+
+      const result = verifyApkMagicBytes(base64Html);
+      expect(result.isValid).toBe(false);
+      expect(result.hex).toBe('3C 21 44 4F'); // '<!DO'
+      expect(result.ascii).toBe('<!DO');
+    });
+
+    it('5.4. Menolak file jika server merespons dengan halaman redirect (<html)', () => {
+      const redirectHtml = '<html><body>Redirecting to S3...</body></html>';
+      const base64Redirect = Buffer.from(redirectHtml).toString('base64');
+
+      const result = verifyApkMagicBytes(base64Redirect);
+      expect(result.isValid).toBe(false);
+      expect(result.hex).toBe('3C 68 74 6D'); // '<htm'
+      expect(result.ascii).toBe('<htm');
+    });
+
+    it('5.5. Menolak file jika server merespons dengan JSON error ({"message": ...})', () => {
+      const jsonResponse = JSON.stringify({ message: 'API rate limit exceeded', documentation_url: '...' });
+      const base64Json = Buffer.from(jsonResponse).toString('base64');
+
+      const result = verifyApkMagicBytes(base64Json);
+      expect(result.isValid).toBe(false);
+      expect(result.hex).toBe('7B 22 6D 65'); // '{"me'
+      expect(result.ascii).toBe('{"me');
+    });
+
+    it('5.6. Menolak string kosong, null, atau data terpotong kurang dari 4 bytes', () => {
+      expect(verifyApkMagicBytes('').isValid).toBe(false);
+      expect(verifyApkMagicBytes(null as any).isValid).toBe(false);
+
+      const truncated = Buffer.from([0x50, 0x4b]).toString('base64');
+      const result = verifyApkMagicBytes(truncated);
+      expect(result.isValid).toBe(false);
+    });
+
+    it('5.7. Membuka URL melalui browser sistem saat openInSystemBrowser dipanggil', async () => {
+      const url = 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.22/JufaStore.apk';
+      await openInSystemBrowser(url);
+      expect(Browser.open).toHaveBeenCalledWith({ url });
     });
   });
 });

@@ -1,7 +1,8 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
+import { Browser } from '@capacitor/browser';
 import Swal from 'sweetalert2';
 import { formatNumber } from '../utils/formatters';
 
@@ -12,6 +13,8 @@ export const TARGET_APK_NAME = 'JufaStore.apk';
 
 const LAST_CHECK_KEY = 'jufastore_last_update_check_time';
 const DISMISSED_VERSION_KEY = 'jufastore_dismissed_update_version';
+const PENDING_INSTALL_VERSION_KEY = 'jufastore_pending_install_version';
+const PENDING_INSTALL_URL_KEY = 'jufastore_pending_install_url';
 const UPDATE_CACHE_FILENAME = 'JufaStore-update.apk';
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 Jam
 
@@ -63,6 +66,146 @@ function notifyUpdateListeners(info: UpdateInfo | null) {
 
 export function getDiscoveredUpdate(): UpdateInfo | null {
   return latestDiscoveredUpdate;
+}
+
+export interface ApkHeaderValidationResult {
+  isValid: boolean;
+  hex: string;
+  ascii: string;
+  rawBase64Header: string;
+}
+
+/**
+ * Validasi 4-byte magic number dari file APK/ZIP.
+ * APK/ZIP yang valid WAJIB diawali:
+ * 0x50, 0x4B, 0x03, 0x04 ("PK\x03\x04" / hex: "50 4B 03 04").
+ * Dalam representasi Base64, header ini selalu diawali string "UEsDB".
+ * Jika file adalah HTML error/redirect (misal <!DOCTYPE atau <html), byte pertama adalah 0x3C ('<').
+ */
+export function verifyApkMagicBytes(base64Data: string): ApkHeaderValidationResult {
+  if (!base64Data || typeof base64Data !== 'string') {
+    return {
+      isValid: false,
+      hex: '',
+      ascii: '',
+      rawBase64Header: '',
+    };
+  }
+
+  // Bersihkan data URL prefix jika ada (misal data:application/...;base64,...)
+  const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const rawBase64Header = cleanBase64.slice(0, 16);
+
+  try {
+    // Ambil binary string dari potongan awal base64 (8 karakter base64 = 6 bytes)
+    const decoded = atob(cleanBase64.slice(0, 8));
+    if (decoded.length < 4) {
+      return {
+        isValid: false,
+        hex: '',
+        ascii: decoded,
+        rawBase64Header,
+      };
+    }
+
+    const b0 = decoded.charCodeAt(0);
+    const b1 = decoded.charCodeAt(1);
+    const b2 = decoded.charCodeAt(2);
+    const b3 = decoded.charCodeAt(3);
+
+    const hex = [b0, b1, b2, b3]
+      .map((b) => b.toString(16).padStart(2, '0').toUpperCase())
+      .join(' ');
+
+    const ascii = [b0, b1, b2, b3]
+      .map((b) => (b >= 32 && b <= 126 ? String.fromCharCode(b) : `\\x${b.toString(16).padStart(2, '0')}`))
+      .join('');
+
+    const isValid = b0 === 0x50 && b1 === 0x4b && b2 === 0x03 && b3 === 0x04;
+
+    return {
+      isValid,
+      hex,
+      ascii,
+      rawBase64Header,
+    };
+  } catch {
+    return {
+      isValid: false,
+      hex: '',
+      ascii: '',
+      rawBase64Header,
+    };
+  }
+}
+
+/**
+ * Membuka URL unduhan rilis langsung di browser bawaan sistem HP.
+ * Menggunakan @capacitor/browser untuk kompatibilitas native Android optimal.
+ */
+export async function openInSystemBrowser(url: string): Promise<void> {
+  try {
+    await Browser.open({ url });
+  } catch {
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank') || (window.location.href = url);
+    }
+  }
+}
+
+/**
+ * Dialog panduan instalasi manual melalui browser perangkat
+ */
+export async function showBrowserFallbackDialog(
+  updateInfo: UpdateInfo,
+  diagnosticDetails?: string
+): Promise<void> {
+  const theme = getSwalTheme();
+  const sizeMb = (updateInfo.apkSize / (1024 * 1024)).toFixed(1);
+
+  const res = await Swal.fire({
+    icon: 'info',
+    title: 'Unduh Melalui Browser',
+    html: `
+      <div class="space-y-3 text-xs text-left">
+        <p class="text-zinc-600 dark:text-zinc-400">
+          Anda dapat mengunduh langsung file resmi <strong>JufaStore.apk</strong> (v${updateInfo.version}, ~${sizeMb} MB) lewat browser HP Anda.
+        </p>
+
+        <div class="p-3 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-2">
+          <div class="font-bold text-zinc-700 dark:text-zinc-300">Langkah Pemasangan Mudah:</div>
+          <ol class="list-decimal pl-4 space-y-1.5 text-zinc-600 dark:text-zinc-400">
+            <li>Tekan tombol <strong>"Buka Browser & Unduh"</strong> di bawah.</li>
+            <li>Setelah selesai, buka panel notifikasi HP atau buka folder <strong>Download</strong>.</li>
+            <li>Ketuk file <strong>JufaStore.apk</strong> untuk memperbarui aplikasi.</li>
+          </ol>
+        </div>
+
+        <div class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400">
+          <strong>Aman & Tanpa Kehilangan Data:</strong> Pembaruan APK resmi tidak akan menghapus data toko atau catatan keuangan Anda.
+        </div>
+
+        ${
+          diagnosticDetails
+            ? `
+          <div class="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[10px] font-mono text-zinc-500 space-y-1 overflow-x-auto">
+            <div class="font-bold text-zinc-700 dark:text-zinc-300">Data Diagnostik:</div>
+            ${diagnosticDetails}
+          </div>
+        `
+            : ''
+        }
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Buka Browser & Unduh',
+    cancelButtonText: 'Tutup',
+    ...theme,
+  });
+
+  if (res.isConfirmed) {
+    await openInSystemBrowser(updateInfo.downloadUrl);
+  }
 }
 
 /**
@@ -144,18 +287,22 @@ export async function getInstalledVersion(): Promise<string> {
 }
 
 /**
- * Hapus file APK lama dari direktori cache aplikasi
+ * Hapus file APK lama dari direktori external & cache aplikasi
  */
 export async function cleanupOldUpdateApks(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
     await Filesystem.deleteFile({
       path: UPDATE_CACHE_FILENAME,
+      directory: Directory.External,
+    });
+  } catch {}
+  try {
+    await Filesystem.deleteFile({
+      path: UPDATE_CACHE_FILENAME,
       directory: Directory.Cache,
     });
-  } catch {
-    // Abaikan jika file memang tidak ada
-  }
+  } catch {}
 }
 
 /**
@@ -355,12 +502,12 @@ export async function promptUpdateDialog(
     .replace(/\n/g, '<br/>');
 
   const result = await Swal.fire({
-    title: '🚀 Pembaruan Aplikasi Tersedia',
+    title: 'Pembaruan Aplikasi Tersedia',
     html: `
       <div class="space-y-3.5 text-xs">
         <div class="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-mono">
           <span>Versi Sekarang: <strong>v${updateInfo.currentVersion}</strong></span>
-          <span>➜</span>
+          <span class="font-bold">&rarr;</span>
           <span>Versi Baru: <strong>v${updateInfo.version}</strong></span>
         </div>
 
@@ -370,9 +517,8 @@ export async function promptUpdateDialog(
         </div>
 
         <div class="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 flex items-start gap-2">
-          <span class="text-base leading-none">🛡️</span>
           <div>
-            <strong>Data Anda Tetap Aman:</strong> Pembaruan tidak akan menghapus data toko Anda. Namun untuk perlindungan ekstra, Anda disarankan mengekspor file backup.
+            <strong>Perlindungan Data:</strong> Pembaruan tidak akan menghapus data toko Anda. Namun untuk perlindungan ekstra, Anda disarankan mengekspor file backup.
           </div>
         </div>
 
@@ -404,13 +550,61 @@ export async function promptUpdateDialog(
 }
 
 /**
+ * Cek apakah ada proses instalasi yang tertunda saat aplikasi dibuka kembali (resume)
+ * Jika setelah installer dibuka pengguna kembali dan versi belum berubah, tampilkan dialog panduan.
+ */
+export async function checkPendingInstall(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const pendingVersion = localStorage.getItem(PENDING_INSTALL_VERSION_KEY);
+  const pendingUrl = localStorage.getItem(PENDING_INSTALL_URL_KEY) || GITHUB_LATEST_RELEASE_URL;
+  if (!pendingVersion) return;
+
+  const currentVersion = await getInstalledVersion();
+  if (isNewerVersion(pendingVersion, currentVersion)) {
+    localStorage.removeItem(PENDING_INSTALL_VERSION_KEY);
+    localStorage.removeItem(PENDING_INSTALL_URL_KEY);
+    const theme = getSwalTheme();
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Pemasangan Belum Berhasil',
+      html: `
+        <div class="space-y-3 text-xs text-left">
+          <p class="text-zinc-600 dark:text-zinc-400">
+            Pemasangan versi <strong>v${pendingVersion}</strong> belum berhasil diselesaikan di HP Anda (kemungkinan muncul kendala penguraian paket oleh sistem Android). Silakan pasang langsung lewat file unduhan browser.
+          </p>
+          <div class="p-3 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+            <div class="font-bold text-zinc-700 dark:text-zinc-300">3 Langkah Pemasangan Cepat:</div>
+            <ol class="list-decimal pl-4 space-y-1 text-zinc-600 dark:text-zinc-400">
+              <li>Tekan tombol <strong>"Unduh lewat Browser"</strong> di bawah.</li>
+              <li>Buka panel notifikasi HP atau folder <strong>Download</strong>.</li>
+              <li>Ketuk <strong>JufaStore.apk</strong> untuk memperbarui aplikasi (seluruh data toko tetap aman).</li>
+            </ol>
+          </div>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Unduh lewat Browser',
+      cancelButtonText: 'Tutup',
+      ...theme,
+    }).then(async (res) => {
+      if (res.isConfirmed) {
+        await openInSystemBrowser(pendingUrl);
+      }
+    });
+  } else {
+    // Versi sudah berubah sukses
+    localStorage.removeItem(PENDING_INSTALL_VERSION_KEY);
+    localStorage.removeItem(PENDING_INSTALL_URL_KEY);
+  }
+}
+
+/**
  * Mulai Download APK dan Luncurkan Installer Paket
  */
 export async function startDownloadAndInstall(updateInfo: UpdateInfo): Promise<void> {
   const isNative = Capacitor.isNativePlatform();
   if (!isNative) {
-    // Pada browser/PWA, arahkan langsung ke URL download APK
-    window.open(updateInfo.downloadUrl, '_blank');
+    await openInSystemBrowser(updateInfo.downloadUrl);
     return;
   }
 
@@ -475,13 +669,66 @@ export async function startDownloadAndInstall(updateInfo: UpdateInfo): Promise<v
       }
     });
 
-    // Jalankan download file ke cache
-    const downloadResult = await Filesystem.downloadFile({
-      url: updateInfo.downloadUrl,
-      path: UPDATE_CACHE_FILENAME,
-      directory: Directory.Cache,
-      progress: true,
-    });
+    // Utamakan penyimpanan ke Directory.External agar file berada di shared app storage
+    // yang dapat dibaca oleh PackageInstaller sistem tanpa kendala izin direktori privat.
+    let targetDirectory = Directory.External;
+    let downloadSucceeded = false;
+
+    try {
+      await Filesystem.downloadFile({
+        url: updateInfo.downloadUrl,
+        path: UPDATE_CACHE_FILENAME,
+        directory: targetDirectory,
+        headers: {
+          'User-Agent': 'JufaStore-Android-Updater',
+          Accept: 'application/vnd.android.package-archive,application/octet-stream,*/*',
+        },
+        progress: true,
+      });
+      downloadSucceeded = true;
+    } catch (downloadErr) {
+      console.warn('[UpdateChecker] Filesystem.downloadFile di External gagal, mencoba fallback:', downloadErr);
+    }
+
+    // Jika downloadFile gagal, jalankan fallback menggunakan CapacitorHttp native
+    if (!downloadSucceeded) {
+      try {
+        const httpRes = await CapacitorHttp.get({
+          url: updateInfo.downloadUrl,
+          responseType: 'blob',
+          headers: {
+            'User-Agent': 'JufaStore-Android-Updater',
+            Accept: 'application/vnd.android.package-archive,application/octet-stream,*/*',
+          },
+        });
+
+        if (httpRes.status === 200 && httpRes.data) {
+          await Filesystem.writeFile({
+            path: UPDATE_CACHE_FILENAME,
+            data: httpRes.data,
+            directory: targetDirectory,
+          });
+          downloadSucceeded = true;
+        }
+      } catch (httpErr) {
+        console.warn('[UpdateChecker] CapacitorHttp fallback juga gagal:', httpErr);
+      }
+    }
+
+    // Fallback sekunder: Coba download ke Directory.Cache jika Directory.External gagal
+    if (!downloadSucceeded) {
+      targetDirectory = Directory.Cache;
+      await Filesystem.downloadFile({
+        url: updateInfo.downloadUrl,
+        path: UPDATE_CACHE_FILENAME,
+        directory: targetDirectory,
+        headers: {
+          'User-Agent': 'JufaStore-Android-Updater',
+          Accept: 'application/vnd.android.package-archive,application/octet-stream,*/*',
+        },
+        progress: true,
+      });
+    }
 
     if (progressHandle) {
       await progressHandle.remove();
@@ -493,33 +740,160 @@ export async function startDownloadAndInstall(updateInfo: UpdateInfo): Promise<v
       return;
     }
 
-    // Validasi Ukuran File APK yang terunduh
+    // Ambil statistik file yang terunduh
     const fileStat = await Filesystem.stat({
       path: UPDATE_CACHE_FILENAME,
-      directory: Directory.Cache,
+      directory: targetDirectory,
     });
-
-    if (updateInfo.apkSize > 0 && fileStat.size !== updateInfo.apkSize) {
-      await cleanupOldUpdateApks();
-      await Swal.fire({
-        icon: 'error',
-        title: 'Unduhan Tidak Lengkap',
-        text: `Ukuran file terunduh (${formatNumber(fileStat.size)} bytes) tidak sesuai dengan ukuran rilis resmi (${formatNumber(updateInfo.apkSize)} bytes). File telah dibersihkan. Silakan coba unduh kembali.`,
-        confirmButtonText: 'Coba Lagi',
-        ...theme,
-      });
-      return;
-    }
 
     // Ambil native URI untuk FileOpener
     const uriResult = await Filesystem.getUri({
       path: UPDATE_CACHE_FILENAME,
-      directory: Directory.Cache,
+      directory: targetDirectory,
     });
 
+    // Validasi 4-byte header awal (Magic Number APK/ZIP)
+    const readFileResult = await Filesystem.readFile({
+      path: UPDATE_CACHE_FILENAME,
+      directory: targetDirectory,
+    });
+    const rawData = typeof readFileResult.data === 'string' ? readFileResult.data : '';
+    const headerValidation = verifyApkMagicBytes(rawData);
+
+    // Bangun string informasi diagnostik
+    const sizeMb = (fileStat.size / (1024 * 1024)).toFixed(2);
+    const expectedMb = (updateInfo.apkSize / (1024 * 1024)).toFixed(2);
+    const isExtensionValid = UPDATE_CACHE_FILENAME.toLowerCase().endsWith('.apk');
+
+    const diagHtml = `
+      <div><strong>Nama File:</strong> ${UPDATE_CACHE_FILENAME} (Ekstensi: ${isExtensionValid ? 'Valid .apk' : 'Tidak Valid'})</div>
+      <div><strong>URI Native:</strong> ${uriResult.uri}</div>
+      <div><strong>Ukuran:</strong> ${formatNumber(fileStat.size)} bytes (~${sizeMb} MB) vs Rilis: ${formatNumber(updateInfo.apkSize)} bytes (~${expectedMb} MB)</div>
+      <div><strong>Header 4-Byte:</strong> Hex: ${headerValidation.hex || 'N/A'} (ASCII: ${headerValidation.ascii || 'N/A'})</div>
+      <div><strong>Ekspektasi Magic:</strong> Hex: 50 4B 03 04 (ASCII: PK\\x03\\x04)</div>
+    `;
+
+    // 1. Validasi Ekstensi dan Integritas Header APK
+    if (!isExtensionValid || !headerValidation.isValid) {
+      console.error('[UpdateChecker] Validasi header/ekstensi APK gagal:', {
+        file: UPDATE_CACHE_FILENAME,
+        uri: uriResult.uri,
+        statSize: fileStat.size,
+        expectedSize: updateInfo.apkSize,
+        hex: headerValidation.hex,
+        ascii: headerValidation.ascii,
+      });
+
+      await cleanupOldUpdateApks();
+      Swal.close();
+
+      await Swal.fire({
+        icon: 'error',
+        title: 'Paket Tidak Valid (Bukan APK)',
+        html: `
+          <div class="space-y-3 text-xs text-left">
+            <p class="text-rose-600 dark:text-rose-400 font-semibold">
+              File yang terunduh bukan merupakan paket instalasi Android (APK) yang sah.
+            </p>
+            <p class="text-zinc-600 dark:text-zinc-400">
+              Header file terbaca <strong>${headerValidation.ascii || headerValidation.hex || 'Kosong'}</strong>, bukan header arsip ZIP/APK yang sah (<strong>PK\\x03\\x04</strong>). Kemungkinan server unduhan merespons dengan halaman error HTML atau koneksi terputus.
+            </p>
+            <div class="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[10px] font-mono text-zinc-500 space-y-1">
+              <div class="font-bold text-zinc-700 dark:text-zinc-300">Hasil Diagnostik:</div>
+              ${diagHtml}
+            </div>
+            <p class="text-zinc-600 dark:text-zinc-400">
+              File rusak telah dibersihkan demi keamanan perangkat. Anda dapat mengunduh rilis resmi langsung melalui browser HP.
+            </p>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Unduh lewat Browser',
+        cancelButtonText: 'Tutup',
+        ...theme,
+      }).then(async (res) => {
+        if (res.isConfirmed) {
+          await openInSystemBrowser(updateInfo.downloadUrl);
+        }
+      });
+      return;
+    }
+
+    // 2. Validasi Ukuran File APK
+    if (updateInfo.apkSize > 0 && fileStat.size !== updateInfo.apkSize) {
+      console.error('[UpdateChecker] Ukuran file APK tidak cocok:', {
+        statSize: fileStat.size,
+        expectedSize: updateInfo.apkSize,
+      });
+
+      await cleanupOldUpdateApks();
+      Swal.close();
+
+      await Swal.fire({
+        icon: 'error',
+        title: 'Unduhan Tidak Lengkap',
+        html: `
+          <div class="space-y-3 text-xs text-left">
+            <p class="text-zinc-600 dark:text-zinc-400">
+              Ukuran file terunduh (${formatNumber(fileStat.size)} bytes) tidak sesuai dengan ukuran rilis resmi (${formatNumber(updateInfo.apkSize)} bytes). File telah dibersihkan.
+            </p>
+            <div class="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[10px] font-mono text-zinc-500 space-y-1">
+              <div class="font-bold text-zinc-700 dark:text-zinc-300">Hasil Diagnostik:</div>
+              ${diagHtml}
+            </div>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Unduh lewat Browser',
+        cancelButtonText: 'Tutup',
+        ...theme,
+      }).then(async (res) => {
+        if (res.isConfirmed) {
+          await openInSystemBrowser(updateInfo.downloadUrl);
+        }
+      });
+      return;
+    }
+
+    // 3. Tampilkan Dialog Diagnostik Terverifikasi (Dapat di-screenshot oleh pengguna)
     Swal.close();
 
-    // Buka installer paket Android
+    const confirmDiag = await Swal.fire({
+      icon: 'info',
+      title: 'Diagnostik Paket Pembaruan',
+      html: `
+        <div class="space-y-3 text-xs text-left">
+          <p class="text-zinc-600 dark:text-zinc-400">
+            Paket pembaruan <strong>JufaStore.apk</strong> (v${updateInfo.version}) telah terunduh utuh dan lulus verifikasi integritas.
+          </p>
+          <div class="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[10px] font-mono text-zinc-500 space-y-1">
+            <div class="font-bold text-zinc-700 dark:text-zinc-300">Data Diagnostik (Dapat Di-screenshot):</div>
+            ${diagHtml}
+            <div class="text-emerald-600 dark:text-emerald-400 font-semibold pt-1">Hasil: VALID & SIAP DIPASANG</div>
+          </div>
+          <p class="text-zinc-500 text-[11px]">
+            Tekan <strong>"Lanjut Pasang"</strong> untuk membuka installer Android. Jika installer gagal, pilih <strong>"Unduh lewat Browser"</strong>.
+          </p>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Lanjut Pasang',
+      cancelButtonText: 'Unduh lewat Browser',
+      ...theme,
+    });
+
+    if (!confirmDiag.isConfirmed) {
+      if (confirmDiag.isDismissed && confirmDiag.dismiss === Swal.DismissReason.cancel) {
+        await openInSystemBrowser(updateInfo.downloadUrl);
+      }
+      return;
+    }
+
+    // Simpan penanda versi update yang sedang dipasang
+    localStorage.setItem(PENDING_INSTALL_VERSION_KEY, updateInfo.version);
+    localStorage.setItem(PENDING_INSTALL_URL_KEY, updateInfo.downloadUrl);
+
+    // 4. Buka installer paket Android menggunakan FileOpener
     try {
       await FileOpener.open({
         filePath: uriResult.uri,
@@ -527,24 +901,36 @@ export async function startDownloadAndInstall(updateInfo: UpdateInfo): Promise<v
         openWithDefault: true,
       });
     } catch (openErr: any) {
-      console.error('FileOpener error:', openErr);
-      // Tangani kasus belum ada izin pasang aplikasi tidak dikenal
+      console.error('[UpdateChecker] Gagal membuka installer via FileOpener:', openErr);
+
       await Swal.fire({
-        icon: 'info',
-        title: 'Izin Pemasangan Diperlukan',
+        icon: 'warning',
+        title: 'Gagal Membuka Penginstal Paket',
         html: `
-          <div class="space-y-2 text-xs text-left">
-            <p>Android memerlukan izin <strong>"Instal aplikasi tidak dikenal"</strong> untuk JufaStore agar dapat memperbarui aplikasi.</p>
-            <ol class="list-decimal pl-4 space-y-1 text-zinc-600 dark:text-zinc-400">
-              <li>Buka <strong>Setelan</strong> HP Anda ➜ <strong>Aplikasi</strong>.</li>
-              <li>Pilih <strong>JufaStore</strong>.</li>
-              <li>Aktifkan <strong>"Izinkan dari sumber ini"</strong>.</li>
-            </ol>
-            <p class="pt-1">Setelah diaktifkan, buka kembali JufaStore dan tekan "Cek Pembaruan" untuk memasang.</p>
+          <div class="space-y-3 text-xs text-left">
+            <p class="text-zinc-600 dark:text-zinc-400">
+              File APK telah terunduh dan terverifikasi sah (<strong>PK\\x03\\x04</strong>, ~${sizeMb} MB), namun sistem Android tidak dapat menjalankan penginstal paket otomatis (${openErr?.message || openErr}).
+            </p>
+            <div class="p-3 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+              <div class="font-bold text-zinc-700 dark:text-zinc-300">Solusi Cepat:</div>
+              <p class="text-zinc-600 dark:text-zinc-400">
+                Tekan tombol <strong>"Unduh lewat Browser"</strong> di bawah untuk mengunduh dan memasang pembaruan langsung dari browser bawaan HP Anda.
+              </p>
+            </div>
+            <div class="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[10px] font-mono text-zinc-500 space-y-1">
+              <div class="font-bold text-zinc-700 dark:text-zinc-300">Detail Teknis:</div>
+              ${diagHtml}
+            </div>
           </div>
         `,
-        confirmButtonText: 'Mengerti',
+        showCancelButton: true,
+        confirmButtonText: 'Unduh lewat Browser',
+        cancelButtonText: 'Tutup',
         ...theme,
+      }).then(async (res) => {
+        if (res.isConfirmed) {
+          await openInSystemBrowser(updateInfo.downloadUrl);
+        }
       });
     }
   } catch (err: any) {
@@ -559,9 +945,21 @@ export async function startDownloadAndInstall(updateInfo: UpdateInfo): Promise<v
       await Swal.fire({
         icon: 'error',
         title: 'Gagal Mengunduh',
-        text: 'Terjadi kendala jaringan saat mengunduh paket pembaruan. Pastikan koneksi internet Anda stabil lalu coba lagi.',
-        confirmButtonText: 'Tutup',
+        html: `
+          <div class="space-y-3 text-xs text-left">
+            <p class="text-zinc-600 dark:text-zinc-400">
+              Terjadi kendala jaringan saat mengunduh paket pembaruan (${err?.message || 'Koneksi terputus'}). Anda dapat mengunduh langsung melalui browser.
+            </p>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Unduh lewat Browser',
+        cancelButtonText: 'Tutup',
         ...theme,
+      }).then(async (res) => {
+        if (res.isConfirmed) {
+          await openInSystemBrowser(updateInfo.downloadUrl);
+        }
       });
     }
   }

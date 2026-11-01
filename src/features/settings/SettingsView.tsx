@@ -28,6 +28,7 @@ import {
   Check,
   Globe,
   Radio,
+  Rocket,
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { z } from 'zod';
@@ -859,7 +860,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 }}
                 className="px-3 py-1 rounded-xl text-xs font-bold bg-amber-500 text-zinc-950 hover:bg-amber-400 transition flex items-center gap-1.5 shadow-sm animate-pulse"
               >
-                <span>🚀 Update v{updateInfo.version}</span>
+                <Rocket size={13} />
+                <span>Update v{updateInfo.version}</span>
               </button>
             ) : (
               <button
