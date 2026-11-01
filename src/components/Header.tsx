@@ -1,5 +1,5 @@
 import React from 'react';
-import { Coins, Moon, Sun, BarChart3, Settings, Plus, Wifi, WifiOff } from 'lucide-react';
+import { Coins, Moon, Sun, BarChart3, Settings, Plus } from 'lucide-react';
 import { NavItem } from './Sidebar';
 import { formatNumber } from '../utils/formatters';
 import { playTapSound } from '../utils/sound';
@@ -26,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   customLogoUrl,
 }) => {
   return (
-    <header className="sticky top-0 z-30 w-full theme-bg-surface/90 backdrop-blur-md border-b theme-border px-3 sm:px-6 py-2.5 select-none transition-colors duration-200">
+    <header className="sticky top-0 z-30 w-full theme-bg-surface/90 backdrop-blur-md border-b theme-border px-3 sm:px-6 py-2.5 pt-safe select-none transition-colors duration-200">
       <div className="max-w-5xl mx-auto flex items-center justify-between">
         {/* Brand Logo & Name */}
         <button
@@ -52,21 +52,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </button>
 
-        {/* Right Info: Online/Offline Badge, Quick Jual, Stock Badge & Theme Toggle */}
+        {/* Right Info: Quick Jual, Stock Badge & Theme Toggle */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Status Online/Offline */}
-          <div
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border transition ${
-              isOnline
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-            }`}
-            title={isOnline ? 'Terhubung ke Internet (Mode Online)' : 'Mode Offline (Data tersimpan aman di perangkat)'}
-          >
-            {isOnline ? <Wifi size={11} className="text-emerald-400" /> : <WifiOff size={11} className="text-amber-400" />}
-            <span>{isOnline ? 'Online' : 'Offline'}</span>
-          </div>
-
           {/* Quick Sale Button */}
           {onOpenQuickSale && (
             <button

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   BarChart3,
   TrendingUp,
@@ -10,8 +10,20 @@ import {
   ArrowRight,
   Sliders,
   DollarSign,
+  Calendar,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import { repository } from '../../db/repository';
+import { Sale } from '../../db/schema';
 import {
   calculateBreakEvenRate,
   simulateProfitScenario,
@@ -21,23 +33,59 @@ import { NumberInput } from '../../components/NumberInput';
 import { showSuccessAlert, showErrorAlert, showWarningAlert } from '../../utils/alert';
 import { playTapSound, playSuccessSound } from '../../utils/sound';
 
+function formatAbbreviatedRupiah(val: number): string {
+  if (Math.abs(val) >= 1_000_000) {
+    return `${(val / 1_000_000).toFixed(1).replace('.0', '')}jt`;
+  }
+  if (Math.abs(val) >= 1_000) {
+    return `${(val / 1_000).toFixed(0)}rb`;
+  }
+  return String(val);
+}
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="p-3 rounded-xl theme-bg-card border theme-border shadow-xl text-xs space-y-1">
+        <span className="font-bold theme-text-primary block">{label}</span>
+        {payload.map((entry: any) => (
+          <div key={entry.name} className="flex items-center justify-between gap-3">
+            <span style={{ color: entry.color }} className="font-medium">
+              {entry.name}:
+            </span>
+            <span className="font-mono font-bold theme-text-primary">
+              {formatRupiah(entry.value)}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
 export const AnalysisView: React.FC = () => {
   const [totalRemainingRobux, setTotalRemainingRobux] = useState(0);
   const [totalRemainingCostRupiah, setTotalRemainingCostRupiah] = useState(0);
   const [targetRateInput, setTargetRateInput] = useState('');
+  const [salesList, setSalesList] = useState<Sale[]>([]);
 
-  const loadStock = async () => {
+  const loadData = async () => {
     try {
-      const summary = await repository.getTotalStockSummary();
+      const [summary, sales] = await Promise.all([
+        repository.getTotalStockSummary(),
+        repository.getSales(),
+      ]);
       setTotalRemainingRobux(summary.totalRemainingRobux);
       setTotalRemainingCostRupiah(summary.totalRemainingCostRupiah);
+      setSalesList(sales.filter((s) => s.status !== 'VOID'));
     } catch (err) {
-      console.error('Failed to load stock summary for analysis:', err);
+      console.error('Failed to load analysis data:', err);
     }
   };
 
   useEffect(() => {
-    loadStock();
+    loadData();
   }, []);
 
   const breakEvenRate = calculateBreakEvenRate(totalRemainingCostRupiah, totalRemainingRobux);
@@ -49,6 +97,38 @@ export const AnalysisView: React.FC = () => {
     targetRateNum,
     [100, 75, 50, 25]
   );
+
+  // Agregasi tren penjualan harian untuk LineChart
+  const chartData = useMemo(() => {
+    if (salesList.length === 0) return [];
+
+    const grouped: Record<string, { date: string; omzet: number; laba: number }> = {};
+
+    // Urutkan penjualan dari paling lampau ke terkini
+    const sorted = [...salesList].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    for (const s of sorted) {
+      const dateKey = s.createdAt.slice(0, 10); // YYYY-MM-DD
+      const dateLabel = new Date(s.createdAt).toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+      });
+
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = {
+          date: dateLabel,
+          omzet: 0,
+          laba: 0,
+        };
+      }
+      grouped[dateKey].omzet += s.totalRevenueRupiah;
+      grouped[dateKey].laba += s.grossProfitRupiah;
+    }
+
+    return Object.values(grouped).slice(-14); // Ambil 14 hari aktivitas transaksi terakhir
+  }, [salesList]);
 
   // Handler: Ekspor CSV Penjualan
   const handleExportSalesCsv = async () => {
@@ -85,7 +165,6 @@ export const AnalysisView: React.FC = () => {
         `"${(s.notes || '-').replace(/"/g, '""')}"`,
       ]);
 
-      // UTF-8 BOM agar rapi di Microsoft Excel
       const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -148,7 +227,7 @@ export const AnalysisView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-5 max-w-4xl mx-auto pb-10">
+    <div className="space-y-4 max-w-4xl mx-auto pb-10">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b theme-border">
         <div className="flex items-center gap-2.5">
@@ -160,7 +239,7 @@ export const AnalysisView: React.FC = () => {
               Analisis & Laporan Bisnis
             </h1>
             <p className="text-xs theme-text-secondary">
-              Kalkulasi titik impas modal (BEP), simulasi skenario profit, & ekspor CSV
+              Grafik tren performa, titik impas modal (BEP), & simulasi skenario profit
             </p>
           </div>
         </div>
@@ -170,7 +249,7 @@ export const AnalysisView: React.FC = () => {
           <button
             type="button"
             onClick={handleExportSalesCsv}
-            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-98 shadow-sm"
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-98 shadow-sm min-h-[36px]"
           >
             <Download size={13} />
             <span>CSV Penjualan</span>
@@ -178,7 +257,7 @@ export const AnalysisView: React.FC = () => {
           <button
             type="button"
             onClick={handleExportCashCsv}
-            className="px-3 py-1.5 rounded-xl theme-bg-card border theme-border hover:theme-bg-card-hover text-xs font-semibold theme-text-primary flex items-center gap-1.5 transition active:scale-98"
+            className="px-3 py-1.5 rounded-xl theme-bg-card border theme-border hover:theme-bg-card-hover text-xs font-semibold theme-text-primary flex items-center gap-1.5 transition active:scale-98 min-h-[36px]"
           >
             <FileSpreadsheet size={13} />
             <span>CSV Buku Kas</span>
@@ -186,8 +265,74 @@ export const AnalysisView: React.FC = () => {
         </div>
       </div>
 
-      {/* Break-Even Rate (Titik Impas) */}
-      <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-3">
+      {/* 1. Grafik Tren Omzet & Laba Bersih */}
+      <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-3">
+        <div className="flex items-center justify-between pb-1 border-b theme-border-subtle">
+          <div className="flex items-center gap-2">
+            <TrendingUp size={17} className="text-emerald-500" />
+            <h2 className="text-sm font-bold theme-text-primary">
+              Tren Omzet & Laba Penjualan
+            </h2>
+          </div>
+          <span className="text-[11px] theme-text-muted">
+            {chartData.length > 0 ? `${chartData.length} hari aktivitas` : 'Belum ada data'}
+          </span>
+        </div>
+
+        {chartData.length === 0 ? (
+          <div className="p-8 text-center text-xs theme-text-muted space-y-1">
+            <BarChart3 size={28} className="mx-auto opacity-30" />
+            <p>Belum ada data transaksi penjualan untuk menampilkan grafik tren.</p>
+            <p className="text-[10px]">Catat penjualan pertama Anda untuk melihat perkembangan omzet dan laba.</p>
+          </div>
+        ) : (
+          <div className="w-full h-64 pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fill: '#71717a' }}
+                  tickLine={false}
+                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                />
+                <YAxis
+                  tickFormatter={formatAbbreviatedRupiah}
+                  tick={{ fontSize: 11, fill: '#71717a' }}
+                  tickLine={false}
+                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend
+                  wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
+                  iconType="circle"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="omzet"
+                  name="Total Omzet"
+                  stroke="#10b981"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#10b981' }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="laba"
+                  name="Laba Kotor"
+                  stroke="#38bdf8"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#38bdf8' }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* 2. Break-Even Rate (Titik Impas) */}
+      <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ShieldAlert size={18} className="text-amber-400" />
@@ -200,7 +345,7 @@ export const AnalysisView: React.FC = () => {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           <div className="p-4 rounded-xl theme-bg-surface border theme-border">
             <span className="text-xs theme-text-muted block">Rate Impas Minimal (BEP)</span>
             <span className="text-2xl font-mono font-extrabold text-amber-400 block mt-1">
@@ -230,8 +375,8 @@ export const AnalysisView: React.FC = () => {
         </div>
       </div>
 
-      {/* Simulator Skenario Keuntungan */}
-      <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-4">
+      {/* 3. Simulator Skenario Keuntungan */}
+      <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Sliders size={18} className="text-emerald-400" />
@@ -259,7 +404,7 @@ export const AnalysisView: React.FC = () => {
             Ketikkan target rate jual pada kolom di atas untuk melihat potensi laba skenario 100%, 75%, 50%, dan 25% dari sisa stok persediaan.
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
             {scenarios.map((sc) => (
               <div
                 key={sc.percentage}

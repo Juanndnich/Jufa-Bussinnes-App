@@ -130,14 +130,18 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
 
   const loadData = async () => {
     try {
-      const [p, b, summary] = await Promise.all([
+      const [p, b, summary, settings] = await Promise.all([
         repository.getRatePresets(),
         repository.getAvailableBatches(),
         repository.getTotalStockSummary(),
+        repository.getSettings(),
       ]);
       setRatePresets(p);
       setBatches(b);
       setTotalAvailableRobux(summary.totalRemainingRobux);
+      if (settings?.defaultSellRate && !inputRate) {
+        setInputRate(String(settings.defaultSellRate));
+      }
     } catch (err) {
       console.error('Failed to load calculator data:', err);
     }
