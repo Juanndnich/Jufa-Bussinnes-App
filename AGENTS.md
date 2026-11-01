@@ -59,3 +59,9 @@ Sebelum menginstal paket, cek versi stabil terbaru (`npm view <paket> version`),
 - Struktur modular: `src/domain/` (logika & rumus murni tanpa UI), `src/db/` (skema Dexie & repository), `src/features/<fitur>/` (komponen, hooks, validasi).
 - Komponen UI dilarang memanggil Dexie secara langsung; wajib melewati *service/repository layer* dengan transaksi atomik (`db.transaction('rw', ...)`).
 - Setiap tugas hanya dianggap selesai jika `npm run lint`, `npm run test`, dan `npm run build` berjalan lulus 100% tanpa error.
+
+
+## 8. Aturan Baku Android Build & Signing
+- **Application ID Terkunci:** `applicationId` / package name WAJIB selalu `com.jufastore.app` dan DILARANG diubah demi menjaga integritas data lokal perangkat pengguna.
+- **Kunci Rilis Tunggal & Permanen (Keystore):** Kunci rilis (`keystore`) yang digunakan untuk menandatangani APK rilis DILARANG diganti. Mengganti keystore akan menyebabkan kegagalan instalasi pembaruan (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) dan berisiko menghapus data IndexedDB pengguna jika aplikasi harus diinstal ulang.
+- **DILARANG Kembali ke `assembleDebug` untuk Rilis:** Semua proses build APK resmi untuk rilis/distribusi WAJIB menggunakan perintah Gradle `assembleRelease` yang ditandatangani dengan keystore rilis resmi melalui GitHub Secrets. Build `assembleDebug` HANYA diizinkan untuk keperluan testing lokal pengembang.

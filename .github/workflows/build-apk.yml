@@ -35,35 +35,56 @@ jobs:
       - name: Build Web Application
         run: npm run build
 
-      - name: Add Capacitor Android Platform
-        run: npx cap add android
-
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Apply Custom Android App Icon
+      - name: Compute App Version
+        id: versioning
         run: |
-          # Hapus folder adaptive xml anydpi-v26 untuk mencegah error duplicate resource dengan file png
-          rm -rf android/app/src/main/res/mipmap-anydpi-v26
-          for dir in android/app/src/main/res/mipmap-*; do
-            if [ -d "$dir" ]; then
-              cp public/app-icon.png "$dir/ic_launcher.png"
-              cp public/app-icon.png "$dir/ic_launcher_round.png"
-              cp public/app-icon.png "$dir/ic_launcher_foreground.png"
-            fi
-          done
+          MAJOR_MINOR=$(node -p "require('./package.json').version.split('.').slice(0, 2).join('.')")
+          VERSION_CODE=$(( ${{ github.run_number }} + 100 ))
+          VERSION_NAME="${MAJOR_MINOR}.${{ github.run_number }}"
+          RELEASE_TAG="v${VERSION_NAME}"
+          echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_ENV
+          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+          echo "Version Code: ${VERSION_CODE}"
+          echo "Version Name: ${VERSION_NAME}"
+          echo "Release Tag: ${RELEASE_TAG}"
+
+      - name: Setup Release Keystore
+        run: |
+          KEYSTORE_FILE="${RUNNER_TEMP}/jufastore-release.jks"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_FILE"
+          echo "KEYSTORE_PATH=${KEYSTORE_FILE}" >> $GITHUB_ENV
 
       - name: Grant Execute Permission for Gradle
         run: chmod +x android/gradlew
 
-      - name: Build Android Debug APK
+      - name: Build Android Release APK
+        env:
+          KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          VERSION_CODE: ${{ env.VERSION_CODE }}
+          VERSION_NAME: ${{ env.VERSION_NAME }}
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
       - name: Prepare Release APK File
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk JufaStore.apk
+          cp android/app/build/outputs/apk/release/app-release.apk JufaStore.apk
+
+      - name: Verify APK Signature & Print SHA-256 Fingerprint
+        run: |
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            APKSIGNER="apksigner"
+          fi
+          echo "Memverifikasi tanda tangan APK..."
+          $APKSIGNER verify --verbose --print-certs JufaStore.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -77,13 +98,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v2.0.${{ github.run_number }}
-          name: JufaStore v2.0.${{ github.run_number }} (Update Otomatis)
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: JufaStore ${{ env.RELEASE_TAG }} (Rilis Resmi)
           body: |
-            ## Pembaruan Otomatis JufaStore
-            - Versi Rilis: v2.0.${{ github.run_number }}
+            ## Pembaruan Resmi JufaStore
+            - Versi Rilis: ${{ env.RELEASE_TAG }} (Version Code: ${{ env.VERSION_CODE }})
+            - Ditandatangani resmi (Release Keystore)
             - Build otomatis dari commit: ${{ github.sha }}
-            - File APK siap dipasang langsung di HP Android.
+            - File APK dapat langsung dipasang atau menimpa versi sebelumnya tanpa copot aplikasi.
           draft: false
           prerelease: false
           make_latest: true
