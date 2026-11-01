@@ -56,8 +56,20 @@ import {
 
 const APP_VERSION = '2.1.0';
 
+export const StockMovementBackupSchema = z.object({
+  id: z.string(),
+  batchId: z.string(),
+  type: z.enum(['RESTOCK', 'SALE', 'PERSONAL_USE', 'RECONCILE_ADD', 'VOID_RESTORE', 'EDIT']),
+  robuxAmount: z.number(),
+  costAllocatedRupiah: z.number(),
+  referenceId: z.string(),
+  createdAt: z.string(),
+  notes: z.string().optional(),
+  balanceAfter: z.number().optional(),
+}).passthrough();
+
 // Zod Schema untuk validasi file backup
-const BackupSchema = z.object({
+export const BackupSchema = z.object({
   version: z.number().optional(),
   exportedAt: z.string().optional(),
   settings: z.array(z.any()).optional(),
