@@ -55,7 +55,7 @@ jobs:
       - name: Setup Release Keystore
         run: |
           KEYSTORE_FILE="${RUNNER_TEMP}/jufastore-release.jks"
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_FILE"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode --ignore-garbage > "$KEYSTORE_FILE" 2>/dev/null || echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$KEYSTORE_FILE"
           echo "KEYSTORE_PATH=${KEYSTORE_FILE}" >> $GITHUB_ENV
 
       - name: Grant Execute Permission for Gradle
