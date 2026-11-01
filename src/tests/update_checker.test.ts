@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { Browser } from '@capacitor/browser';
 import {
   parseSemver,
   compareSemver,
@@ -8,6 +9,12 @@ import {
   openInSystemBrowser,
   GitHubReleaseResponse,
 } from '../services/updateChecker';
+
+vi.mock('@capacitor/browser', () => ({
+  Browser: {
+    open: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 
 describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
   // =========================================================================
@@ -258,20 +265,10 @@ describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
       expect(result.isValid).toBe(false);
     });
 
-    it('5.7. Membuka URL melalui browser sistem saat openInSystemBrowser dipanggil', () => {
-      const mockOpen = vi.fn();
-      const originalWindow = (globalThis as any).window;
-      (globalThis as any).window = { open: mockOpen };
-
-      try {
-        openInSystemBrowser('https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.22/JufaStore.apk');
-        expect(mockOpen).toHaveBeenCalledWith(
-          'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.22/JufaStore.apk',
-          '_system'
-        );
-      } finally {
-        (globalThis as any).window = originalWindow;
-      }
+    it('5.7. Membuka URL melalui browser sistem saat openInSystemBrowser dipanggil', async () => {
+      const url = 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.22/JufaStore.apk';
+      await openInSystemBrowser(url);
+      expect(Browser.open).toHaveBeenCalledWith({ url });
     });
   });
 });
