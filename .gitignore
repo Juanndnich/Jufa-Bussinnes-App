@@ -37,6 +37,5 @@ JufaStore_Backup_*.json
 *.sln
 *.sw?
 
-# Android / Electron build outputs
-android
+# Electron / Release build outputs
 release
