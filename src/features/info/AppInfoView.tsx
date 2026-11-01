@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import {
   Info,
   ShieldCheck,
@@ -105,6 +106,8 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
     }
   };
 
+  const isNative = Capacitor.isNativePlatform();
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-10">
       {/* Header View */}
@@ -128,7 +131,7 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
             v{currentVersion} • Rilis Resmi
           </span>
 
-          {updateInfo?.hasUpdate && (
+          {isNative && updateInfo?.hasUpdate && (
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse flex items-center gap-1">
               <span>●</span> Update v{updateInfo.version} Tersedia
             </span>
@@ -136,82 +139,84 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
         </div>
       </div>
 
-      {/* Bagian Update Otomatis GitHub */}
-      <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-3.5">
-        <div className="flex items-center justify-between pb-2 border-b theme-border flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <Smartphone size={18} className="text-emerald-500" />
-            <h2 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
-              Pembaruan Aplikasi (Auto-Update)
-            </h2>
-          </div>
-          <span className="text-[11px] theme-text-muted font-mono">
-            GitHub Releases Official
-          </span>
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 rounded-xl theme-bg-surface border theme-border">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold theme-text-primary">
-                Versi Terpasang: <span className="font-mono text-emerald-400">v{currentVersion}</span>
-              </span>
-              {updateInfo?.hasUpdate ? (
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Versi Baru: v{updateInfo.version}
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border theme-border">
-                  Terbaru
-                </span>
-              )}
+      {/* Bagian Update Otomatis GitHub (Hanya Tampil di Native Android) */}
+      {isNative && (
+        <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-3.5">
+          <div className="flex items-center justify-between pb-2 border-b theme-border flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Smartphone size={18} className="text-emerald-500" />
+              <h2 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
+                Pembaruan Aplikasi (Auto-Update)
+              </h2>
             </div>
-            <p className="text-[11px] theme-text-secondary leading-relaxed">
-              JufaStore memeriksa pembaruan resmi langsung dari repositori publik GitHub tanpa pihak ketiga. Data bisnis Anda tetap 100% aman tersimpan di perangkat.
-            </p>
+            <span className="text-[11px] theme-text-muted font-mono">
+              GitHub Releases Official
+            </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {updateInfo?.hasUpdate && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 rounded-xl theme-bg-surface border theme-border">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold theme-text-primary">
+                  Versi Terpasang: <span className="font-mono text-emerald-400">v{currentVersion}</span>
+                </span>
+                {updateInfo?.hasUpdate ? (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    Versi Baru: v{updateInfo.version}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border theme-border">
+                    Terbaru
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] theme-text-secondary leading-relaxed">
+                JufaStore memeriksa pembaruan resmi langsung dari repositori publik GitHub tanpa pihak ketiga. Data bisnis Anda tetap 100% aman tersimpan di perangkat.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {updateInfo?.hasUpdate && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTapSound();
+                    promptUpdateDialog(updateInfo, () => onNavigateTab?.('settings'));
+                  }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition flex items-center gap-1.5 shadow-sm"
+                >
+                  <Download size={14} />
+                  <span>Perbarui Sekarang</span>
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={() => {
-                  playTapSound();
-                  promptUpdateDialog(updateInfo, () => onNavigateTab?.('settings'));
-                }}
-                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition flex items-center gap-1.5 shadow-sm"
+                disabled={isCheckingUpdate}
+                onClick={handleManualCheck}
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border hover:theme-border-strong theme-text-primary transition flex items-center gap-1.5 active:scale-[0.98] ${
+                  isCheckingUpdate ? 'opacity-60 cursor-not-allowed' : ''
+                }`}
               >
-                <Download size={14} />
-                <span>Perbarui Sekarang</span>
+                <RefreshCw size={13} className={isCheckingUpdate ? 'animate-spin text-emerald-400' : ''} />
+                <span>{isCheckingUpdate ? 'Memeriksa...' : 'Cek Pembaruan'}</span>
               </button>
-            )}
-
-            <button
-              type="button"
-              disabled={isCheckingUpdate}
-              onClick={handleManualCheck}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border hover:theme-border-strong theme-text-primary transition flex items-center gap-1.5 active:scale-[0.98] ${
-                isCheckingUpdate ? 'opacity-60 cursor-not-allowed' : ''
-              }`}
-            >
-              <RefreshCw size={13} className={isCheckingUpdate ? 'animate-spin text-emerald-400' : ''} />
-              <span>{isCheckingUpdate ? 'Memeriksa...' : 'Cek Pembaruan'}</span>
-            </button>
-          </div>
-        </div>
-
-        {updateInfo?.hasUpdate && (
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs theme-text-primary space-y-1.5">
-            <div className="font-bold text-emerald-400 flex items-center gap-1.5">
-              <CheckCircle2 size={14} />
-              <span>Catatan Rilis v{updateInfo.version}:</span>
             </div>
-            <p className="text-[11px] theme-text-secondary leading-relaxed whitespace-pre-line pl-5 font-sans">
-              {updateInfo.releaseNotes}
-            </p>
           </div>
-        )}
-      </div>
+
+          {updateInfo?.hasUpdate && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs theme-text-primary space-y-1.5">
+              <div className="font-bold text-emerald-400 flex items-center gap-1.5">
+                <CheckCircle2 size={14} />
+                <span>Catatan Rilis v{updateInfo.version}:</span>
+              </div>
+              <p className="text-[11px] theme-text-secondary leading-relaxed whitespace-pre-line pl-5 font-sans">
+                {updateInfo.releaseNotes}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Hero Badge Identity */}
       <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-3 relative overflow-hidden">

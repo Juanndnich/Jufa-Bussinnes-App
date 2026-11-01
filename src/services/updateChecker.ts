@@ -192,8 +192,18 @@ export async function checkForUpdates(options: {
 }): Promise<UpdateInfo | null> {
   const isNative = Capacitor.isNativePlatform();
 
-  // Jika di browser/PWA biasa (bukan native), abaikan auto-check secara tenang
-  if (!isNative && !options.manual) {
+  // Jika di browser/PWA biasa (bukan native), lewati pengecekan sepenuhnya
+  if (!isNative) {
+    if (options.manual) {
+      const theme = getSwalTheme();
+      await Swal.fire({
+        icon: 'info',
+        title: 'Pembaruan Otomatis Khusus Android',
+        text: 'Fitur pembaruan APK otomatis hanya aktif pada aplikasi native Android.',
+        confirmButtonText: 'Mengerti',
+        ...theme,
+      });
+    }
     return null;
   }
 

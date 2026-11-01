@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Capacitor } from '@capacitor/core';
 import {
   Settings,
   Moon,
@@ -836,27 +837,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
             <span className="font-bold text-emerald-500 dark:text-emerald-400">v{currentVersion}</span>
           </div>
 
-          {updateInfo?.hasUpdate ? (
-            <button
-              type="button"
-              onClick={() => {
-                playTapSound();
-                promptUpdateDialog(updateInfo);
-              }}
-              className="px-3 py-1 rounded-xl text-xs font-bold bg-amber-500 text-zinc-950 hover:bg-amber-400 transition flex items-center gap-1.5 shadow-sm animate-pulse"
-            >
-              <span>🚀 Update v{updateInfo.version}</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={isCheckingUpdate}
-              onClick={handleCheckUpdate}
-              className="px-3 py-1 rounded-xl text-xs font-medium theme-bg-card border theme-border hover:theme-border-strong theme-text-secondary hover:theme-text-primary transition flex items-center gap-1.5"
-            >
-              <RefreshCw size={12} className={isCheckingUpdate ? 'animate-spin text-emerald-400' : ''} />
-              <span>{isCheckingUpdate ? 'Mengecek...' : 'Cek Update'}</span>
-            </button>
+          {Capacitor.isNativePlatform() && (
+            updateInfo?.hasUpdate ? (
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  promptUpdateDialog(updateInfo);
+                }}
+                className="px-3 py-1 rounded-xl text-xs font-bold bg-amber-500 text-zinc-950 hover:bg-amber-400 transition flex items-center gap-1.5 shadow-sm animate-pulse"
+              >
+                <span>🚀 Update v{updateInfo.version}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={isCheckingUpdate}
+                onClick={handleCheckUpdate}
+                className="px-3 py-1 rounded-xl text-xs font-medium theme-bg-card border theme-border hover:theme-border-strong theme-text-secondary hover:theme-text-primary transition flex items-center gap-1.5"
+              >
+                <RefreshCw size={12} className={isCheckingUpdate ? 'animate-spin text-emerald-400' : ''} />
+                <span>{isCheckingUpdate ? 'Mengecek...' : 'Cek Update'}</span>
+              </button>
+            )
           )}
         </div>
       </div>
