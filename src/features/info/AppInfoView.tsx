@@ -81,7 +81,7 @@ export const AppInfoView: React.FC = () => {
         </div>
 
         <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
-          v2.1.0 • Produksi Siap Pakai
+          v2.1.0 • Rilis Resmi Siap Pakai
         </span>
       </div>
 
