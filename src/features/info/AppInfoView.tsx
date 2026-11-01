@@ -126,14 +126,9 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
           </div>
         </div>
 
-<<<<<<< HEAD
-        <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
-          v2.1.0 • Rilis Resmi Siap Pakai
-        </span>
-=======
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            v{currentVersion} • Rilis Resmi
+            v{currentVersion} • Rilis Resmi Siap Pakai
           </span>
 
           {isNative && updateInfo?.hasUpdate && (
@@ -142,7 +137,6 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
             </span>
           )}
         </div>
->>>>>>> feat/auto-update
       </div>
 
       {/* Bagian Update Otomatis GitHub (Hanya Tampil di Native Android) */}
