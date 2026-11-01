@@ -65,3 +65,8 @@ Sebelum menginstal paket, cek versi stabil terbaru (`npm view <paket> version`),
 - **Application ID Terkunci:** `applicationId` / package name WAJIB selalu `com.jufastore.app` dan DILARANG diubah demi menjaga integritas data lokal perangkat pengguna.
 - **Kunci Rilis Tunggal & Permanen (Keystore):** Kunci rilis (`keystore`) yang digunakan untuk menandatangani APK rilis DILARANG diganti. Mengganti keystore akan menyebabkan kegagalan instalasi pembaruan (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) dan berisiko menghapus data IndexedDB pengguna jika aplikasi harus diinstal ulang.
 - **DILARANG Kembali ke `assembleDebug` untuk Rilis:** Semua proses build APK resmi untuk rilis/distribusi WAJIB menggunakan perintah Gradle `assembleRelease` yang ditandatangani dengan keystore rilis resmi melalui GitHub Secrets. Build `assembleDebug` HANYA diizinkan untuk keperluan testing lokal pengembang.
+
+## 9. Aturan Auto-Update GitHub Releases
+- **Nama Asset APK Terkunci:** File asset APK yang dipublikasikan pada GitHub Releases WAJIB selalu bernama persis `JufaStore.apk` (tanpa nomor versi pada nama file asset) agar service `updateChecker` dapat menemukannya secara otomatis.
+- **Format Tag Rilis:** Format tag rilis WAJIB `v<versionName>` (contoh: `v2.1.1`, `v2.1.10`) agar perbandingan semver berjalan akurat.
+- **Repositori Publik:** Repositori GitHub `Juanndnich/Jufa-Bussinnes-App` WAJIB tetap berstatus Publik agar aplikasi dapat memanggil GitHub Releases API (`/releases/latest`) dan mengunduh asset APK secara langsung tanpa memerlukan Personal Access Token (PAT).

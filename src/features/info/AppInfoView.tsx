@@ -22,12 +22,28 @@ import {
   Globe,
   Receipt,
   Wallet,
+  RefreshCw,
+  Download,
+  AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { db } from '../../db/db';
 import { formatNumber } from '../../utils/formatters';
 import { playTapSound } from '../../utils/sound';
+import {
+  subscribeUpdateState,
+  checkForUpdates,
+  getInstalledVersion,
+  promptUpdateDialog,
+  UpdateInfo,
+} from '../../services/updateChecker';
+import { NavItem } from '../../components/Sidebar';
 
-export const AppInfoView: React.FC = () => {
+interface AppInfoViewProps {
+  onNavigateTab?: (tab: NavItem) => void;
+}
+
+export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
   const [stats, setStats] = useState({
     stockBatches: 0,
     sales: 0,
@@ -38,7 +54,17 @@ export const AppInfoView: React.FC = () => {
     auditLogs: 0,
   });
 
+  const [currentVersion, setCurrentVersion] = useState<string>('2.1.0');
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
   useEffect(() => {
+    getInstalledVersion().then(setCurrentVersion);
+
+    const unsubscribe = subscribeUpdateState((info) => {
+      setUpdateInfo(info);
+    });
+
     Promise.all([
       db.stockBatches.count(),
       db.sales.count(),
@@ -60,7 +86,24 @@ export const AppInfoView: React.FC = () => {
         });
       })
       .catch(() => {});
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
+
+  const handleManualCheck = async () => {
+    playTapSound();
+    setIsCheckingUpdate(true);
+    try {
+      await checkForUpdates({
+        manual: true,
+        onNavigateToBackup: () => onNavigateTab?.('settings'),
+      });
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-10">
@@ -80,9 +123,94 @@ export const AppInfoView: React.FC = () => {
           </div>
         </div>
 
-        <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
-          v2.1.0 • Produksi Siap Pakai
-        </span>
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            v{currentVersion} • Rilis Resmi
+          </span>
+
+          {updateInfo?.hasUpdate && (
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse flex items-center gap-1">
+              <span>●</span> Update v{updateInfo.version} Tersedia
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Bagian Update Otomatis GitHub */}
+      <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-3.5">
+        <div className="flex items-center justify-between pb-2 border-b theme-border flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Smartphone size={18} className="text-emerald-500" />
+            <h2 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
+              Pembaruan Aplikasi (Auto-Update)
+            </h2>
+          </div>
+          <span className="text-[11px] theme-text-muted font-mono">
+            GitHub Releases Official
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 rounded-xl theme-bg-surface border theme-border">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold theme-text-primary">
+                Versi Terpasang: <span className="font-mono text-emerald-400">v{currentVersion}</span>
+              </span>
+              {updateInfo?.hasUpdate ? (
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Versi Baru: v{updateInfo.version}
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border theme-border">
+                  Terbaru
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] theme-text-secondary leading-relaxed">
+              JufaStore memeriksa pembaruan resmi langsung dari repositori publik GitHub tanpa pihak ketiga. Data bisnis Anda tetap 100% aman tersimpan di perangkat.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {updateInfo?.hasUpdate && (
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  promptUpdateDialog(updateInfo, () => onNavigateTab?.('settings'));
+                }}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition flex items-center gap-1.5 shadow-sm"
+              >
+                <Download size={14} />
+                <span>Perbarui Sekarang</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={isCheckingUpdate}
+              onClick={handleManualCheck}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border hover:theme-border-strong theme-text-primary transition flex items-center gap-1.5 active:scale-[0.98] ${
+                isCheckingUpdate ? 'opacity-60 cursor-not-allowed' : ''
+              }`}
+            >
+              <RefreshCw size={13} className={isCheckingUpdate ? 'animate-spin text-emerald-400' : ''} />
+              <span>{isCheckingUpdate ? 'Memeriksa...' : 'Cek Pembaruan'}</span>
+            </button>
+          </div>
+        </div>
+
+        {updateInfo?.hasUpdate && (
+          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs theme-text-primary space-y-1.5">
+            <div className="font-bold text-emerald-400 flex items-center gap-1.5">
+              <CheckCircle2 size={14} />
+              <span>Catatan Rilis v{updateInfo.version}:</span>
+            </div>
+            <p className="text-[11px] theme-text-secondary leading-relaxed whitespace-pre-line pl-5 font-sans">
+              {updateInfo.releaseNotes}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Hero Badge Identity */}
@@ -106,7 +234,7 @@ export const AppInfoView: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border">
             <span className="text-[10px] theme-text-muted block">Arsitektur</span>
-            <span className="text-xs font-bold theme-text-primary">Offline-First PWA</span>
+            <span className="text-xs font-bold theme-text-primary">Capacitor 6 Android</span>
           </div>
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border">
             <span className="text-[10px] theme-text-muted block">Metode Stok</span>
@@ -132,7 +260,7 @@ export const AppInfoView: React.FC = () => {
               Status Data Aktif di Database Lokal Perangkat
             </h3>
           </div>
-          <span className="text-[11px] theme-text-muted">IndexedDB (Dexie v3)</span>
+          <span className="text-[11px] theme-text-muted">IndexedDB (Dexie)</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
@@ -161,123 +289,8 @@ export const AppInfoView: React.FC = () => {
             <span className="text-[10px] theme-text-muted block mt-0.5">Pinjaman</span>
           </div>
           <div className="p-3 rounded-xl theme-bg-surface border theme-border text-center">
-            <span className="text-base font-mono font-bold theme-text-secondary">{formatNumber(stats.auditLogs)}</span>
-            <span className="text-[10px] theme-text-muted block mt-0.5">Log Audit</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 4 Pilar Utama JufaStore */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Pilar 1: Zero-Default Principle */}
-        <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-2">
-          <div className="flex items-center gap-2 text-emerald-500 font-bold text-xs uppercase tracking-wider">
-            <ShieldCheck size={16} />
-            <span>1. Prinsip Nol Data Bawaan (Strict Zero-Default)</span>
-          </div>
-          <p className="text-xs theme-text-secondary leading-relaxed">
-            Aplikasi selalu dimulai dari <strong>0 murni</strong> tanpa ada angka dummy bawaan, tanpa preset rate palsu, dan tanpa saldo awal fiktif. Seluruh angka yang tampil adalah fakta riil dari input operasional Anda sendiri.
-          </p>
-        </div>
-
-        {/* Pilar 2: FIFO Accounting Precision */}
-        <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-2">
-          <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
-            <Layers size={16} />
-            <span>2. Akuntansi FIFO & Integer Rupiah Murni</span>
-          </div>
-          <p className="text-xs theme-text-secondary leading-relaxed">
-            Setiap restock membentuk antrean batch tersendiri. Ketika Robux dijual, modal HPP dialokasikan dengan rumus sisa pembulatan bilangan bulat (*integer remainder allocation*) sehingga saat batch habis, selisih modal adalah <strong>tepat Rp0</strong>.
-          </p>
-        </div>
-
-        {/* Pilar 3: Sumber Dana Sendiri vs Pinjaman Modal */}
-        <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-2">
-          <div className="flex items-center gap-2 text-emerald-500 font-bold text-xs uppercase tracking-wider">
-            <Landmark size={16} />
-            <span>3. Fleksibilitas Restock & Utang Modal</span>
-          </div>
-          <p className="text-xs theme-text-secondary leading-relaxed">
-            Dukung pembelian restock menggunakan <strong>Dana Sendiri</strong> (memotong kas toko) maupun <strong>Pinjaman Modal</strong>. Saat Robux dari batch pinjaman terjual, bagian modal HPP otomatis dialokasikan melunasi pokok utang kreditor hingga Rp0.
-          </p>
-        </div>
-
-        {/* Pilar 4: Privasi & Cloud Sync Bebas Terputus */}
-        <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-2">
-          <div className="flex items-center gap-2 text-purple-400 font-bold text-xs uppercase tracking-wider">
-            <Globe size={16} />
-            <span>4. Offline-First & Sinkronisasi Spreadsheet</span>
-          </div>
-          <p className="text-xs theme-text-secondary leading-relaxed">
-            Bekerja 100% tanpa internet. Jika perangkat online, Anda dapat menyinkronkan data langsung ke Google Spreadsheet Anda secara realtime, harian, atau bulanan melalui jembatan Web App Apps Script mandiri.
-          </p>
-        </div>
-      </div>
-
-      {/* Panduan Alur Kerja Praktis */}
-      <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-3">
-        <div className="flex items-center gap-2 pb-2 border-b theme-border">
-          <BookOpen size={18} className="text-emerald-500" />
-          <h3 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
-            Panduan Alur Kerja Operasional Toko
-          </h3>
-        </div>
-
-        <div className="space-y-2.5 text-xs">
-          <div className="p-3 rounded-xl theme-bg-surface border theme-border flex items-start gap-3">
-            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
-              1
-            </div>
-            <div>
-              <span className="font-bold theme-text-primary block">
-                Catat Kulakan di Menu "Stok & Batch FIFO"
-              </span>
-              <p className="theme-text-secondary text-[11px] mt-0.5 leading-relaxed">
-                Pilih sumber dana: Kas Sendiri atau Pinjaman Modal. Masukkan jumlah Robux dan total modal beli. Sistem otomatis menghitung modal per 1 Robux dan menyediakan simulasi proyeksi keuntungan sebelum disimpan.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl theme-bg-surface border theme-border flex items-start gap-3">
-            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
-              2
-            </div>
-            <div>
-              <span className="font-bold theme-text-primary block">
-                Hitung Transaksi atau Cek Rate di "Kalkulator Robux"
-              </span>
-              <p className="theme-text-secondary text-[11px] mt-0.5 leading-relaxed">
-                Gunakan Mode Robux ke Uang, Uang ke Robux, atau <strong>Cari Rate Pasar</strong> untuk membedah penawaran orang lain (misal: 1k Robux seharga Rp13k = Rate Rp13/R$). Anda juga bisa menjual langsung dengan harga nego manual.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl theme-bg-surface border theme-border flex items-start gap-3">
-            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
-              3
-            </div>
-            <div>
-              <span className="font-bold theme-text-primary block">
-                Catat Penjualan Langsung via Tombol "Jual"
-              </span>
-              <p className="theme-text-secondary text-[11px] mt-0.5 leading-relaxed">
-                Klik tombol <strong>Jual</strong> di bilah atas aplikasi kapan saja untuk mencatat penjualan baru tanpa harus membuka kalkulator. Stok Robux langsung terpotong urut dari batch FIFO terlama.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl theme-bg-surface border theme-border flex items-start gap-3">
-            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 font-mono font-bold text-xs mt-0.5">
-              4
-            </div>
-            <div>
-              <span className="font-bold theme-text-primary block">
-                Buat Pricelist & Pantau Laporan Keuangan
-              </span>
-              <p className="theme-text-secondary text-[11px] mt-0.5 leading-relaxed">
-                Susun daftar harga promosi di menu <strong>Pricelist</strong>, kelola investor di menu <strong>Investor</strong>, dan pantau grafik laba bersih serta arus kas di menu <strong>Analisis & Laporan</strong>.
-              </p>
-            </div>
+            <span className="text-base font-mono font-bold text-cyan-400">{formatNumber(stats.auditLogs)}</span>
+            <span className="text-[10px] theme-text-muted block mt-0.5">Audit Log</span>
           </div>
         </div>
       </div>
