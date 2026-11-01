@@ -246,7 +246,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   return (
     <>
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 theme-bg-surface/95 backdrop-blur-md border-t theme-border py-1.5 px-3 flex items-center justify-around select-none transition-colors duration-200">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 theme-bg-surface/95 backdrop-blur-md border-t theme-border py-1.5 px-3 pb-safe flex items-center justify-around select-none transition-colors duration-200">
         {primaryShortcuts.map((item) => {
           const Icon = item.icon;
           const isActive = currentTab === item.id;
@@ -255,7 +255,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               key={item.id}
               type="button"
               onClick={() => handleSelect(item.id)}
-              className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
+              className={`flex flex-col items-center justify-center py-1 px-2.5 min-h-[44px] rounded-xl transition ${
                 isActive ? 'text-emerald-500 dark:text-emerald-400 font-bold' : 'theme-text-muted hover:theme-text-secondary'
               }`}
             >
@@ -328,7 +328,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                             key={item.id}
                             type="button"
                             onClick={() => handleSelect(item.id)}
-                            className={`w-full flex items-center justify-between p-3 rounded-xl text-xs transition ${
+                            className={`w-full flex items-center justify-between p-3 min-h-[44px] rounded-xl text-xs transition ${
                               isActive
                                 ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400 font-semibold border border-emerald-500/30 shadow-sm'
                                 : 'theme-bg-card theme-text-secondary hover:theme-text-primary border theme-border'

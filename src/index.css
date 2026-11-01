@@ -146,3 +146,11 @@ html.light .swal2-popup {
   font-size: 0.8rem !important;
   padding: 0.6rem 1.25rem !important;
 }
+
+/* Safe Area Utilities */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

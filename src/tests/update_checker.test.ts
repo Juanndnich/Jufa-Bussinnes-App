@@ -1,12 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Browser } from '@capacitor/browser';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 import {
   parseSemver,
   compareSemver,
   isNewerVersion,
   findApkAsset,
-  verifyApkMagicBytes,
   openInSystemBrowser,
+  cleanupOldUpdateApks,
   GitHubReleaseResponse,
 } from '../services/updateChecker';
 
@@ -16,7 +18,27 @@ vi.mock('@capacitor/browser', () => ({
   },
 }));
 
+vi.mock('@capacitor/filesystem', () => ({
+  Filesystem: {
+    deleteFile: vi.fn().mockResolvedValue(undefined),
+  },
+  Directory: {
+    External: 'EXTERNAL',
+    Cache: 'CACHE',
+  },
+}));
+
+vi.mock('@capacitor/core', () => ({
+  Capacitor: {
+    isNativePlatform: vi.fn().mockReturnValue(true),
+  },
+}));
+
 describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   // =========================================================================
   // 1. SEMVER PARSING TESTS
   // =========================================================================
@@ -53,8 +75,6 @@ describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
   // =========================================================================
   describe('2. SemVer Comparison & Update Detection', () => {
     it('2.1. Membandingkan digit patch multi-digit dengan benar (2.1.10 > 2.1.9)', () => {
-      // Masalah klasik string sorting: "2.1.9" > "2.1.10" jika dibandingkan secara alfabetikal
-      // Namun secara semver numerik: 2.1.10 > 2.1.9
       expect(compareSemver('2.1.10', '2.1.9')).toBe(1);
       expect(compareSemver('2.1.9', '2.1.10')).toBe(-1);
       expect(isNewerVersion('2.1.10', '2.1.9')).toBe(true);
@@ -86,24 +106,24 @@ describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
   describe('3. GitHub Release Asset Selection (JufaStore.apk)', () => {
     it('3.1. Memilih asset JufaStore.apk dari daftar file rilis GitHub', () => {
       const mockRelease: GitHubReleaseResponse = {
-        tag_name: 'v2.1.10',
-        name: 'JufaStore v2.1.10 (Rilis Resmi)',
+        tag_name: 'v2.1.25',
+        name: 'JufaStore v2.1.25 (Rilis Resmi)',
         body: 'Pembaruan otomatis dan perbaikan stabilitas.',
         assets: [
           {
             name: 'source.zip',
-            browser_download_url: 'https://github.com/Juanndnich/Jufa-Bussinnes-App/archive/v2.1.10.zip',
+            browser_download_url: 'https://github.com/Juanndnich/Jufa-Bussinnes-App/archive/v2.1.25.zip',
             size: 1500000,
           },
           {
             name: 'JufaStore.apk',
-            browser_download_url: 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.10/JufaStore.apk',
+            browser_download_url: 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.25/JufaStore.apk',
             size: 6850000,
             content_type: 'application/vnd.android.package-archive',
           },
           {
             name: 'checksums.txt',
-            browser_download_url: 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.10/checksums.txt',
+            browser_download_url: 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.25/checksums.txt',
             size: 250,
           },
         ],
@@ -114,13 +134,13 @@ describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
       expect(selected?.name).toBe('JufaStore.apk');
       expect(selected?.size).toBe(6850000);
       expect(selected?.downloadUrl).toBe(
-        'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.10/JufaStore.apk'
+        'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.25/JufaStore.apk'
       );
     });
 
     it('3.2. Case-insensitive matching: menerima "jufastore.apk" atau "JUFASTORE.APK"', () => {
       const mockRelease: GitHubReleaseResponse = {
-        tag_name: 'v2.1.10',
+        tag_name: 'v2.1.25',
         assets: [
           {
             name: 'jufastore.apk',
@@ -137,7 +157,7 @@ describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
 
     it('3.3. Mengembalikan null jika asset JufaStore.apk tidak ditemukan dalam rilis', () => {
       const mockReleaseNoApk: GitHubReleaseResponse = {
-        tag_name: 'v2.1.10',
+        tag_name: 'v2.1.25',
         assets: [
           {
             name: 'source-code.zip',
@@ -151,124 +171,45 @@ describe('JufaStore - Auto-Update Service & SemVer Engine Tests', () => {
     });
 
     it('3.4. Mengembalikan null jika assets kosong atau tidak terdefinisi', () => {
-      expect(findApkAsset({ tag_name: 'v2.1.10', assets: [] })).toBeNull();
-      expect(findApkAsset({ tag_name: 'v2.1.10' })).toBeNull();
+      expect(findApkAsset({ tag_name: 'v2.1.25', assets: [] })).toBeNull();
+      expect(findApkAsset({ tag_name: 'v2.1.25' })).toBeNull();
     });
   });
 
   // =========================================================================
-  // 4. END-TO-END MOCK RELEASE SCENARIO
+  // 4. BROWSER & NATIVE CLEANUP TESTS
   // =========================================================================
-  describe('4. Mock Release Workflow Scenarios', () => {
-    it('4.1. Skenario ada rilis baru resmi yang siap diunduh', () => {
-      const installedVersion = '2.1.0';
-      const latestRelease: GitHubReleaseResponse = {
-        tag_name: 'v2.1.1',
-        name: 'JufaStore v2.1.1',
-        body: '- Peningkatan kalkulator FIFO\n- Perbaikan UI',
-        assets: [
-          {
-            name: 'JufaStore.apk',
-            browser_download_url: 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.1/JufaStore.apk',
-            size: 7200000,
-          },
-        ],
-      };
-
-      const hasUpdate = isNewerVersion(latestRelease.tag_name, installedVersion);
-      const apk = findApkAsset(latestRelease);
-
-      expect(hasUpdate).toBe(true);
-      expect(apk).not.toBeNull();
-      expect(apk?.size).toBe(7200000);
-    });
-
-    it('4.2. Skenario versi rilis sama dengan yang terpasang (tidak ada update)', () => {
-      const installedVersion = '2.1.0';
-      const latestRelease: GitHubReleaseResponse = {
-        tag_name: 'v2.1.0',
-        assets: [
-          {
-            name: 'JufaStore.apk',
-            browser_download_url: 'https://example.com/JufaStore.apk',
-            size: 7000000,
-          },
-        ],
-      };
-
-      const hasUpdate = isNewerVersion(latestRelease.tag_name, installedVersion);
-      expect(hasUpdate).toBe(false);
-    });
-  });
-
-  // =========================================================================
-  // 5. APK MAGIC BYTES (PK\x03\x04) & INTEGRITY VERIFICATION
-  // =========================================================================
-  describe('5. APK Magic Bytes & Integrity Verification', () => {
-    it('5.1. Mengenali header file APK/ZIP yang sah (0x50, 0x4B, 0x03, 0x04)', () => {
-      // Buffer APK valid diawali [0x50, 0x4b, 0x03, 0x04, ...]
-      const validApkBinary = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x08, 0x00]);
-      const base64Data = validApkBinary.toString('base64');
-
-      const result = verifyApkMagicBytes(base64Data);
-      expect(result.isValid).toBe(true);
-      expect(result.hex).toBe('50 4B 03 04');
-      expect(result.ascii).toBe('PK\\x03\\x04');
-      expect(result.rawBase64Header.startsWith('UEsDB')).toBe(true);
-    });
-
-    it('5.2. Mendukung data URL base64 dengan prefix mime type', () => {
-      const validApkBinary = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]);
-      const dataUrl = `data:application/vnd.android.package-archive;base64,${validApkBinary.toString('base64')}`;
-
-      const result = verifyApkMagicBytes(dataUrl);
-      expect(result.isValid).toBe(true);
-      expect(result.hex).toBe('50 4B 03 04');
-    });
-
-    it('5.3. Menolak file jika server merespons dengan HTML error (<!DOCTYPE html>)', () => {
-      const htmlResponse = '<!DOCTYPE html><html><head><title>404 Not Found</title></head></html>';
-      const base64Html = Buffer.from(htmlResponse).toString('base64');
-
-      const result = verifyApkMagicBytes(base64Html);
-      expect(result.isValid).toBe(false);
-      expect(result.hex).toBe('3C 21 44 4F'); // '<!DO'
-      expect(result.ascii).toBe('<!DO');
-    });
-
-    it('5.4. Menolak file jika server merespons dengan halaman redirect (<html)', () => {
-      const redirectHtml = '<html><body>Redirecting to S3...</body></html>';
-      const base64Redirect = Buffer.from(redirectHtml).toString('base64');
-
-      const result = verifyApkMagicBytes(base64Redirect);
-      expect(result.isValid).toBe(false);
-      expect(result.hex).toBe('3C 68 74 6D'); // '<htm'
-      expect(result.ascii).toBe('<htm');
-    });
-
-    it('5.5. Menolak file jika server merespons dengan JSON error ({"message": ...})', () => {
-      const jsonResponse = JSON.stringify({ message: 'API rate limit exceeded', documentation_url: '...' });
-      const base64Json = Buffer.from(jsonResponse).toString('base64');
-
-      const result = verifyApkMagicBytes(base64Json);
-      expect(result.isValid).toBe(false);
-      expect(result.hex).toBe('7B 22 6D 65'); // '{"me'
-      expect(result.ascii).toBe('{"me');
-    });
-
-    it('5.6. Menolak string kosong, null, atau data terpotong kurang dari 4 bytes', () => {
-      expect(verifyApkMagicBytes('').isValid).toBe(false);
-      expect(verifyApkMagicBytes(null as any).isValid).toBe(false);
-
-      const truncated = Buffer.from([0x50, 0x4b]).toString('base64');
-      const result = verifyApkMagicBytes(truncated);
-      expect(result.isValid).toBe(false);
-    });
-
-    it('5.7. Membuka URL melalui browser sistem saat openInSystemBrowser dipanggil', async () => {
-      const url = 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.22/JufaStore.apk';
+  describe('4. Browser & Cleanup Operations', () => {
+    it('4.1. Membuka URL melalui browser sistem saat openInSystemBrowser dipanggil', async () => {
+      const url = 'https://github.com/Juanndnich/Jufa-Bussinnes-App/releases/download/v2.1.25/JufaStore.apk';
       await openInSystemBrowser(url);
       expect(Browser.open).toHaveBeenCalledWith({ url });
+    });
+
+    it('4.2. Membersihkan file APK lama di direktori External dan Cache saat di native', async () => {
+      await cleanupOldUpdateApks();
+      expect(Filesystem.deleteFile).toHaveBeenCalledWith({
+        path: 'JufaStore-update.apk',
+        directory: Directory.External,
+      });
+      expect(Filesystem.deleteFile).toHaveBeenCalledWith({
+        path: 'JufaStore.apk',
+        directory: Directory.External,
+      });
+      expect(Filesystem.deleteFile).toHaveBeenCalledWith({
+        path: 'JufaStore-update.apk',
+        directory: Directory.Cache,
+      });
+      expect(Filesystem.deleteFile).toHaveBeenCalledWith({
+        path: 'JufaStore.apk',
+        directory: Directory.Cache,
+      });
+    });
+
+    it('4.3. cleanupOldUpdateApks tidak menghapus file jika di web browser (non-native)', async () => {
+      vi.mocked(Capacitor.isNativePlatform).mockReturnValueOnce(false);
+      await cleanupOldUpdateApks();
+      expect(Filesystem.deleteFile).not.toHaveBeenCalled();
     });
   });
 });

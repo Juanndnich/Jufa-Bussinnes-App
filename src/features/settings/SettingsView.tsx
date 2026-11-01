@@ -36,7 +36,7 @@ import { db } from '../../db/db';
 import { repository } from '../../db/repository';
 import { AppSettings } from '../../db/schema';
 import { applyTheme } from '../../utils/theme';
-import { isSoundEnabled, setSoundEnabled, playTapSound, playSuccessSound } from '../../utils/sound';
+import { isSoundEnabled, setSoundEnabled, isButtonSoundEnabled, setButtonSoundEnabled, isTxSoundEnabled, setTxSoundEnabled, getMasterVolume, setMasterVolume, playTapSound, playSuccessSound, testSound } from '../../utils/sound';
 import { exportSalesToCsv, exportCashLedgerToCsv } from '../../utils/exportCsv';
 import { formatDateJakarta } from '../../utils/formatters';
 import {
@@ -115,6 +115,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
   const [storeName, setStoreName] = useState('JufaStore');
   const [themeMode, setThemeMode] = useState<'system' | 'light' | 'dark'>('dark');
   const [soundEnabled, setSoundActive] = useState<boolean>(() => isSoundEnabled());
+  const [buttonSound, setButtonSound] = useState<boolean>(() => isButtonSoundEnabled());
+  const [txSound, setTxSound] = useState<boolean>(() => isTxSoundEnabled());
+  const [soundVolume, setSoundVolume] = useState<number>(() => getMasterVolume());
 
   // Google Sheets Cloud Sync State
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState('');
@@ -994,39 +997,99 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
           </button>
         </div>
 
-        {/* Toggle Suara Tekan */}
-        <div className="pt-2 border-t theme-border flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            {soundEnabled ? (
-              <Volume2 size={16} className="text-emerald-500 dark:text-emerald-400" />
-            ) : (
-              <VolumeX size={16} className="theme-text-muted" />
-            )}
+        {/* Kontrol Suara Lengkap */}
+        <div className="pt-3 border-t theme-border space-y-3.5">
+          {/* Slider Volume Master */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs font-semibold theme-text-primary">
+              <span className="flex items-center gap-1.5">
+                <Volume2 size={14} className="text-emerald-500" />
+                Volume Efek Suara
+              </span>
+              <span className="theme-text-muted">{soundVolume}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={soundVolume}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                setSoundVolume(val);
+                setMasterVolume(val);
+              }}
+              className="w-full accent-emerald-500 cursor-pointer h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none"
+            />
+          </div>
+
+          {/* Toggle Suara Tombol */}
+          <div className="flex items-center justify-between pt-1">
             <div>
               <span className="text-xs font-semibold theme-text-primary block">
-                Efek Suara Tombol (Haptic Tap)
+                Suara Sentuhan & Tombol
               </span>
               <span className="text-[10px] theme-text-muted">
-                Suara klik halus saat menekan tombol & menu
+                Klik halus saat navigasi dan menekan tombol
               </span>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !buttonSound;
+                setButtonSoundEnabled(next);
+                setButtonSound(next);
+                if (next) playTapSound();
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+                buttonSound
+                  ? 'theme-bg-surface text-emerald-500 dark:text-emerald-400 theme-border'
+                  : 'theme-bg-input theme-text-muted theme-border'
+              }`}
+            >
+              {buttonSound ? 'Aktif' : 'Mati'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              const next = !soundEnabled;
-              setSoundEnabled(next);
-              setSoundActive(next);
-              if (next) playTapSound();
-            }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
-              soundEnabled
-                ? 'theme-bg-surface text-emerald-500 dark:text-emerald-400 theme-border'
-                : 'theme-bg-input theme-text-muted theme-border'
-            }`}
-          >
-            {soundEnabled ? 'Aktif' : 'Mati'}
-          </button>
+
+          {/* Toggle Suara Transaksi */}
+          <div className="flex items-center justify-between pt-1">
+            <div>
+              <span className="text-xs font-semibold theme-text-primary block">
+                Suara Transaksi & Pembukuan
+              </span>
+              <span className="text-[10px] theme-text-muted">
+                Nada sukses saat transaksi selesai dicatat
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !txSound;
+                setTxSoundEnabled(next);
+                setTxSound(next);
+                if (next) testSound();
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+                txSound
+                  ? 'theme-bg-surface text-emerald-500 dark:text-emerald-400 theme-border'
+                  : 'theme-bg-input theme-text-muted theme-border'
+              }`}
+            >
+              {txSound ? 'Aktif' : 'Mati'}
+            </button>
+          </div>
+
+          {/* Tombol Uji Suara */}
+          <div className="pt-1 flex justify-end">
+            <button
+              type="button"
+              onClick={() => testSound()}
+              className="px-3 py-1.5 rounded-xl text-xs font-medium theme-bg-surface border theme-border theme-text-secondary hover:theme-text-primary flex items-center gap-1.5 transition shadow-sm"
+            >
+              <Volume2 size={13} className="text-emerald-500" />
+              <span>Tes Suara</span>
+            </button>
+          </div>
         </div>
       </div>
 

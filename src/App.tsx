@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import Swal from 'sweetalert2';
 import { NavItem, Sidebar, MobileBottomNav } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './features/dashboard/DashboardView';
@@ -19,28 +20,21 @@ import { AppSettings } from './db/schema';
 import { applyTheme } from './utils/theme';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
-import { playTapSound } from './utils/sound';
-import { checkForUpdates, cleanupOldUpdateApks, checkPendingInstall } from './services/updateChecker';
+import { playTapSound, resumeAudioContext } from './utils/sound';
+import { checkForUpdates, cleanupOldUpdateApks } from './services/updateChecker';
 
 export const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [currentTab, setCurrentTab] = useState<NavItem>('dashboard');
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [currentStock, setCurrentStock] = useState<number>(0);
-  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [showGlobalQuickSale, setShowGlobalQuickSale] = useState(false);
 
-  // Network online/offline listener
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+  // Refs untuk listener tombol back Android agar selalu mendapatkan nilai state terbaru
+  const currentTabRef = useRef<NavItem>(currentTab);
+  currentTabRef.current = currentTab;
+  const showQuickSaleRef = useRef<boolean>(showGlobalQuickSale);
+  showQuickSaleRef.current = showGlobalQuickSale;
 
   // Load state umum (stok & pengaturan)
   const refreshGlobalState = useCallback(async () => {
@@ -57,24 +51,31 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  // Handler pergantian tab dengan suara tekan
+  const handleSelectTab = useCallback((tab: NavItem) => {
+    if (tab !== currentTabRef.current) {
+      playTapSound();
+      setCurrentTab(tab);
+      refreshGlobalState();
+    }
+  }, [refreshGlobalState]);
+
   useEffect(() => {
     refreshGlobalState();
 
-    // Pembersihan berkas APK update lama & Cek pembaruan berkala (maks 1x per 6 jam)
+    // Pembersihan sekali berkas sisa APK update lama pada startup (try/catch aman)
     cleanupOldUpdateApks().catch(() => {});
-    checkPendingInstall().catch(() => {});
 
-    let appResumeListener: any = null;
-    if (Capacitor.isNativePlatform()) {
-      CapApp.addListener('appStateChange', (state) => {
-        if (state.isActive) {
-          checkPendingInstall().catch(() => {});
-        }
-      }).then((handle) => {
-        appResumeListener = handle;
-      });
-    }
+    // Pastikan AudioContext di-resume pada interaksi pengguna pertama
+    const handleFirstInteraction = () => {
+      resumeAudioContext();
+      window.removeEventListener('pointerdown', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
+    };
+    window.addEventListener('pointerdown', handleFirstInteraction, { passive: true });
+    window.addEventListener('keydown', handleFirstInteraction, { passive: true });
 
+    // Pengecekan otomatis pembaruan GitHub (interval 6 jam)
     const timer = setTimeout(() => {
       checkForUpdates({
         manual: false,
@@ -82,22 +83,51 @@ export const App: React.FC = () => {
       }).catch(() => {});
     }, 2500);
 
+    // Penanganan Tombol Back Fisik/Gesture Android (@capacitor/app)
+    let backButtonListener: any = null;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('backButton', () => {
+        // 1. Tutup SweetAlert2 jika sedang aktif
+        if (Swal.isVisible()) {
+          Swal.close();
+          return;
+        }
+
+        // 2. Tutup QuickSale Modal jika terbuka
+        if (showQuickSaleRef.current) {
+          setShowGlobalQuickSale(false);
+          return;
+        }
+
+        // 3. Tutup modal/drawer lain yang memiliki tombol close bertanda data-modal-close
+        const openModalCloseBtn = document.querySelector('[data-modal-close="true"]') as HTMLElement | null;
+        if (openModalCloseBtn) {
+          openModalCloseBtn.click();
+          return;
+        }
+
+        // 4. Jika berada di tab selain Dashboard, kembali ke Dashboard lebih dulu
+        if (currentTabRef.current !== 'dashboard') {
+          handleSelectTab('dashboard');
+          return;
+        }
+
+        // 5. Jika sudah di Dashboard dan tidak ada modal, keluar dari aplikasi
+        CapApp.exitApp();
+      }).then((handle) => {
+        backButtonListener = handle;
+      });
+    }
+
     return () => {
       clearTimeout(timer);
-      if (appResumeListener) {
-        appResumeListener.remove();
+      window.removeEventListener('pointerdown', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
+      if (backButtonListener) {
+        backButtonListener.remove();
       }
     };
-  }, [refreshGlobalState]);
-
-  // Handler pergantian tab dengan suara tekan
-  const handleSelectTab = (tab: NavItem) => {
-    if (tab !== currentTab) {
-      playTapSound();
-      setCurrentTab(tab);
-      refreshGlobalState();
-    }
-  };
+  }, [refreshGlobalState, handleSelectTab]);
 
   // Toggle Tema Cepat
   const handleToggleTheme = async () => {
@@ -136,7 +166,6 @@ export const App: React.FC = () => {
           <Header
             currentStock={currentStock}
             currentTheme={settings?.theme || 'dark'}
-            isOnline={isOnline}
             onToggleTheme={handleToggleTheme}
             onNavigateTab={handleSelectTab}
             onOpenQuickSale={() => setShowGlobalQuickSale(true)}

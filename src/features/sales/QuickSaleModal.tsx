@@ -57,6 +57,11 @@ export const QuickSaleModal: React.FC<QuickSaleModalProps> = ({
     if (isOpen) {
       repository.getAvailableBatches().then(setBatches).catch(() => {});
       repository.getInvestors().then((invs) => setInvestors(invs.filter((i) => i.status === 'ACTIVE'))).catch(() => {});
+      repository.getSettings().then((settings) => {
+        if (settings?.defaultSellRate && !rateInput) {
+          setRateInput(String(settings.defaultSellRate));
+        }
+      }).catch(() => {});
     }
   }, [isOpen]);
 

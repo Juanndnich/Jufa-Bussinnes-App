@@ -128,7 +128,7 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            v{currentVersion} • Rilis Resmi Siap Pakai
+            Versi {currentVersion}
           </span>
 
           {isNative && updateInfo?.hasUpdate && (
@@ -181,7 +181,7 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
                   type="button"
                   onClick={() => {
                     playTapSound();
-                    promptUpdateDialog(updateInfo, () => onNavigateTab?.('settings'));
+                    promptUpdateDialog(updateInfo);
                   }}
                   className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition flex items-center gap-1.5 shadow-sm"
                 >

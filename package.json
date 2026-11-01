@@ -10,7 +10,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@capacitor-community/file-opener": "6.0.1",
     "@capacitor/android": "^6.2.0",
     "@capacitor/app": "6.0.3",
     "@capacitor/browser": "6.0.5",
