@@ -31,9 +31,15 @@ import {
   AlertCircle,
   Zap,
   Check,
+  Edit3,
+  Filter,
+  ArrowUpRight,
+  ArrowDownRight,
+  X,
+  FileText,
 } from 'lucide-react';
 import { repository } from '../../db/repository';
-import { StockBatch, PersonalUsage, Loan } from '../../db/schema';
+import { StockBatch, PersonalUsage, Loan, StockMovement } from '../../db/schema';
 import { parseRobuxOrMoneyShorthand } from '../../domain/calculations';
 import { formatRupiah, formatNumber, formatDecimal, formatDateJakarta } from '../../utils/formatters';
 import { showSuccessAlert, showErrorAlert, showWarningAlert, showConfirmDialog, showCustomAlert } from '../../utils/alert';
@@ -41,7 +47,24 @@ import { playTapSound, playSuccessSound, playDeleteSound } from '../../utils/sou
 import { exportPersonalUsagesToCsv } from '../../utils/exportCsv';
 
 export const StockView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'batches' | 'restock' | 'loans' | 'reconcile' | 'personal' | 'personal-history'>('batches');
+  const [activeTab, setActiveTab] = useState<'batches' | 'history' | 'restock' | 'loans' | 'reconcile' | 'personal' | 'personal-history'>('batches');
+
+  // Riwayat Mutasi Stok State
+  const [historyMovements, setHistoryMovements] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyFilterBatch, setHistoryFilterBatch] = useState('');
+  const [historyFilterCategory, setHistoryFilterCategory] = useState<string>('ALL');
+  const [historyStartDate, setHistoryStartDate] = useState('');
+  const [historyEndDate, setHistoryEndDate] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
+  const historyPageSize = 15;
+
+  // Edit Jumlah Robux Awal Batch State
+  const [editingRobuxBatch, setEditingRobuxBatch] = useState<StockBatch | null>(null);
+  const [editNewInitialRobux, setEditNewInitialRobux] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [editCostMode, setEditCostMode] = useState<'KEEP_TOTAL_COST' | 'KEEP_UNIT_COST'>('KEEP_TOTAL_COST');
+  const [isSubmittingEditRobux, setIsSubmittingEditRobux] = useState(false);
 
   // Loans State
   const [loans, setLoans] = useState<Loan[]>([]);
@@ -118,9 +141,106 @@ export const StockView: React.FC = () => {
     }
   };
 
+  const loadHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const res = await repository.getStockMovements({
+        batchId: historyFilterBatch || undefined,
+        categoryTag: historyFilterCategory === 'ALL' ? undefined : (historyFilterCategory as any),
+        startDate: historyStartDate || undefined,
+        endDate: historyEndDate || undefined,
+      });
+      setHistoryMovements(res.movements);
+      setHistoryPage(1);
+    } catch (err) {
+      console.error('Failed to load stock movements:', err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      loadHistory();
+    }
+  }, [activeTab, historyFilterBatch, historyFilterCategory, historyStartDate, historyEndDate]);
+
+  // Handler Buka Modal Edit Jumlah Robux Awal Batch
+  const handleOpenEditRobux = (batch: StockBatch) => {
+    playTapSound();
+    setEditingRobuxBatch(batch);
+    setEditNewInitialRobux(String(batch.initialRobux));
+    setEditReason('');
+    setEditCostMode('KEEP_TOTAL_COST');
+  };
+
+  // Handler Simpan Edit Jumlah Robux Awal Batch
+  const handleSaveEditRobux = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRobuxBatch) return;
+
+    const newRobuxVal = Math.floor(parseFloat(editNewInitialRobux) || 0);
+    const usedRobux = editingRobuxBatch.initialRobux - editingRobuxBatch.remainingRobux;
+
+    if (newRobuxVal <= 0) {
+      await showWarningAlert('Jumlah Tidak Valid', 'Jumlah Robux baru harus lebih dari 0.');
+      return;
+    }
+
+    if (newRobuxVal < usedRobux) {
+      await showWarningAlert(
+        'Jumlah Terlalu Sedikit',
+        `Jumlah Robux baru (${formatNumber(newRobuxVal)} R$) tidak boleh lebih kecil dari Robux yang sudah terjual/terpakai (${formatNumber(usedRobux)} R$).`
+      );
+      return;
+    }
+
+    if (!editReason.trim()) {
+      await showWarningAlert('Alasan Wajib Diisi', 'Mohon isi alasan koreksi jumlah Robux pada batch ini.');
+      return;
+    }
+
+    setIsSubmittingEditRobux(true);
+    try {
+      await repository.editBatchInitialRobux({
+        batchId: editingRobuxBatch.id,
+        newInitialRobux: newRobuxVal,
+        reason: editReason.trim(),
+        costMode: editCostMode,
+      });
+
+      playSuccessSound();
+      setEditingRobuxBatch(null);
+      await loadData();
+      if (activeTab === 'history') {
+        await loadHistory();
+      }
+
+      await showSuccessAlert(
+        'Koreksi Berhasil Disimpan',
+        `Batch ${editingRobuxBatch.id} berhasil diperbarui menjadi ${formatNumber(newRobuxVal)} R$.`
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal mengoreksi jumlah batch';
+      await showErrorAlert('Gagal Mengoreksi', msg);
+    } finally {
+      setIsSubmittingEditRobux(false);
+    }
+  };
+
+  // Handler Pindah ke Riwayat Khusus Batch Tertentu
+  const handleViewBatchHistory = (batchId: string) => {
+    playTapSound();
+    setHistoryFilterBatch(batchId);
+    setHistoryFilterCategory('ALL');
+    setHistoryStartDate('');
+    setHistoryEndDate('');
+    setActiveTab('history');
+  };
 
   // Handler: Restock Baru
   const handleRestockSubmit = async (e: React.FormEvent) => {
@@ -733,6 +853,22 @@ export const StockView: React.FC = () => {
           type="button"
           onClick={() => {
             playTapSound();
+            setActiveTab('history');
+          }}
+          className={`px-3.5 py-2 rounded-xl transition whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'history'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'theme-text-secondary hover:theme-text-primary'
+          }`}
+        >
+          <History size={14} />
+          <span>Riwayat Stok</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            playTapSound();
             setActiveTab('restock');
           }}
           className={`px-3.5 py-2 rounded-xl transition whitespace-nowrap flex items-center gap-1.5 ${
@@ -926,8 +1062,26 @@ export const StockView: React.FC = () => {
                         </span>
                       </div>
 
-                      {/* Tombol Aksi Batch: Sesuaikan Sisa / Habis, Edit Catatan & Hapus */}
+                      {/* Tombol Aksi Batch: Riwayat, Edit Jumlah, Sesuaikan Sisa / Habis, Edit Catatan & Hapus */}
                       <div className="flex items-center gap-1.5 pl-3 border-l theme-border-subtle shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleViewBatchHistory(batch.id)}
+                          className="p-1.5 rounded-lg theme-bg-surface border theme-border hover:border-sky-500/40 text-zinc-400 hover:text-sky-400 transition"
+                          title="Lihat Riwayat Mutasi Batch Ini"
+                        >
+                          <History size={13} />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditRobux(batch)}
+                          className="p-1.5 rounded-lg theme-bg-surface border theme-border hover:border-indigo-500/40 text-zinc-400 hover:text-indigo-400 transition"
+                          title="Koreksi Jumlah Robux Awal Batch"
+                        >
+                          <Edit3 size={13} />
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => handleAdjustBatchStock(batch)}
@@ -972,6 +1126,348 @@ export const StockView: React.FC = () => {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: Riwayat Mutasi Stok FIFO */}
+      {activeTab === 'history' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold theme-text-primary flex items-center gap-2">
+                <History size={16} className="text-emerald-500" />
+                <span>Riwayat Mutasi & Pergerakan Stok</span>
+              </h2>
+              <p className="text-xs theme-text-muted mt-0.5">
+                Semua arus keluar-masuk Robux lengkap dengan saldo sisa per batch dan total toko.
+              </p>
+            </div>
+            {historyFilterBatch && (
+              <button
+                type="button"
+                onClick={() => setHistoryFilterBatch('')}
+                className="self-start sm:self-auto px-2.5 py-1 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs font-semibold flex items-center gap-1.5 hover:bg-sky-500/20 transition"
+              >
+                <span>Filter Batch: {historyFilterBatch}</span>
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Bar */}
+          <div className="p-3.5 rounded-2xl theme-bg-card border theme-border space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {/* Filter Jenis */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Jenis Mutasi
+                </label>
+                <select
+                  value={historyFilterCategory}
+                  onChange={(e) => setHistoryFilterCategory(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-medium"
+                >
+                  <option value="ALL">Semua Jenis Mutasi</option>
+                  <option value="RESTOCK">Restock Kulakan</option>
+                  <option value="SALE">Penjualan Robux</option>
+                  <option value="PERSONAL_USE">Pemakaian Pribadi (Prive)</option>
+                  <option value="VOID">Batal / Pengembalian</option>
+                  <option value="ACCOUNT_REMAINDER">Sisa Robux Akun</option>
+                  <option value="MANUAL_ADJUST">Penyesuaian Manual</option>
+                  <option value="EDIT">Koreksi Jumlah Batch</option>
+                </select>
+              </div>
+
+              {/* Filter Batch */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Batch Persediaan
+                </label>
+                <select
+                  value={historyFilterBatch}
+                  onChange={(e) => setHistoryFilterBatch(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono"
+                >
+                  <option value="">Semua Batch</option>
+                  {allBatches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.id} ({formatNumber(b.remainingRobux)}/{formatNumber(b.initialRobux)} R$)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Tanggal Mulai */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Dari Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={historyStartDate}
+                  onChange={(e) => setHistoryStartDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Filter Tanggal Selesai */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Sampai Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={historyEndDate}
+                  onChange={(e) => setHistoryEndDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {(historyFilterCategory !== 'ALL' || historyFilterBatch || historyStartDate || historyEndDate) && (
+              <div className="flex items-center justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHistoryFilterCategory('ALL');
+                    setHistoryFilterBatch('');
+                    setHistoryStartDate('');
+                    setHistoryEndDate('');
+                  }}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1 transition"
+                >
+                  <X size={12} />
+                  <span>Reset Semua Filter</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Data List */}
+          {isLoadingHistory ? (
+            <div className="p-8 text-center theme-text-muted text-xs">
+              Memuat data riwayat mutasi stok...
+            </div>
+          ) : historyMovements.length === 0 ? (
+            <div className="p-8 rounded-2xl theme-bg-card border theme-border text-center space-y-2">
+              <History size={32} className="mx-auto theme-text-muted opacity-40" />
+              <p className="text-sm font-medium theme-text-primary">Tidak Ada Riwayat Mutasi</p>
+              <p className="text-xs theme-text-muted max-w-sm mx-auto">
+                Belum ada transaksi atau pergerakan stok yang cocok dengan kriteria filter saat ini.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Desktop Table View */}
+              <div className="hidden sm:block rounded-2xl theme-bg-card border theme-border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="theme-bg-surface border-b theme-border text-[11px] font-bold theme-text-muted uppercase tracking-wider">
+                        <th className="py-3 px-3.5">Waktu (WIB)</th>
+                        <th className="py-3 px-3">Jenis Mutasi</th>
+                        <th className="py-3 px-3">Batch Asal</th>
+                        <th className="py-3 px-3 text-right">Mutasi (R$)</th>
+                        <th className="py-3 px-3 text-right">Saldo Batch</th>
+                        <th className="py-3 px-3 text-right">Saldo Total</th>
+                        <th className="py-3 px-3.5">Referensi / Keterangan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y theme-border">
+                      {historyMovements
+                        .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+                        .map((m) => {
+                          const isPositive = m.robuxAmount > 0;
+                          const isZero = m.robuxAmount === 0;
+
+                          return (
+                            <tr key={m.id} className="hover:theme-bg-card-hover transition">
+                              <td className="py-3 px-3.5 whitespace-nowrap font-mono text-[11px] theme-text-secondary">
+                                {formatDateJakarta(m.createdAt)}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                    m.categoryTag === 'RESTOCK'
+                                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                      : m.categoryTag === 'SALE'
+                                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                                      : m.categoryTag === 'PERSONAL_USE'
+                                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                      : m.categoryTag === 'VOID'
+                                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                      : m.categoryTag === 'ACCOUNT_REMAINDER'
+                                      ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                      : m.categoryTag === 'MANUAL_ADJUST'
+                                      ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                      : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                                  }`}
+                                >
+                                  {m.categoryTag === 'RESTOCK' && <Package size={11} />}
+                                  {m.categoryTag === 'SALE' && <ArrowUpRight size={11} />}
+                                  {m.categoryTag === 'PERSONAL_USE' && <UserCheck size={11} />}
+                                  {m.categoryTag === 'VOID' && <RotateCcw size={11} />}
+                                  {m.categoryTag === 'ACCOUNT_REMAINDER' && <Coins size={11} />}
+                                  {m.categoryTag === 'MANUAL_ADJUST' && <Sliders size={11} />}
+                                  {m.categoryTag === 'EDIT' && <Edit3 size={11} />}
+                                  <span>{m.label}</span>
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap font-mono text-[11px] theme-text-primary">
+                                {m.batchId}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap text-right font-mono font-bold">
+                                {isZero ? (
+                                  <span className="theme-text-muted">0 R$</span>
+                                ) : isPositive ? (
+                                  <span className="text-emerald-400">+{formatNumber(m.robuxAmount)} R$</span>
+                                ) : (
+                                  <span className="text-rose-400">-{formatNumber(Math.abs(m.robuxAmount))} R$</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap text-right font-mono text-[11px] text-amber-400 font-semibold">
+                                {formatNumber(m.batchRunningBalance)} R$
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap text-right font-mono text-[11px] theme-text-primary font-bold">
+                                {formatNumber(m.totalRunningBalance)} R$
+                              </td>
+                              <td className="py-3 px-3.5 max-w-xs truncate text-[11px] theme-text-secondary">
+                                <span className="font-mono text-emerald-400 block truncate">
+                                  {m.referenceId}
+                                </span>
+                                {m.notes && (
+                                  <span className="text-[10px] theme-text-muted block truncate mt-0.5">
+                                    {m.notes}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Mobile Cards View */}
+              <div className="sm:hidden space-y-2.5">
+                {historyMovements
+                  .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+                  .map((m) => {
+                    const isPositive = m.robuxAmount > 0;
+                    const isZero = m.robuxAmount === 0;
+
+                    return (
+                      <div
+                        key={m.id}
+                        className="p-3.5 rounded-2xl theme-bg-card border theme-border space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                              m.categoryTag === 'RESTOCK'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : m.categoryTag === 'SALE'
+                                ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                                : m.categoryTag === 'PERSONAL_USE'
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                : m.categoryTag === 'VOID'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : m.categoryTag === 'ACCOUNT_REMAINDER'
+                                ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                : m.categoryTag === 'MANUAL_ADJUST'
+                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                            }`}
+                          >
+                            {m.categoryTag === 'RESTOCK' && <Package size={11} />}
+                            {m.categoryTag === 'SALE' && <ArrowUpRight size={11} />}
+                            {m.categoryTag === 'PERSONAL_USE' && <UserCheck size={11} />}
+                            {m.categoryTag === 'VOID' && <RotateCcw size={11} />}
+                            {m.categoryTag === 'ACCOUNT_REMAINDER' && <Coins size={11} />}
+                            {m.categoryTag === 'MANUAL_ADJUST' && <Sliders size={11} />}
+                            {m.categoryTag === 'EDIT' && <Edit3 size={11} />}
+                            <span>{m.label}</span>
+                          </span>
+                          <span className="font-mono text-[10px] theme-text-muted">
+                            {formatDateJakarta(m.createdAt)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] theme-text-muted block">Batch</span>
+                            <span className="font-mono text-xs font-bold theme-text-primary">
+                              {m.batchId}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] theme-text-muted block">Jumlah Mutasi</span>
+                            <span className="font-mono text-sm font-extrabold">
+                              {isZero ? (
+                                <span className="theme-text-muted">0 R$</span>
+                              ) : isPositive ? (
+                                <span className="text-emerald-400">+{formatNumber(m.robuxAmount)} R$</span>
+                              ) : (
+                                <span className="text-rose-400">-{formatNumber(Math.abs(m.robuxAmount))} R$</span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t theme-border text-[11px] font-mono">
+                          <div>
+                            <span className="text-[10px] theme-text-muted block font-sans">Sisa Batch:</span>
+                            <span className="text-amber-400 font-bold">{formatNumber(m.batchRunningBalance)} R$</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] theme-text-muted block font-sans">Total Stok Toko:</span>
+                            <span className="theme-text-primary font-bold">{formatNumber(m.totalRunningBalance)} R$</span>
+                          </div>
+                        </div>
+
+                        <div className="text-[10px] theme-text-secondary pt-1 border-t theme-border-subtle truncate">
+                          <span className="font-mono text-emerald-400">{m.referenceId}</span>
+                          {m.notes && <span className="text-zinc-400 ml-1.5">• {m.notes}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Pagination Controls */}
+              {historyMovements.length > historyPageSize && (
+                <div className="flex items-center justify-between p-3 rounded-2xl theme-bg-card border theme-border text-xs">
+                  <span className="theme-text-muted text-[11px]">
+                    Menampilkan {(historyPage - 1) * historyPageSize + 1} -{' '}
+                    {Math.min(historyPage * historyPageSize, historyMovements.length)} dari{' '}
+                    {historyMovements.length} mutasi
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={historyPage <= 1}
+                      onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1.5 rounded-lg theme-bg-surface border theme-border theme-text-primary disabled:opacity-30 disabled:cursor-not-allowed hover:theme-bg-surface-hover text-xs font-semibold"
+                    >
+                      Sebelumnya
+                    </button>
+                    <span className="font-mono text-xs font-bold theme-text-primary px-1">
+                      {historyPage} / {Math.ceil(historyMovements.length / historyPageSize)}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={historyPage >= Math.ceil(historyMovements.length / historyPageSize)}
+                      onClick={() => setHistoryPage((p) => p + 1)}
+                      className="px-3 py-1.5 rounded-lg theme-bg-surface border theme-border theme-text-primary disabled:opacity-30 disabled:cursor-not-allowed hover:theme-bg-surface-hover text-xs font-semibold"
+                    >
+                      Selanjutnya
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1795,6 +2291,348 @@ export const StockView: React.FC = () => {
         </div>
       )}
 
+      {/* TAB: Riwayat Mutasi Stok FIFO */}
+      {activeTab === 'history' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold theme-text-primary flex items-center gap-2">
+                <History size={16} className="text-emerald-500" />
+                <span>Riwayat Mutasi & Pergerakan Stok</span>
+              </h2>
+              <p className="text-xs theme-text-muted mt-0.5">
+                Semua arus keluar-masuk Robux lengkap dengan saldo sisa per batch dan total toko.
+              </p>
+            </div>
+            {historyFilterBatch && (
+              <button
+                type="button"
+                onClick={() => setHistoryFilterBatch('')}
+                className="self-start sm:self-auto px-2.5 py-1 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs font-semibold flex items-center gap-1.5 hover:bg-sky-500/20 transition"
+              >
+                <span>Filter Batch: {historyFilterBatch}</span>
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Bar */}
+          <div className="p-3.5 rounded-2xl theme-bg-card border theme-border space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {/* Filter Jenis */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Jenis Mutasi
+                </label>
+                <select
+                  value={historyFilterCategory}
+                  onChange={(e) => setHistoryFilterCategory(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-medium"
+                >
+                  <option value="ALL">Semua Jenis Mutasi</option>
+                  <option value="RESTOCK">Restock Kulakan</option>
+                  <option value="SALE">Penjualan Robux</option>
+                  <option value="PERSONAL_USE">Pemakaian Pribadi (Prive)</option>
+                  <option value="VOID">Batal / Pengembalian</option>
+                  <option value="ACCOUNT_REMAINDER">Sisa Robux Akun</option>
+                  <option value="MANUAL_ADJUST">Penyesuaian Manual</option>
+                  <option value="EDIT">Koreksi Jumlah Batch</option>
+                </select>
+              </div>
+
+              {/* Filter Batch */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Batch Persediaan
+                </label>
+                <select
+                  value={historyFilterBatch}
+                  onChange={(e) => setHistoryFilterBatch(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono"
+                >
+                  <option value="">Semua Batch</option>
+                  {allBatches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.id} ({formatNumber(b.remainingRobux)}/{formatNumber(b.initialRobux)} R$)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Tanggal Mulai */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Dari Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={historyStartDate}
+                  onChange={(e) => setHistoryStartDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Filter Tanggal Selesai */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Sampai Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={historyEndDate}
+                  onChange={(e) => setHistoryEndDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {(historyFilterCategory !== 'ALL' || historyFilterBatch || historyStartDate || historyEndDate) && (
+              <div className="flex items-center justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHistoryFilterCategory('ALL');
+                    setHistoryFilterBatch('');
+                    setHistoryStartDate('');
+                    setHistoryEndDate('');
+                  }}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1 transition"
+                >
+                  <X size={12} />
+                  <span>Reset Semua Filter</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Data List */}
+          {isLoadingHistory ? (
+            <div className="p-8 text-center theme-text-muted text-xs">
+              Memuat data riwayat mutasi stok...
+            </div>
+          ) : historyMovements.length === 0 ? (
+            <div className="p-8 rounded-2xl theme-bg-card border theme-border text-center space-y-2">
+              <History size={32} className="mx-auto theme-text-muted opacity-40" />
+              <p className="text-sm font-medium theme-text-primary">Tidak Ada Riwayat Mutasi</p>
+              <p className="text-xs theme-text-muted max-w-sm mx-auto">
+                Belum ada transaksi atau pergerakan stok yang cocok dengan kriteria filter saat ini.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Desktop Table View */}
+              <div className="hidden sm:block rounded-2xl theme-bg-card border theme-border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="theme-bg-surface border-b theme-border text-[11px] font-bold theme-text-muted uppercase tracking-wider">
+                        <th className="py-3 px-3.5">Waktu (WIB)</th>
+                        <th className="py-3 px-3">Jenis Mutasi</th>
+                        <th className="py-3 px-3">Batch Asal</th>
+                        <th className="py-3 px-3 text-right">Mutasi (R$)</th>
+                        <th className="py-3 px-3 text-right">Saldo Batch</th>
+                        <th className="py-3 px-3 text-right">Saldo Total</th>
+                        <th className="py-3 px-3.5">Referensi / Keterangan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y theme-border">
+                      {historyMovements
+                        .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+                        .map((m) => {
+                          const isPositive = m.robuxAmount > 0;
+                          const isZero = m.robuxAmount === 0;
+
+                          return (
+                            <tr key={m.id} className="hover:theme-bg-card-hover transition">
+                              <td className="py-3 px-3.5 whitespace-nowrap font-mono text-[11px] theme-text-secondary">
+                                {formatDateJakarta(m.createdAt)}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                    m.categoryTag === 'RESTOCK'
+                                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                      : m.categoryTag === 'SALE'
+                                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                                      : m.categoryTag === 'PERSONAL_USE'
+                                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                      : m.categoryTag === 'VOID'
+                                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                      : m.categoryTag === 'ACCOUNT_REMAINDER'
+                                      ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                      : m.categoryTag === 'MANUAL_ADJUST'
+                                      ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                      : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                                  }`}
+                                >
+                                  {m.categoryTag === 'RESTOCK' && <Package size={11} />}
+                                  {m.categoryTag === 'SALE' && <ArrowUpRight size={11} />}
+                                  {m.categoryTag === 'PERSONAL_USE' && <UserCheck size={11} />}
+                                  {m.categoryTag === 'VOID' && <RotateCcw size={11} />}
+                                  {m.categoryTag === 'ACCOUNT_REMAINDER' && <Coins size={11} />}
+                                  {m.categoryTag === 'MANUAL_ADJUST' && <Sliders size={11} />}
+                                  {m.categoryTag === 'EDIT' && <Edit3 size={11} />}
+                                  <span>{m.label}</span>
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap font-mono text-[11px] theme-text-primary">
+                                {m.batchId}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap text-right font-mono font-bold">
+                                {isZero ? (
+                                  <span className="theme-text-muted">0 R$</span>
+                                ) : isPositive ? (
+                                  <span className="text-emerald-400">+{formatNumber(m.robuxAmount)} R$</span>
+                                ) : (
+                                  <span className="text-rose-400">-{formatNumber(Math.abs(m.robuxAmount))} R$</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap text-right font-mono text-[11px] text-amber-400 font-semibold">
+                                {formatNumber(m.batchRunningBalance)} R$
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap text-right font-mono text-[11px] theme-text-primary font-bold">
+                                {formatNumber(m.totalRunningBalance)} R$
+                              </td>
+                              <td className="py-3 px-3.5 max-w-xs truncate text-[11px] theme-text-secondary">
+                                <span className="font-mono text-emerald-400 block truncate">
+                                  {m.referenceId}
+                                </span>
+                                {m.notes && (
+                                  <span className="text-[10px] theme-text-muted block truncate mt-0.5">
+                                    {m.notes}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Mobile Cards View */}
+              <div className="sm:hidden space-y-2.5">
+                {historyMovements
+                  .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+                  .map((m) => {
+                    const isPositive = m.robuxAmount > 0;
+                    const isZero = m.robuxAmount === 0;
+
+                    return (
+                      <div
+                        key={m.id}
+                        className="p-3.5 rounded-2xl theme-bg-card border theme-border space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                              m.categoryTag === 'RESTOCK'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : m.categoryTag === 'SALE'
+                                ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                                : m.categoryTag === 'PERSONAL_USE'
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                : m.categoryTag === 'VOID'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : m.categoryTag === 'ACCOUNT_REMAINDER'
+                                ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                : m.categoryTag === 'MANUAL_ADJUST'
+                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                            }`}
+                          >
+                            {m.categoryTag === 'RESTOCK' && <Package size={11} />}
+                            {m.categoryTag === 'SALE' && <ArrowUpRight size={11} />}
+                            {m.categoryTag === 'PERSONAL_USE' && <UserCheck size={11} />}
+                            {m.categoryTag === 'VOID' && <RotateCcw size={11} />}
+                            {m.categoryTag === 'ACCOUNT_REMAINDER' && <Coins size={11} />}
+                            {m.categoryTag === 'MANUAL_ADJUST' && <Sliders size={11} />}
+                            {m.categoryTag === 'EDIT' && <Edit3 size={11} />}
+                            <span>{m.label}</span>
+                          </span>
+                          <span className="font-mono text-[10px] theme-text-muted">
+                            {formatDateJakarta(m.createdAt)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] theme-text-muted block">Batch</span>
+                            <span className="font-mono text-xs font-bold theme-text-primary">
+                              {m.batchId}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] theme-text-muted block">Jumlah Mutasi</span>
+                            <span className="font-mono text-sm font-extrabold">
+                              {isZero ? (
+                                <span className="theme-text-muted">0 R$</span>
+                              ) : isPositive ? (
+                                <span className="text-emerald-400">+{formatNumber(m.robuxAmount)} R$</span>
+                              ) : (
+                                <span className="text-rose-400">-{formatNumber(Math.abs(m.robuxAmount))} R$</span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t theme-border text-[11px] font-mono">
+                          <div>
+                            <span className="text-[10px] theme-text-muted block font-sans">Sisa Batch:</span>
+                            <span className="text-amber-400 font-bold">{formatNumber(m.batchRunningBalance)} R$</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] theme-text-muted block font-sans">Total Stok Toko:</span>
+                            <span className="theme-text-primary font-bold">{formatNumber(m.totalRunningBalance)} R$</span>
+                          </div>
+                        </div>
+
+                        <div className="text-[10px] theme-text-secondary pt-1 border-t theme-border-subtle truncate">
+                          <span className="font-mono text-emerald-400">{m.referenceId}</span>
+                          {m.notes && <span className="text-zinc-400 ml-1.5">• {m.notes}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Pagination Controls */}
+              {historyMovements.length > historyPageSize && (
+                <div className="flex items-center justify-between p-3 rounded-2xl theme-bg-card border theme-border text-xs">
+                  <span className="theme-text-muted text-[11px]">
+                    Menampilkan {(historyPage - 1) * historyPageSize + 1} -{' '}
+                    {Math.min(historyPage * historyPageSize, historyMovements.length)} dari{' '}
+                    {historyMovements.length} mutasi
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={historyPage <= 1}
+                      onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1.5 rounded-lg theme-bg-surface border theme-border theme-text-primary disabled:opacity-30 disabled:cursor-not-allowed hover:theme-bg-surface-hover text-xs font-semibold"
+                    >
+                      Sebelumnya
+                    </button>
+                    <span className="font-mono text-xs font-bold theme-text-primary px-1">
+                      {historyPage} / {Math.ceil(historyMovements.length / historyPageSize)}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={historyPage >= Math.ceil(historyMovements.length / historyPageSize)}
+                      onClick={() => setHistoryPage((p) => p + 1)}
+                      className="px-3 py-1.5 rounded-lg theme-bg-surface border theme-border theme-text-primary disabled:opacity-30 disabled:cursor-not-allowed hover:theme-bg-surface-hover text-xs font-semibold"
+                    >
+                      Selanjutnya
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB 3: Sisa Robux Akun */}
       {activeTab === 'reconcile' && (
         <form
@@ -2198,6 +3036,348 @@ export const StockView: React.FC = () => {
         </div>
       )}
 
+      {/* TAB: Riwayat Mutasi Stok FIFO */}
+      {activeTab === 'history' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold theme-text-primary flex items-center gap-2">
+                <History size={16} className="text-emerald-500" />
+                <span>Riwayat Mutasi & Pergerakan Stok</span>
+              </h2>
+              <p className="text-xs theme-text-muted mt-0.5">
+                Semua arus keluar-masuk Robux lengkap dengan saldo sisa per batch dan total toko.
+              </p>
+            </div>
+            {historyFilterBatch && (
+              <button
+                type="button"
+                onClick={() => setHistoryFilterBatch('')}
+                className="self-start sm:self-auto px-2.5 py-1 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs font-semibold flex items-center gap-1.5 hover:bg-sky-500/20 transition"
+              >
+                <span>Filter Batch: {historyFilterBatch}</span>
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Bar */}
+          <div className="p-3.5 rounded-2xl theme-bg-card border theme-border space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {/* Filter Jenis */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Jenis Mutasi
+                </label>
+                <select
+                  value={historyFilterCategory}
+                  onChange={(e) => setHistoryFilterCategory(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-medium"
+                >
+                  <option value="ALL">Semua Jenis Mutasi</option>
+                  <option value="RESTOCK">Restock Kulakan</option>
+                  <option value="SALE">Penjualan Robux</option>
+                  <option value="PERSONAL_USE">Pemakaian Pribadi (Prive)</option>
+                  <option value="VOID">Batal / Pengembalian</option>
+                  <option value="ACCOUNT_REMAINDER">Sisa Robux Akun</option>
+                  <option value="MANUAL_ADJUST">Penyesuaian Manual</option>
+                  <option value="EDIT">Koreksi Jumlah Batch</option>
+                </select>
+              </div>
+
+              {/* Filter Batch */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Batch Persediaan
+                </label>
+                <select
+                  value={historyFilterBatch}
+                  onChange={(e) => setHistoryFilterBatch(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono"
+                >
+                  <option value="">Semua Batch</option>
+                  {allBatches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.id} ({formatNumber(b.remainingRobux)}/{formatNumber(b.initialRobux)} R$)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Tanggal Mulai */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Dari Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={historyStartDate}
+                  onChange={(e) => setHistoryStartDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Filter Tanggal Selesai */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold theme-text-secondary block">
+                  Sampai Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={historyEndDate}
+                  onChange={(e) => setHistoryEndDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {(historyFilterCategory !== 'ALL' || historyFilterBatch || historyStartDate || historyEndDate) && (
+              <div className="flex items-center justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHistoryFilterCategory('ALL');
+                    setHistoryFilterBatch('');
+                    setHistoryStartDate('');
+                    setHistoryEndDate('');
+                  }}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1 transition"
+                >
+                  <X size={12} />
+                  <span>Reset Semua Filter</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Data List */}
+          {isLoadingHistory ? (
+            <div className="p-8 text-center theme-text-muted text-xs">
+              Memuat data riwayat mutasi stok...
+            </div>
+          ) : historyMovements.length === 0 ? (
+            <div className="p-8 rounded-2xl theme-bg-card border theme-border text-center space-y-2">
+              <History size={32} className="mx-auto theme-text-muted opacity-40" />
+              <p className="text-sm font-medium theme-text-primary">Tidak Ada Riwayat Mutasi</p>
+              <p className="text-xs theme-text-muted max-w-sm mx-auto">
+                Belum ada transaksi atau pergerakan stok yang cocok dengan kriteria filter saat ini.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Desktop Table View */}
+              <div className="hidden sm:block rounded-2xl theme-bg-card border theme-border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="theme-bg-surface border-b theme-border text-[11px] font-bold theme-text-muted uppercase tracking-wider">
+                        <th className="py-3 px-3.5">Waktu (WIB)</th>
+                        <th className="py-3 px-3">Jenis Mutasi</th>
+                        <th className="py-3 px-3">Batch Asal</th>
+                        <th className="py-3 px-3 text-right">Mutasi (R$)</th>
+                        <th className="py-3 px-3 text-right">Saldo Batch</th>
+                        <th className="py-3 px-3 text-right">Saldo Total</th>
+                        <th className="py-3 px-3.5">Referensi / Keterangan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y theme-border">
+                      {historyMovements
+                        .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+                        .map((m) => {
+                          const isPositive = m.robuxAmount > 0;
+                          const isZero = m.robuxAmount === 0;
+
+                          return (
+                            <tr key={m.id} className="hover:theme-bg-card-hover transition">
+                              <td className="py-3 px-3.5 whitespace-nowrap font-mono text-[11px] theme-text-secondary">
+                                {formatDateJakarta(m.createdAt)}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                    m.categoryTag === 'RESTOCK'
+                                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                      : m.categoryTag === 'SALE'
+                                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                                      : m.categoryTag === 'PERSONAL_USE'
+                                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                      : m.categoryTag === 'VOID'
+                                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                      : m.categoryTag === 'ACCOUNT_REMAINDER'
+                                      ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                      : m.categoryTag === 'MANUAL_ADJUST'
+                                      ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                      : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                                  }`}
+                                >
+                                  {m.categoryTag === 'RESTOCK' && <Package size={11} />}
+                                  {m.categoryTag === 'SALE' && <ArrowUpRight size={11} />}
+                                  {m.categoryTag === 'PERSONAL_USE' && <UserCheck size={11} />}
+                                  {m.categoryTag === 'VOID' && <RotateCcw size={11} />}
+                                  {m.categoryTag === 'ACCOUNT_REMAINDER' && <Coins size={11} />}
+                                  {m.categoryTag === 'MANUAL_ADJUST' && <Sliders size={11} />}
+                                  {m.categoryTag === 'EDIT' && <Edit3 size={11} />}
+                                  <span>{m.label}</span>
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap font-mono text-[11px] theme-text-primary">
+                                {m.batchId}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap text-right font-mono font-bold">
+                                {isZero ? (
+                                  <span className="theme-text-muted">0 R$</span>
+                                ) : isPositive ? (
+                                  <span className="text-emerald-400">+{formatNumber(m.robuxAmount)} R$</span>
+                                ) : (
+                                  <span className="text-rose-400">-{formatNumber(Math.abs(m.robuxAmount))} R$</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap text-right font-mono text-[11px] text-amber-400 font-semibold">
+                                {formatNumber(m.batchRunningBalance)} R$
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap text-right font-mono text-[11px] theme-text-primary font-bold">
+                                {formatNumber(m.totalRunningBalance)} R$
+                              </td>
+                              <td className="py-3 px-3.5 max-w-xs truncate text-[11px] theme-text-secondary">
+                                <span className="font-mono text-emerald-400 block truncate">
+                                  {m.referenceId}
+                                </span>
+                                {m.notes && (
+                                  <span className="text-[10px] theme-text-muted block truncate mt-0.5">
+                                    {m.notes}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Mobile Cards View */}
+              <div className="sm:hidden space-y-2.5">
+                {historyMovements
+                  .slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize)
+                  .map((m) => {
+                    const isPositive = m.robuxAmount > 0;
+                    const isZero = m.robuxAmount === 0;
+
+                    return (
+                      <div
+                        key={m.id}
+                        className="p-3.5 rounded-2xl theme-bg-card border theme-border space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                              m.categoryTag === 'RESTOCK'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : m.categoryTag === 'SALE'
+                                ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                                : m.categoryTag === 'PERSONAL_USE'
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                : m.categoryTag === 'VOID'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : m.categoryTag === 'ACCOUNT_REMAINDER'
+                                ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                : m.categoryTag === 'MANUAL_ADJUST'
+                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                            }`}
+                          >
+                            {m.categoryTag === 'RESTOCK' && <Package size={11} />}
+                            {m.categoryTag === 'SALE' && <ArrowUpRight size={11} />}
+                            {m.categoryTag === 'PERSONAL_USE' && <UserCheck size={11} />}
+                            {m.categoryTag === 'VOID' && <RotateCcw size={11} />}
+                            {m.categoryTag === 'ACCOUNT_REMAINDER' && <Coins size={11} />}
+                            {m.categoryTag === 'MANUAL_ADJUST' && <Sliders size={11} />}
+                            {m.categoryTag === 'EDIT' && <Edit3 size={11} />}
+                            <span>{m.label}</span>
+                          </span>
+                          <span className="font-mono text-[10px] theme-text-muted">
+                            {formatDateJakarta(m.createdAt)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] theme-text-muted block">Batch</span>
+                            <span className="font-mono text-xs font-bold theme-text-primary">
+                              {m.batchId}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] theme-text-muted block">Jumlah Mutasi</span>
+                            <span className="font-mono text-sm font-extrabold">
+                              {isZero ? (
+                                <span className="theme-text-muted">0 R$</span>
+                              ) : isPositive ? (
+                                <span className="text-emerald-400">+{formatNumber(m.robuxAmount)} R$</span>
+                              ) : (
+                                <span className="text-rose-400">-{formatNumber(Math.abs(m.robuxAmount))} R$</span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t theme-border text-[11px] font-mono">
+                          <div>
+                            <span className="text-[10px] theme-text-muted block font-sans">Sisa Batch:</span>
+                            <span className="text-amber-400 font-bold">{formatNumber(m.batchRunningBalance)} R$</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] theme-text-muted block font-sans">Total Stok Toko:</span>
+                            <span className="theme-text-primary font-bold">{formatNumber(m.totalRunningBalance)} R$</span>
+                          </div>
+                        </div>
+
+                        <div className="text-[10px] theme-text-secondary pt-1 border-t theme-border-subtle truncate">
+                          <span className="font-mono text-emerald-400">{m.referenceId}</span>
+                          {m.notes && <span className="text-zinc-400 ml-1.5">• {m.notes}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Pagination Controls */}
+              {historyMovements.length > historyPageSize && (
+                <div className="flex items-center justify-between p-3 rounded-2xl theme-bg-card border theme-border text-xs">
+                  <span className="theme-text-muted text-[11px]">
+                    Menampilkan {(historyPage - 1) * historyPageSize + 1} -{' '}
+                    {Math.min(historyPage * historyPageSize, historyMovements.length)} dari{' '}
+                    {historyMovements.length} mutasi
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={historyPage <= 1}
+                      onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1.5 rounded-lg theme-bg-surface border theme-border theme-text-primary disabled:opacity-30 disabled:cursor-not-allowed hover:theme-bg-surface-hover text-xs font-semibold"
+                    >
+                      Sebelumnya
+                    </button>
+                    <span className="font-mono text-xs font-bold theme-text-primary px-1">
+                      {historyPage} / {Math.ceil(historyMovements.length / historyPageSize)}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={historyPage >= Math.ceil(historyMovements.length / historyPageSize)}
+                      onClick={() => setHistoryPage((p) => p + 1)}
+                      className="px-3 py-1.5 rounded-lg theme-bg-surface border theme-border theme-text-primary disabled:opacity-30 disabled:cursor-not-allowed hover:theme-bg-surface-hover text-xs font-semibold"
+                    >
+                      Selanjutnya
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Modal Edit Catatan Batch FIFO */}
       {editingBatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
@@ -2307,6 +3487,271 @@ export const StockView: React.FC = () => {
           </form>
         </div>
       )}
+
+      {/* Modal Edit Jumlah Robux Awal Batch */}
+      {editingRobuxBatch && (() => {
+        const usedRobux = editingRobuxBatch.initialRobux - editingRobuxBatch.remainingRobux;
+        const usedCost = editingRobuxBatch.totalCostRupiah - editingRobuxBatch.remainingCostRupiah;
+        const parsedNewRobux = Math.floor(parseFloat(editNewInitialRobux) || 0);
+        const newRemainingRobux = Math.max(0, parsedNewRobux - usedRobux);
+
+        // Validasi ketersediaan Pilihan B
+        const isOptionBDisabled =
+          editingRobuxBatch.sourceType === 'ACCOUNT_REMAINDER' ||
+          editingRobuxBatch.fundingSource === 'LOAN' ||
+          editingRobuxBatch.fundingSource === 'COMBINED';
+
+        const disabledOptionBReason =
+          editingRobuxBatch.sourceType === 'ACCOUNT_REMAINDER'
+            ? 'Pilihan B dinonaktifkan untuk Sisa Robux Akun karena tidak memiliki entri kas keluar ril.'
+            : editingRobuxBatch.fundingSource === 'LOAN'
+            ? 'Pilihan B dinonaktifkan untuk batch bersumber pinjaman demi menjaga konsistensi buku utang.'
+            : editingRobuxBatch.fundingSource === 'COMBINED'
+            ? 'Pilihan B dinonaktifkan untuk batch modal gabungan demi menjaga konsistensi porsi dana.'
+            : '';
+
+        // Simulasi kalkulasi modal
+        let simTotalCost = editingRobuxBatch.totalCostRupiah;
+        let simRemainingCost = editingRobuxBatch.remainingCostRupiah;
+        let simUnitCost = editingRobuxBatch.unitCostDisplay;
+        let simDeltaCost = 0;
+
+        if (parsedNewRobux > 0) {
+          if (editCostMode === 'KEEP_TOTAL_COST') {
+            simTotalCost = editingRobuxBatch.totalCostRupiah;
+            simRemainingCost = Math.max(0, simTotalCost - usedCost);
+            simUnitCost = parsedNewRobux > 0 ? simTotalCost / parsedNewRobux : 0;
+            simDeltaCost = 0;
+          } else {
+            const unitCost = editingRobuxBatch.initialRobux > 0 
+              ? editingRobuxBatch.totalCostRupiah / editingRobuxBatch.initialRobux 
+              : 0;
+            simTotalCost = Math.round(parsedNewRobux * unitCost);
+            simDeltaCost = simTotalCost - editingRobuxBatch.totalCostRupiah;
+            simRemainingCost = Math.max(0, simTotalCost - usedCost);
+            simUnitCost = unitCost;
+          }
+        }
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
+            <form
+              onSubmit={handleSaveEditRobux}
+              className="w-full max-w-lg rounded-2xl theme-bg-card border theme-border p-5 space-y-4 shadow-2xl my-6"
+            >
+              <div className="flex items-center justify-between pb-3 border-b theme-border">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                    <Edit3 size={16} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold theme-text-primary text-sm">
+                      Koreksi Jumlah Robux Batch
+                    </h3>
+                    <p className="text-[11px] font-mono theme-text-secondary">
+                      {editingRobuxBatch.id} • {editingRobuxBatch.sourceType === 'RESTOCK' ? 'Restock Kulakan' : 'Sisa Robux Akun'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingRobuxBatch(null)}
+                  className="p-1 rounded-lg theme-text-muted hover:theme-text-primary"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Status Saat Ini */}
+              <div className="p-3.5 rounded-xl theme-bg-surface border theme-border grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                <div>
+                  <span className="text-[10px] theme-text-muted block">Jumlah Awal</span>
+                  <span className="font-mono font-bold theme-text-primary">
+                    {formatNumber(editingRobuxBatch.initialRobux)} R$
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] theme-text-muted block">Sudah Terpakai</span>
+                  <span className="font-mono font-bold text-rose-400">
+                    {formatNumber(usedRobux)} R$
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] theme-text-muted block">Sisa Saat Ini</span>
+                  <span className="font-mono font-bold text-amber-400">
+                    {formatNumber(editingRobuxBatch.remainingRobux)} R$
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] theme-text-muted block">Modal Total</span>
+                  <span className="font-mono font-bold theme-text-primary">
+                    {formatRupiah(editingRobuxBatch.totalCostRupiah)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Input Jumlah Robux Baru */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold theme-text-secondary flex items-center justify-between">
+                  <span>Jumlah Robux Awal yang Benar (R$) *</span>
+                  <span className="text-[10px] theme-text-muted">
+                    Minimal: {formatNumber(usedRobux)} R$
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  min={usedRobux}
+                  step={1}
+                  required
+                  placeholder={`Contoh: ${editingRobuxBatch.initialRobux}`}
+                  value={editNewInitialRobux}
+                  onChange={(e) => setEditNewInitialRobux(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm font-mono font-bold theme-text-primary focus:outline-none focus:border-indigo-500"
+                />
+                {parsedNewRobux < usedRobux && (
+                  <p className="text-[11px] text-rose-400">
+                    Jumlah baru tidak boleh lebih kecil dari {formatNumber(usedRobux)} R$ (Robux yang sudah terjual/terpakai).
+                  </p>
+                )}
+              </div>
+
+              {/* Pilihan Perlakuan Modal */}
+              <div className="space-y-2 pt-1">
+                <label className="text-xs font-semibold theme-text-secondary block">
+                  Perlakuan Modal & Harga Beli:
+                </label>
+                <div className="space-y-2 text-xs">
+                  {/* Pilihan A */}
+                  <label
+                    className={`p-3 rounded-xl border block cursor-pointer transition ${
+                      editCostMode === 'KEEP_TOTAL_COST'
+                        ? 'border-indigo-500 bg-indigo-500/10'
+                        : 'theme-border theme-bg-surface hover:theme-bg-surface-hover'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <input
+                        type="radio"
+                        name="costMode"
+                        value="KEEP_TOTAL_COST"
+                        checked={editCostMode === 'KEEP_TOTAL_COST'}
+                        onChange={() => setEditCostMode('KEEP_TOTAL_COST')}
+                        className="mt-0.5 accent-indigo-500"
+                      />
+                      <div className="space-y-0.5">
+                        <span className="font-bold theme-text-primary block">
+                          Pilihan A: Total Modal Tetap
+                        </span>
+                        <p className="text-[11px] theme-text-muted leading-relaxed">
+                          Uang keluar tidak berubah ({formatRupiah(editingRobuxBatch.totalCostRupiah)}). Harga modal per Robux akan dihitung ulang secara otomatis (cocok jika salah ketik jumlah Robux saat mencatat restock).
+                        </p>
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Pilihan B */}
+                  <label
+                    className={`p-3 rounded-xl border block transition ${
+                      isOptionBDisabled
+                        ? 'opacity-40 cursor-not-allowed theme-border theme-bg-surface'
+                        : editCostMode === 'KEEP_UNIT_COST'
+                        ? 'border-indigo-500 bg-indigo-500/10 cursor-pointer'
+                        : 'theme-border theme-bg-surface hover:theme-bg-surface-hover cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <input
+                        type="radio"
+                        name="costMode"
+                        value="KEEP_UNIT_COST"
+                        disabled={isOptionBDisabled}
+                        checked={editCostMode === 'KEEP_UNIT_COST'}
+                        onChange={() => setEditCostMode('KEEP_UNIT_COST')}
+                        className="mt-0.5 accent-indigo-500"
+                      />
+                      <div className="space-y-0.5">
+                        <span className="font-bold theme-text-primary block">
+                          Pilihan B: Harga per Robux Tetap
+                        </span>
+                        <p className="text-[11px] theme-text-muted leading-relaxed">
+                          Harga per Robux tetap Rp{formatDecimal(editingRobuxBatch.unitCostDisplay, 2)}/R$. Total modal bertambah/berkurang proporsional dan pengeluaran kas toko ikut disesuaikan.
+                        </p>
+                        {isOptionBDisabled && (
+                          <p className="text-[10px] text-amber-400 font-semibold mt-1">
+                            ⚠️ {disabledOptionBReason}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Simulasi Dampak Perubahan */}
+              {parsedNewRobux > 0 && (
+                <div className="p-3 rounded-xl bg-zinc-900/60 dark:bg-zinc-950/60 border theme-border space-y-1.5 text-xs font-mono">
+                  <span className="text-[10px] font-sans font-bold uppercase tracking-wider theme-text-muted block">
+                    Pratinjau Hasil Koreksi:
+                  </span>
+                  <div className="flex justify-between">
+                    <span className="theme-text-muted">Sisa Robux Baru:</span>
+                    <span className="text-amber-400 font-bold">{formatNumber(newRemainingRobux)} R$</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="theme-text-muted">Total Modal Baru:</span>
+                    <span className="theme-text-primary font-bold">{formatRupiah(simTotalCost)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="theme-text-muted">Modal Baru per Robux:</span>
+                    <span className="text-emerald-400 font-bold">Rp{formatDecimal(simUnitCost, 2)} / R$</span>
+                  </div>
+                  {editCostMode === 'KEEP_UNIT_COST' && (
+                    <div className="flex justify-between pt-1 border-t theme-border text-[11px]">
+                      <span className="theme-text-muted">Penyesuaian Kas Toko:</span>
+                      <span className={simDeltaCost >= 0 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                        {simDeltaCost >= 0 ? `+Kas Keluar ${formatRupiah(simDeltaCost)}` : `-Kas Keluar ${formatRupiah(Math.abs(simDeltaCost))}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Alasan Perubahan (Wajib) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold theme-text-secondary flex items-center justify-between">
+                  <span>Alasan Perubahan (Wajib Diisi) *</span>
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  placeholder="Misal: Salah ketik jumlah Robux saat restock, supplier konfirmasi pengiriman 1.000 R$..."
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t theme-border">
+                <button
+                  type="button"
+                  onClick={() => setEditingRobuxBatch(null)}
+                  className="px-4 py-2 rounded-xl text-xs theme-text-muted hover:theme-text-primary transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingEditRobux || parsedNewRobux < usedRobux || !editReason.trim()}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition shadow-sm flex items-center gap-1.5"
+                >
+                  {isSubmittingEditRobux ? 'Menyimpan...' : 'Simpan Koreksi Batch'}
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
     </div>
   );
 };

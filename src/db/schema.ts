@@ -43,7 +43,8 @@ export type StockMovementType =
   | 'SALE' 
   | 'PERSONAL_USE' 
   | 'RECONCILE_ADD' 
-  | 'VOID_RESTORE';
+  | 'VOID_RESTORE'
+  | 'EDIT';
 
 export interface StockMovement {
   id: string;
@@ -53,6 +54,8 @@ export interface StockMovement {
   costAllocatedRupiah: number;
   referenceId: string;
   createdAt: string;
+  notes?: string;
+  balanceAfter?: number;
 }
 
 export interface SaleAllocationItem {
