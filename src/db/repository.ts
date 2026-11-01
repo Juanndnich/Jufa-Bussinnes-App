@@ -385,6 +385,285 @@ export const repository = {
   },
 
   /**
+   * Edit Jumlah Robux Awal pada Batch yang Sudah Ditambahkan
+   * Mendukung Pilihan A (Total modal tetap) dan Pilihan B (Harga per Robux tetap).
+   */
+  async editBatchInitialRobux(params: {
+    batchId: string;
+    newInitialRobux: number;
+    reason: string;
+    costMode: 'KEEP_TOTAL_COST' | 'KEEP_UNIT_COST';
+  }): Promise<{ batch: StockBatch; movement: StockMovement }> {
+    const reasonClean = params.reason?.trim();
+    if (!reasonClean) {
+      throw new Error('Alasan perubahan jumlah batch wajib diisi.');
+    }
+
+    const newInitial = Math.max(0, Math.floor(params.newInitialRobux || 0));
+    if (newInitial <= 0) {
+      throw new Error('Jumlah Robux baru harus lebih besar dari 0.');
+    }
+
+    const now = new Date().toISOString();
+
+    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs, db.loans], async () => {
+      const batch = await db.stockBatches.get(params.batchId);
+      if (!batch) {
+        throw new Error('Batch tidak ditemukan.');
+      }
+
+      const usedRobux = batch.initialRobux - batch.remainingRobux;
+      if (newInitial < usedRobux) {
+        throw new Error(
+          `Jumlah Robux baru (${newInitial.toLocaleString('id-ID')} R$) tidak boleh lebih kecil dari Robux yang sudah terpakai/terjual (${usedRobux.toLocaleString('id-ID')} R$).`
+        );
+      }
+
+      const oldInitial = batch.initialRobux;
+      const oldRemaining = batch.remainingRobux;
+      const deltaRobux = newInitial - oldInitial;
+      const newRemainingRobux = oldRemaining + deltaRobux; // sama dengan newInitial - usedRobux
+
+      const usedCostRupiah = batch.totalCostRupiah - batch.remainingCostRupiah;
+
+      // EDGE CASE Pilihan A (Aturan 2):
+      // Jika jumlah baru membuat sisa Robux = 0, tetapi sisa modal batch masih > 0
+      if (params.costMode === 'KEEP_TOTAL_COST') {
+        const remainingCostBefore = batch.totalCostRupiah - usedCostRupiah;
+        if (newRemainingRobux === 0 && remainingCostBefore > 0) {
+          throw new Error(
+            `Jumlah Robux tidak dapat diubah tepat sejumlah yang sudah terpakai (${usedRobux.toLocaleString('id-ID')} R$) dengan Pilihan A karena masih ada sisa modal Rp${remainingCostBefore.toLocaleString('id-ID')} yang belum teralokasi. Sisakan minimal 1 R$ atau gunakan pilihan penyesuaian modal.`
+          );
+        }
+      }
+
+      // Validasi Matriks Pilihan B (Aturan 3):
+      let relatedCash: CashLedgerEntry | undefined = undefined;
+
+      if (params.costMode === 'KEEP_UNIT_COST') {
+        if (batch.sourceType === 'ACCOUNT_REMAINDER') {
+          throw new Error('Pilihan B tidak tersedia untuk Sisa Robux Akun karena tidak memiliki entri pengeluaran kas ril. Gunakan Pilihan A.');
+        }
+        if (batch.fundingSource === 'LOAN') {
+          throw new Error('Pilihan B tidak tersedia untuk batch bersumber pinjaman modal demi mencegah inkonsistensi buku utang. Gunakan Pilihan A.');
+        }
+        if (batch.fundingSource === 'COMBINED') {
+          throw new Error('Pilihan B tidak tersedia untuk batch bermodal gabungan kas dan pinjaman demi mencegah inkonsistensi porsi dana. Gunakan Pilihan A.');
+        }
+
+        // Cari entri kas keluar terkait
+        relatedCash = await db.cashLedger
+          .filter((c) => c.sourceId === params.batchId && c.sourceType === 'RESTOCK' && c.type === 'OUT')
+          .first();
+
+        if (!relatedCash) {
+          throw new Error('Pilihan B tidak tersedia karena entri pengeluaran kas terkait tidak ditemukan di buku kas. Gunakan Pilihan A.');
+        }
+      }
+
+      let newTotalCost = batch.totalCostRupiah;
+      let newRemainingCost = batch.remainingCostRupiah;
+      let newUnitCostDisplay = batch.unitCostDisplay;
+      let deltaCost = 0;
+
+      if (params.costMode === 'KEEP_TOTAL_COST') {
+        // Pilihan A: Total modal tetap sama, harga satuan per Robux disesuaikan
+        newTotalCost = batch.totalCostRupiah;
+        newRemainingCost = Math.max(0, newTotalCost - usedCostRupiah);
+        newUnitCostDisplay = newInitial > 0 ? newTotalCost / newInitial : 0;
+        deltaCost = 0;
+      } else {
+        // Pilihan B: Harga satuan per Robux tetap sama, total modal berubah proporsional
+        const unitCost = oldInitial > 0 ? batch.totalCostRupiah / oldInitial : 0;
+        newTotalCost = Math.round(newInitial * unitCost);
+        deltaCost = newTotalCost - batch.totalCostRupiah;
+        newRemainingCost = Math.max(0, newTotalCost - usedCostRupiah);
+        newUnitCostDisplay = unitCost;
+
+        // Sesuaikan porsi kas sendiri pada batch jika ada
+        if (batch.ownFundsRupiah !== undefined) {
+          batch.ownFundsRupiah = Math.max(0, batch.ownFundsRupiah + deltaCost);
+        }
+
+        // Sesuaikan entri cashLedger
+        if (relatedCash) {
+          relatedCash.amountRupiah = Math.max(0, relatedCash.amountRupiah + deltaCost);
+          relatedCash.notes = `Restock ${newInitial.toLocaleString('id-ID')} R$ (Koreksi Jumlah)`;
+          await db.cashLedger.put(relatedCash);
+        }
+      }
+
+      // Update data batch
+      batch.initialRobux = newInitial;
+      batch.remainingRobux = newRemainingRobux;
+      batch.totalCostRupiah = newTotalCost;
+      batch.remainingCostRupiah = newRemainingCost;
+      batch.unitCostDisplay = newUnitCostDisplay;
+      batch.notes = batch.notes ? `${batch.notes} | Koreksi: ${reasonClean}` : `Koreksi: ${reasonClean}`;
+
+      await db.stockBatches.put(batch);
+
+      // Catat mutasi di stockMovements
+      const movement: StockMovement = {
+        id: `MOV-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        batchId: params.batchId,
+        type: 'EDIT',
+        robuxAmount: deltaRobux,
+        costAllocatedRupiah: deltaCost,
+        referenceId: params.batchId,
+        createdAt: now,
+        notes: `Koreksi jumlah: ${oldInitial} -> ${newInitial} R$ (${reasonClean})`,
+        balanceAfter: newRemainingRobux,
+      };
+      await db.stockMovements.put(movement);
+
+      // Catat di auditLogs
+      const audit: AuditLog = {
+        id: `LOG-${Date.now()}`,
+        action: 'EDIT_BATCH_ROBUX',
+        entity: 'stockBatches',
+        entityId: params.batchId,
+        details: `Koreksi batch ${params.batchId}: ${oldInitial} R$ -> ${newInitial} R$ (Sisa: ${newRemainingRobux} R$, Modal: Rp${batch.totalCostRupiah.toLocaleString('id-ID')} -> Rp${newTotalCost.toLocaleString('id-ID')}, Mode: ${params.costMode === 'KEEP_TOTAL_COST' ? 'Total modal tetap' : 'Harga/R$ tetap'}, Alasan: ${reasonClean})`,
+        createdAt: now,
+      };
+      await db.auditLogs.put(audit);
+
+      return { batch, movement };
+    });
+  },
+
+  /**
+   * Ambil Riwayat Mutasi Stok Lengkap dengan Perhitungan Saldo Berjalan (Running Balance) Dinamis
+   */
+  async getStockMovements(filter?: {
+    batchId?: string;
+    categoryTag?: 'ALL' | 'RESTOCK' | 'SALE' | 'PERSONAL_USE' | 'VOID' | 'ACCOUNT_REMAINDER' | 'MANUAL_ADJUST' | 'EDIT';
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{
+    movements: Array<StockMovement & {
+      batchSourceType?: string;
+      batchFundingSource?: string;
+      totalRunningBalance: number;
+      batchRunningBalance: number;
+      label: string;
+      categoryTag: 'RESTOCK' | 'SALE' | 'PERSONAL_USE' | 'VOID' | 'ACCOUNT_REMAINDER' | 'MANUAL_ADJUST' | 'EDIT';
+    }>;
+    totalCount: number;
+  }> {
+    const [allMovements, allBatches] = await Promise.all([
+      db.stockMovements.toArray(),
+      db.stockBatches.toArray(),
+    ]);
+
+    const batchMap = new Map<string, StockBatch>();
+    for (const b of allBatches) {
+      batchMap.set(b.id, b);
+    }
+
+    // Urutkan secara kronologis stabil (createdAt ascending, tie-break id ascending)
+    allMovements.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id.localeCompare(b.id);
+    });
+
+    let runningTotal = 0;
+    const runningPerBatch = new Map<string, number>();
+
+    const enrichedList: Array<StockMovement & {
+      batchSourceType?: string;
+      batchFundingSource?: string;
+      totalRunningBalance: number;
+      batchRunningBalance: number;
+      label: string;
+      categoryTag: 'RESTOCK' | 'SALE' | 'PERSONAL_USE' | 'VOID' | 'ACCOUNT_REMAINDER' | 'MANUAL_ADJUST' | 'EDIT';
+    }> = [];
+
+    for (const m of allMovements) {
+      const currentBatchBalance = runningPerBatch.get(m.batchId) || 0;
+      let deltaRobux = 0;
+
+      let label = 'Mutasi Stok';
+      let categoryTag: 'RESTOCK' | 'SALE' | 'PERSONAL_USE' | 'VOID' | 'ACCOUNT_REMAINDER' | 'MANUAL_ADJUST' | 'EDIT' = 'RESTOCK';
+
+      if (m.type === 'RESTOCK') {
+        deltaRobux = m.robuxAmount;
+        label = 'Restock Baru';
+        categoryTag = 'RESTOCK';
+      } else if (m.type === 'SALE') {
+        deltaRobux = -Math.abs(m.robuxAmount);
+        label = 'Penjualan';
+        categoryTag = 'SALE';
+      } else if (m.type === 'PERSONAL_USE') {
+        deltaRobux = -Math.abs(m.robuxAmount);
+        label = 'Pemakaian Pribadi';
+        categoryTag = 'PERSONAL_USE';
+      } else if (m.type === 'VOID_RESTORE') {
+        deltaRobux = Math.abs(m.robuxAmount);
+        label = 'Batal / Pengembalian';
+        categoryTag = 'VOID';
+      } else if (m.type === 'EDIT') {
+        deltaRobux = m.robuxAmount;
+        label = 'Koreksi Jumlah Batch';
+        categoryTag = 'EDIT';
+      } else if (m.type === 'RECONCILE_ADD') {
+        const isManualAdjust = m.referenceId?.startsWith('ADJUST') || m.notes?.toLowerCase().includes('penyesuaian');
+        if (isManualAdjust) {
+          deltaRobux = m.robuxAmount;
+          label = 'Penyesuaian Manual';
+          categoryTag = 'MANUAL_ADJUST';
+        } else {
+          deltaRobux = m.robuxAmount;
+          label = 'Sisa Robux Akun';
+          categoryTag = 'ACCOUNT_REMAINDER';
+        }
+      }
+
+      runningTotal += deltaRobux;
+      const newBatchBalance = currentBatchBalance + deltaRobux;
+      runningPerBatch.set(m.batchId, newBatchBalance);
+
+      const batchInfo = batchMap.get(m.batchId);
+
+      enrichedList.push({
+        ...m,
+        totalRunningBalance: runningTotal,
+        batchRunningBalance: newBatchBalance,
+        label,
+        categoryTag,
+        batchSourceType: batchInfo?.sourceType,
+        batchFundingSource: batchInfo?.fundingSource,
+      });
+    }
+
+    // Terapkan filter jika ada
+    let filtered = enrichedList;
+
+    if (filter?.batchId) {
+      filtered = filtered.filter((m) => m.batchId === filter.batchId);
+    }
+    if (filter?.categoryTag && filter.categoryTag !== 'ALL') {
+      filtered = filtered.filter((m) => m.categoryTag === filter.categoryTag);
+    }
+    if (filter?.startDate) {
+      filtered = filtered.filter((m) => m.createdAt.substring(0, 10) >= filter.startDate!);
+    }
+    if (filter?.endDate) {
+      filtered = filtered.filter((m) => m.createdAt.substring(0, 10) <= filter.endDate!);
+    }
+
+    // Urutkan terbaru di atas untuk tampilan UI
+    filtered.reverse();
+
+    return {
+      movements: filtered,
+      totalCount: filtered.length,
+    };
+  },
+
+  /**
    * Sesuaikan sisa Robux batch yang masih ada di akun (misal sisa 50 R$)
    */
   async adjustBatchRemainingStock(batchId: string, newRemainingRobux: number, notes?: string): Promise<StockBatch> {
