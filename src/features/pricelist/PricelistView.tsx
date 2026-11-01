@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { RatePreset } from '../../db/schema';
+import { NumberInput } from '../../components/NumberInput';
 import { formatRupiah, formatNumber, formatDecimal } from '../../utils/formatters';
 import { showSuccessAlert, showWarningAlert } from '../../utils/alert';
 import { playTapSound, playSuccessSound } from '../../utils/sound';
@@ -188,25 +189,16 @@ export const PricelistView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium theme-text-secondary">
-              Rate Jual per 1 Robux (Rp)
-            </label>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                Rp
-              </span>
-              <input
-                type="number"
-                step="any"
-                inputMode="decimal"
-                placeholder="Contoh: 150 atau 160"
-                value={rate}
-                onChange={(e) => setRate(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-base theme-text-primary focus:outline-none focus:border-cyan-500 font-mono font-bold"
-              />
-            </div>
-          </div>
+          <NumberInput
+            label="Rate Jual per 1 Robux (Rp)"
+            prefix="Rp"
+            suffix="/R$"
+            allowDecimals={true}
+            maxDecimals={2}
+            placeholder="Contoh: 150 atau 160"
+            value={rate === '' ? '' : parseFloat(rate)}
+            onChange={(val) => setRate(val === '' ? '' : String(val))}
+          />
 
           {/* Preset Rate Tersimpan */}
           <div className="space-y-1.5">
@@ -288,23 +280,18 @@ export const PricelistView: React.FC = () => {
         </div>
 
         {/* Input Tambah Baris Custom */}
-        <form onSubmit={handleAddCustomRobux} className="flex gap-2">
-          <div className="relative flex-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400">
-              R$
-            </span>
-            <input
-              type="number"
-              inputMode="numeric"
+        <form onSubmit={handleAddCustomRobux} className="flex items-end gap-2">
+          <div className="flex-1">
+            <NumberInput
+              suffix="R$"
               placeholder="Ketik nominal Robux custom (contoh: 250, 750, 1500...)"
-              value={newRobuxInput}
-              onChange={(e) => setNewRobuxInput(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-cyan-500 font-mono"
+              value={newRobuxInput === '' ? '' : parseInt(newRobuxInput, 10)}
+              onChange={(val) => setNewRobuxInput(val === '' ? '' : String(val))}
             />
           </div>
           <button
             type="submit"
-            className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shrink-0 active:scale-98"
+            className="h-[42px] px-3.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shrink-0 active:scale-98"
           >
             <Plus size={14} />
             <span>Tambah</span>

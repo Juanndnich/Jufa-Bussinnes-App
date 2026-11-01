@@ -507,7 +507,7 @@ export async function promptUpdateDialog(
       <div class="space-y-3.5 text-xs">
         <div class="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-mono">
           <span>Versi Sekarang: <strong>v${updateInfo.currentVersion}</strong></span>
-          <span>➜</span>
+          <span class="font-bold">&rarr;</span>
           <span>Versi Baru: <strong>v${updateInfo.version}</strong></span>
         </div>
 

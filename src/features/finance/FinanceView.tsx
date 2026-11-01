@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { repository, getTodayKey } from '../../db/repository';
 import { CashLedgerEntry, Category } from '../../db/schema';
+import { NumberInput } from '../../components/NumberInput';
 import { formatRupiah, formatNumber, formatDateJakarta } from '../../utils/formatters';
 import { showSuccessAlert, showErrorAlert, showWarningAlert, showConfirmDialog } from '../../utils/alert';
 import { playTapSound, playSuccessSound, playDeleteSound } from '../../utils/sound';
@@ -683,25 +684,14 @@ export const FinanceView: React.FC = () => {
             </div>
 
             {/* Nominal */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium theme-text-secondary">
-                Nominal Uang (Rp)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                  Rp
-                </span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={entryAmount}
-                  onChange={(e) => setEntryAmount(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                  required
-                />
-              </div>
-            </div>
+            <NumberInput
+              label="Nominal Uang (Rp)"
+              isCurrency={true}
+              placeholder="0"
+              value={entryAmount === '' ? '' : parseInt(entryAmount, 10)}
+              onChange={(val) => setEntryAmount(val === '' ? '' : String(val))}
+              required
+            />
 
             {/* Tanggal */}
             <div className="space-y-1.5">
@@ -965,25 +955,14 @@ export const FinanceView: React.FC = () => {
             </div>
 
             {/* Nominal */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium theme-text-secondary">
-                Nominal Uang (Rp)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                  Rp
-                </span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={editCashAmount}
-                  onChange={(e) => setEditCashAmount(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                  required
-                />
-              </div>
-            </div>
+            <NumberInput
+              label="Nominal Uang (Rp)"
+              isCurrency={true}
+              placeholder="0"
+              value={editCashAmount === '' ? '' : parseInt(editCashAmount, 10)}
+              onChange={(val) => setEditCashAmount(val === '' ? '' : String(val))}
+              required
+            />
 
             {/* Tanggal */}
             <div className="space-y-1.5">

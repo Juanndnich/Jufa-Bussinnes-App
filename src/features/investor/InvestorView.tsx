@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { Investor, InvestorPayout } from '../../db/schema';
+import { NumberInput } from '../../components/NumberInput';
 import { formatRupiah, formatNumber, formatDecimal, formatDateJakarta } from '../../utils/formatters';
 import { showSuccessAlert, showErrorAlert, showWarningAlert, showConfirmDialog } from '../../utils/alert';
 import { playTapSound, playSuccessSound, playDeleteSound } from '../../utils/sound';
@@ -469,21 +470,13 @@ export const InvestorView: React.FC = () => {
         {/* Input Laba Kustom jika Mode Target Bebas */}
         {simulationMode === 'CUSTOM' && (
           <div className="p-3 rounded-xl theme-bg-surface border theme-border space-y-1.5 animate-in fade-in duration-150">
-            <label className="text-xs font-semibold theme-text-primary">
-              Masukkan Target Laba Bersih yang Ingin Disimulasikan:
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                Rp
-              </span>
-              <input
-                type="number"
-                placeholder="Contoh: 1000000"
-                value={customProfitInput}
-                onChange={(e) => setCustomProfitInput(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-lg theme-bg-input border theme-border text-xs font-mono font-bold theme-text-primary focus:outline-none focus:border-emerald-500"
-              />
-            </div>
+            <NumberInput
+              label="Masukkan Target Laba Bersih yang Ingin Disimulasikan:"
+              isCurrency={true}
+              placeholder="Contoh: 1000000"
+              value={customProfitInput === '' ? '' : parseInt(customProfitInput, 10)}
+              onChange={(val) => setCustomProfitInput(val === '' ? '' : String(val))}
+            />
           </div>
         )}
 
@@ -736,35 +729,25 @@ export const InvestorView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium theme-text-secondary">
-                    Modal Masuk (Rp)
-                  </label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    placeholder="0"
-                    value={formCapital}
-                    onChange={(e) => setFormCapital(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-purple-500 font-mono font-bold"
-                  />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <NumberInput
+                  label="Modal Masuk (Rp)"
+                  isCurrency={true}
+                  placeholder="0"
+                  value={formCapital === '' ? '' : parseInt(formCapital, 10)}
+                  onChange={(val) => setFormCapital(val === '' ? '' : String(val))}
+                />
 
-                <div className="space-y-1">
-                  <label className="text-xs font-medium theme-text-secondary">
-                    Bagi Hasil (%) *
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="Contoh: 30"
-                    value={formPercentage}
-                    onChange={(e) => setFormPercentage(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-purple-500 font-mono font-bold"
-                    required
-                  />
-                </div>
+                <NumberInput
+                  label="Bagi Hasil (%) *"
+                  suffix="%"
+                  allowDecimals={true}
+                  maxDecimals={2}
+                  placeholder="Contoh: 30"
+                  value={formPercentage === '' ? '' : parseFloat(formPercentage)}
+                  onChange={(val) => setFormPercentage(val === '' ? '' : String(val))}
+                  required
+                />
               </div>
 
               <div className="space-y-1">
@@ -862,20 +845,14 @@ export const InvestorView: React.FC = () => {
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-medium theme-text-secondary">
-                  Nominal Uang Diserahkan (Rp) *
-                </label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={payoutAmount}
-                  onChange={(e) => setPayoutAmount(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-sm font-mono font-bold theme-text-primary focus:outline-none focus:border-emerald-500"
-                  required
-                />
-              </div>
+              <NumberInput
+                label="Nominal Uang Diserahkan (Rp) *"
+                isCurrency={true}
+                placeholder="0"
+                value={payoutAmount === '' ? '' : parseInt(payoutAmount, 10)}
+                onChange={(val) => setPayoutAmount(val === '' ? '' : String(val))}
+                required
+              />
 
               <div className="space-y-1">
                 <label className="text-xs font-medium theme-text-secondary">

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { repository } from '../../db/repository';
 import { RatePreset, StockBatch } from '../../db/schema';
+import { NumberInput } from '../../components/NumberInput';
 import {
   calculateMoneyToRobux,
   calculateRobuxToMoney,
@@ -509,56 +510,22 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
               </div>
 
               {/* Input 1: Jumlah Robux */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium theme-text-secondary">
-                    Jumlah Robux yang Dijual (R$)
-                  </label>
-                  {parsedFinderRobux > 0 && (
-                    <span className="text-[11px] font-mono font-bold text-amber-400">
-                      = {formatNumber(parsedFinderRobux)} R$
-                    </span>
-                  )}
-                </div>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400 font-mono">
-                    R$
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Contoh: 1k, 1000, 500, 2.5k"
-                    value={rateFinderRobuxInput}
-                    onChange={(e) => setRateFinderRobuxInput(e.target.value)}
-                    className="w-full pl-11 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                  />
-                </div>
-              </div>
+              <NumberInput
+                label="Jumlah Robux yang Dijual (R$)"
+                suffix="R$"
+                value={parsedFinderRobux || ''}
+                onChange={(val) => setRateFinderRobuxInput(val === '' ? '' : String(val))}
+                placeholder="Contoh: 1k, 1000, 500, 2.5k"
+              />
 
               {/* Input 2: Total Harga Jual */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium theme-text-secondary">
-                    Total Harga yang Dijual Orang Lain (Rp)
-                  </label>
-                  {parsedFinderPrice > 0 && (
-                    <span className="text-[11px] font-mono font-bold text-emerald-400">
-                      = {formatRupiah(parsedFinderPrice)}
-                    </span>
-                  )}
-                </div>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted font-mono">
-                    Rp
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Contoh: 13k, 13000, 150k, 80k"
-                    value={rateFinderPriceInput}
-                    onChange={(e) => setRateFinderPriceInput(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                  />
-                </div>
-              </div>
+              <NumberInput
+                label="Total Harga yang Dijual Orang Lain (Rp)"
+                isCurrency={true}
+                value={parsedFinderPrice || ''}
+                onChange={(val) => setRateFinderPriceInput(val === '' ? '' : String(val))}
+                placeholder="Contoh: 13k, 13000, 150k, 80k"
+              />
 
               <p className="text-[11px] theme-text-muted leading-relaxed pt-1">
                 Ketik jumlah Robux dan harga yang ditawarkan orang lain. Mendukung format angka langsung atau notasi cepat seperti <span className="font-mono text-emerald-400 font-semibold">1k</span>, <span className="font-mono text-emerald-400 font-semibold">130k</span>, atau <span className="font-mono text-emerald-400 font-semibold">130 ribu</span>.
@@ -756,25 +723,16 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                         </span>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium theme-text-secondary">
-                          Target Rate Jual Kembali (Rp / R$)
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                            Rp
-                          </span>
-                          <input
-                            type="number"
-                            step="any"
-                            inputMode="decimal"
-                            placeholder="Ketik rate jual kembali..."
-                            value={resellTargetRate}
-                            onChange={(e) => setResellTargetRate(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                          />
-                        </div>
-                      </div>
+                      <NumberInput
+                        label="Target Rate Jual Kembali (Rp / R$)"
+                        prefix="Rp"
+                        suffix="/R$"
+                        allowDecimals={true}
+                        maxDecimals={2}
+                        placeholder="Ketik rate jual kembali..."
+                        value={resellTargetRate === '' ? '' : parseFloat(resellTargetRate)}
+                        onChange={(val) => setResellTargetRate(val === '' ? '' : String(val))}
+                      />
 
                       {resellSimulation && (
                         <div className="space-y-2 pt-1">
@@ -886,51 +844,27 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
 
           {/* Input 1: Nominal Uang (Mode 1) atau Jumlah Robux (Mode 2) */}
           {calcMode === 'moneyToRobux' ? (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium theme-text-secondary">
-                Budget Pembeli (Nominal Uang Rp)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                  Rp
-                </span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={inputMoney}
-                  onChange={(e) => setInputMoney(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                />
-              </div>
-            </div>
+            <NumberInput
+              label="Budget Pembeli (Nominal Uang Rp)"
+              isCurrency={true}
+              placeholder="0"
+              value={inputMoney === '' ? '' : parseInt(inputMoney, 10)}
+              onChange={(val) => setInputMoney(val === '' ? '' : String(val))}
+            />
           ) : (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium theme-text-secondary">
-                Jumlah Robux (R$)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400">
-                  R$
-                </span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={inputRobux}
-                  onChange={(e) => setInputRobux(e.target.value)}
-                  className="w-full pl-11 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                />
-              </div>
-            </div>
+            <NumberInput
+              label="Jumlah Robux (R$)"
+              suffix="R$"
+              placeholder="0"
+              value={inputRobux === '' ? '' : parseInt(inputRobux, 10)}
+              onChange={(val) => setInputRobux(val === '' ? '' : String(val))}
+            />
           )}
 
           {/* Input 2: Rate Jual */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-medium theme-text-secondary">
-                Rate Jual (Rp per 1 Robux)
-              </label>
+              <span />
               <button
                 type="button"
                 onClick={() => setShowAddPreset(!showAddPreset)}
@@ -940,20 +874,16 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                 <span>Preset Favorit</span>
               </button>
             </div>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                Rp
-              </span>
-              <input
-                type="number"
-                step="any"
-                inputMode="decimal"
-                placeholder="0"
-                value={inputRate}
-                onChange={(e) => setInputRate(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 rounded-xl theme-bg-input border theme-border text-sm theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-              />
-            </div>
+            <NumberInput
+              label="Rate Jual (Rp per 1 Robux)"
+              prefix="Rp"
+              suffix="/R$"
+              allowDecimals={true}
+              maxDecimals={2}
+              placeholder="0"
+              value={inputRate === '' ? '' : parseFloat(inputRate)}
+              onChange={(val) => setInputRate(val === '' ? '' : String(val))}
+            />
           </div>
 
           {/* Quick Rate Presets List */}
@@ -1168,24 +1098,17 @@ export const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </button>
                 )}
               </div>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                  Rp
-                </span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder={autoRevenue > 0 ? `Otomatis: ${autoRevenue}` : 'Ketik uang bayar langsung...'}
-                  value={customRevenue}
-                  onChange={(e) => setCustomRevenue(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 rounded-lg theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-                />
-              </div>
-              <p className="text-[10px] theme-text-muted">
-                {isCustomRevenue
-                  ? `Menggunakan harga ketik sendiri ${formatRupiah(targetRevenue)}. Rate dihitung Rp${formatDecimal(effectiveRate, 2)}/R$.`
-                  : 'Kosongkan jika ingin total uang bayar dihitung otomatis dari rate.'}
-              </p>
+              <NumberInput
+                isCurrency={true}
+                placeholder={autoRevenue > 0 ? `Otomatis: ${autoRevenue}` : 'Ketik uang bayar langsung...'}
+                value={customRevenue === '' ? '' : parseInt(customRevenue, 10)}
+                onChange={(val) => setCustomRevenue(val === '' ? '' : String(val))}
+                helperText={
+                  isCustomRevenue
+                    ? `Menggunakan harga ketik sendiri ${formatRupiah(targetRevenue)}. Rate dihitung Rp${formatDecimal(effectiveRate, 2)}/R$.`
+                    : 'Kosongkan jika ingin total uang bayar dihitung otomatis dari rate.'
+                }
+              />
             </div>
 
             {/* Detail Kembalian atau Rate Efektif */}

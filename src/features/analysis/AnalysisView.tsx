@@ -17,6 +17,7 @@ import {
   simulateProfitScenario,
 } from '../../domain/calculations';
 import { formatRupiah, formatNumber, formatDecimal, formatDateJakarta } from '../../utils/formatters';
+import { NumberInput } from '../../components/NumberInput';
 import { showSuccessAlert, showErrorAlert, showWarningAlert } from '../../utils/alert';
 import { playTapSound, playSuccessSound } from '../../utils/sound';
 
@@ -240,21 +241,16 @@ export const AnalysisView: React.FC = () => {
           </div>
 
           {/* Input Target Rate */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs theme-text-muted">Target Rate:</span>
-            <div className="relative w-36">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold theme-text-muted">
-                Rp
-              </span>
-              <input
-                type="number"
-                step="any"
-                placeholder="0"
-                value={targetRateInput}
-                onChange={(e) => setTargetRateInput(e.target.value)}
-                className="w-full pl-8 pr-2.5 py-1.5 rounded-xl theme-bg-input border theme-border text-xs theme-text-primary focus:outline-none focus:border-emerald-500 font-mono font-bold"
-              />
-            </div>
+          <div className="w-44">
+            <NumberInput
+              prefix="Rp"
+              suffix="/R$"
+              allowDecimals={true}
+              maxDecimals={2}
+              placeholder="0"
+              value={targetRateInput === '' ? '' : parseFloat(targetRateInput)}
+              onChange={(val) => setTargetRateInput(val === '' ? '' : String(val))}
+            />
           </div>
         </div>
 
