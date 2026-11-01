@@ -18,6 +18,7 @@ import { repository } from './db/repository';
 import { AppSettings } from './db/schema';
 import { applyTheme } from './utils/theme';
 import { playTapSound } from './utils/sound';
+import { checkForUpdates, cleanupOldUpdateApks } from './services/updateChecker';
 
 export const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
@@ -56,6 +57,17 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     refreshGlobalState();
+
+    // Pembersihan berkas APK update lama & Cek pembaruan berkala (maks 1x per 6 jam)
+    cleanupOldUpdateApks().catch(() => {});
+    const timer = setTimeout(() => {
+      checkForUpdates({
+        manual: false,
+        onNavigateToBackup: () => handleSelectTab('settings'),
+      }).catch(() => {});
+    }, 2500);
+
+    return () => clearTimeout(timer);
   }, [refreshGlobalState]);
 
   // Handler pergantian tab dengan suara tekan
@@ -150,7 +162,7 @@ export const App: React.FC = () => {
                   <SettingsView onSettingsChanged={refreshGlobalState} />
                 )}
 
-                {currentTab === 'info' && <AppInfoView />}
+                {currentTab === 'info' && <AppInfoView onNavigateTab={handleSelectTab} />}
               </motion.div>
             </AnimatePresence>
           </main>

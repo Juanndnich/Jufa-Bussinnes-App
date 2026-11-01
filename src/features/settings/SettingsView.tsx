@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Capacitor } from '@capacitor/core';
 import {
   Settings,
   Moon,
@@ -45,6 +46,14 @@ import {
 } from '../../utils/alert';
 import { testGoogleSheetsUrl, syncAllDataToGoogleSheets, initializeGoogleSheetTable, getSpreadsheetOpenUrl, GOOGLE_APPS_SCRIPT_TEMPLATE } from '../../utils/googleSheets';
 
+import {
+  subscribeUpdateState,
+  checkForUpdates,
+  getInstalledVersion,
+  promptUpdateDialog,
+  UpdateInfo,
+} from '../../services/updateChecker';
+
 const APP_VERSION = '2.1.0';
 
 // Zod Schema untuk validasi file backup
@@ -70,6 +79,25 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged }) => {
+  const [currentVersion, setCurrentVersion] = useState<string>('2.1.0');
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  useEffect(() => {
+    getInstalledVersion().then(setCurrentVersion);
+    const unsub = subscribeUpdateState(setUpdateInfo);
+    return () => unsub();
+  }, []);
+
+  const handleCheckUpdate = async () => {
+    playTapSound();
+    setIsCheckingUpdate(true);
+    try {
+      await checkForUpdates({ manual: true });
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [storeName, setStoreName] = useState('JufaStore');
   const [themeMode, setThemeMode] = useState<'system' | 'light' | 'dark'>('dark');
@@ -802,10 +830,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
           </div>
         </div>
 
-        {/* Versi Badge */}
-        <div className="flex items-center gap-2 self-start sm:self-auto px-3 py-1 rounded-xl theme-bg-card border theme-border text-xs font-mono theme-text-secondary">
-          <span>Versi:</span>
-          <span className="font-bold text-emerald-500 dark:text-emerald-400">v{APP_VERSION}</span>
+        {/* Versi Badge & Cek Pembaruan */}
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <div className="flex items-center gap-2 px-3 py-1 rounded-xl theme-bg-card border theme-border text-xs font-mono theme-text-secondary">
+            <span>Versi:</span>
+            <span className="font-bold text-emerald-500 dark:text-emerald-400">v{currentVersion}</span>
+          </div>
+
+          {Capacitor.isNativePlatform() && (
+            updateInfo?.hasUpdate ? (
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  promptUpdateDialog(updateInfo);
+                }}
+                className="px-3 py-1 rounded-xl text-xs font-bold bg-amber-500 text-zinc-950 hover:bg-amber-400 transition flex items-center gap-1.5 shadow-sm animate-pulse"
+              >
+                <span>🚀 Update v{updateInfo.version}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={isCheckingUpdate}
+                onClick={handleCheckUpdate}
+                className="px-3 py-1 rounded-xl text-xs font-medium theme-bg-card border theme-border hover:theme-border-strong theme-text-secondary hover:theme-text-primary transition flex items-center gap-1.5"
+              >
+                <RefreshCw size={12} className={isCheckingUpdate ? 'animate-spin text-emerald-400' : ''} />
+                <span>{isCheckingUpdate ? 'Mengecek...' : 'Cek Update'}</span>
+              </button>
+            )
+          )}
         </div>
       </div>
 
