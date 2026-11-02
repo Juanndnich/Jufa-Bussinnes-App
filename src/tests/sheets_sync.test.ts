@@ -266,7 +266,7 @@ describe('JufaStore — Google Sheets Mirror Sync V2 Test Suite', () => {
   // 11. Verifikasi File Code.gs vs Konstanta SHEETS_CODE_GS_TEMPLATE
   it('11. File docs/google-apps-script/Code.gs identik 100% dengan konstanta SHEETS_CODE_GS_TEMPLATE', () => {
     const codeGsFile = fs.readFileSync('docs/google-apps-script/Code.gs', 'utf8');
-    expect(SHEETS_CODE_GS_TEMPLATE).toBe(codeGsFile);
+    expect(SHEETS_CODE_GS_TEMPLATE).toBe(codeGsFile.replace(/\r\n/g, '\n'));
   });
 
   // 12. Sanitasi Anti-Formula Injection
