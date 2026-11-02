@@ -22,8 +22,11 @@ import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { playTapSound, resumeAudioContext } from './utils/sound';
 import { checkForUpdates, cleanupOldUpdateApks } from './services/updateChecker';
+import { useNetworkStatus } from './hooks/useNetworkStatus';
+import { initSyncService } from './services/syncService';
 
 export const App: React.FC = () => {
+  useNetworkStatus();
   const [showSplash, setShowSplash] = useState(true);
   const [currentTab, setCurrentTab] = useState<NavItem>('dashboard');
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -65,6 +68,12 @@ export const App: React.FC = () => {
 
     // Pembersihan sekali berkas sisa APK update lama pada startup (try/catch aman)
     cleanupOldUpdateApks().catch(() => {});
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(() => {});
+    }
+
+    // Inisialisasi service antrean sinkronisasi Google Sheets
+    const cleanupSyncService = initSyncService();
 
     // Pastikan AudioContext di-resume pada interaksi pengguna pertama
     const handleFirstInteraction = () => {
@@ -121,6 +130,7 @@ export const App: React.FC = () => {
 
     return () => {
       clearTimeout(timer);
+      cleanupSyncService();
       window.removeEventListener('pointerdown', handleFirstInteraction);
       window.removeEventListener('keydown', handleFirstInteraction);
       if (backButtonListener) {

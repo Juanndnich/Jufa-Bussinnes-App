@@ -89,3 +89,22 @@ export const showCustomAlert = async (options: SweetAlertOptions) => {
     ...options,
   });
 };
+
+export const showToast = async (title: string, icon: 'success' | 'info' | 'warning' | 'error' = 'info') => {
+  const theme = getThemeSwalConfig();
+  return Swal.fire({
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 3000,
+    timerProgressBar: true,
+    icon,
+    title,
+    background: theme.background,
+    color: theme.color,
+    customClass: {
+      popup: 'rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl text-xs py-2 px-3',
+      title: 'text-xs font-semibold text-zinc-900 dark:text-zinc-100',
+    },
+  });
+};
