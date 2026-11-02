@@ -12,6 +12,10 @@ export interface AppSettings {
   googleSpreadsheetDocUrl?: string;
   autoSyncFrequency?: 'REALTIME' | 'DAILY' | 'MONTHLY' | 'MANUAL';
   lastSyncAt?: string;
+  googleSheetsToken?: string;
+  lastSyncStatus?: 'SUCCESS' | 'ERROR' | 'SYNCING';
+  lastSyncError?: string;
+  autoSyncEnabled?: boolean;
 }
 
 export interface RatePreset {
@@ -164,4 +168,17 @@ export interface Loan {
   notes?: string;
   createdAt: string;
   payments: LoanPayment[];
+}
+
+export type SyncOperation = 'upsert' | 'delete';
+
+export interface SyncQueueItem {
+  seq?: number;
+  tableName: string;
+  recordId: string;
+  operation: SyncOperation;
+  createdAt: string;
+  retryCount: number;
+  lastError?: string;
+  nextRetryAt?: string;
 }

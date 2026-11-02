@@ -12,6 +12,7 @@ import {
   Investor,
   InvestorPayout,
   Loan,
+  SyncQueueItem,
 } from './schema';
 
 export class JufaStoreDatabase extends Dexie {
@@ -27,6 +28,7 @@ export class JufaStoreDatabase extends Dexie {
   investors!: Table<Investor, string>;
   investorPayouts!: Table<InvestorPayout, string>;
   loans!: Table<Loan, string>;
+  syncQueue!: Table<SyncQueueItem, number>;
 
   constructor() {
     super('JufaStoreDB');
@@ -78,6 +80,10 @@ export class JufaStoreDatabase extends Dexie {
     // Versi 4: Index sourceId pada cashLedger untuk relasi transaksi & hapus batch
     this.version(4).stores({
       cashLedger: 'id, dateKey, createdAt, type, sourceType, sourceId, categoryId',
+    });
+    // Versi 5: Penambahan tabel syncQueue untuk sinkronisasi Google Sheets berbasis antrean
+    this.version(5).stores({
+      syncQueue: '++seq, tableName, recordId, createdAt, nextRetryAt',
     });
   }
 }

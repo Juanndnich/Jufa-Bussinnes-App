@@ -13,6 +13,8 @@ import {
   InvestorPayout,
   Loan,
   LoanPayment,
+  SyncOperation,
+  SyncQueueItem,
 } from './schema';
 import {
   allocateFifoCost,
@@ -28,6 +30,72 @@ export function getTodayKey(): string {
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+
+let onDataMutatedListener: (() => void) | null = null;
+
+export function setOnDataMutatedListener(listener: (() => void) | null) {
+  onDataMutatedListener = listener;
+}
+
+export function notifyDataMutated() {
+  if (onDataMutatedListener) {
+    try {
+      onDataMutatedListener();
+    } catch {}
+  }
+}
+
+/**
+ * Helper internal untuk antrean sinkronisasi Google Sheets (Atomik dalam transaksi Dexie)
+ * Memadatkan antrean: banyak perubahan pada satu record = satu entri terpadu
+ */
+export async function enqueueSync(
+  tableName: string,
+  recordId: string,
+  operation: SyncOperation
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const existing = await db.syncQueue
+    .where('recordId')
+    .equals(recordId)
+    .filter((item) => item.tableName === tableName)
+    .first();
+
+  if (existing && existing.seq !== undefined) {
+    if (existing.operation === 'upsert' && operation === 'delete') {
+      // Record dibuat lalu dihapus: perbarui operasi menjadi delete
+      await db.syncQueue.update(existing.seq, {
+        operation: 'delete',
+        createdAt: nowIso,
+        retryCount: 0,
+        lastError: undefined,
+        nextRetryAt: undefined,
+      });
+      setTimeout(notifyDataMutated, 0);
+      return;
+    }
+    // Jika sudah ada upsert dan sekarang upsert lagi: perbarui timestamp
+    await db.syncQueue.update(existing.seq, {
+      operation,
+      createdAt: nowIso,
+      retryCount: 0,
+      lastError: undefined,
+      nextRetryAt: undefined,
+    });
+    setTimeout(notifyDataMutated, 0);
+    return;
+  }
+
+  await db.syncQueue.add({
+    tableName,
+    recordId,
+    operation,
+    createdAt: nowIso,
+    retryCount: 0,
+  });
+  setTimeout(notifyDataMutated, 0);
 }
 
 export const repository = {
@@ -52,6 +120,72 @@ export const repository = {
 
   async updateSettings(updates: Partial<AppSettings>): Promise<void> {
     await db.settings.update('current', updates);
+  },
+
+  // ===================== GOOGLE SHEETS SYNC QUEUE =====================
+  async getPendingSyncQueue(limit: number = 50): Promise<SyncQueueItem[]> {
+    const nowIso = new Date().toISOString();
+    return db.syncQueue
+      .filter((item) => !item.nextRetryAt || item.nextRetryAt <= nowIso)
+      .limit(limit)
+      .toArray();
+  },
+
+  async getPendingSyncCount(): Promise<number> {
+    return db.syncQueue.count();
+  },
+
+  async removeSyncQueueItems(seqs: number[]): Promise<void> {
+    if (seqs.length === 0) return;
+    await db.syncQueue.bulkDelete(seqs);
+  },
+
+  async updateSyncQueueItemFailure(
+    seq: number,
+    errorMsg: string,
+    retryCount: number,
+    nextRetryAt: string
+  ): Promise<void> {
+    await db.syncQueue.update(seq, {
+      lastError: errorMsg,
+      retryCount,
+      nextRetryAt,
+    });
+  },
+
+  async clearSyncQueue(): Promise<void> {
+    await db.syncQueue.clear();
+  },
+
+  /**
+   * Mengisi ulang antrean dengan seluruh data lokal (untuk Sinkron Penuh atau pasca-restore)
+   */
+  async queueFullSync(): Promise<number> {
+    const [sales, batches, cash, loans, investors, usages] = await Promise.all([
+      db.sales.toArray(),
+      db.stockBatches.toArray(),
+      db.cashLedger.toArray(),
+      db.loans.toArray(),
+      db.investors.toArray(),
+      db.personalUsages.toArray(),
+    ]);
+
+    const nowIso = new Date().toISOString();
+    const items: SyncQueueItem[] = [];
+
+    for (const s of sales) items.push({ tableName: 'sales', recordId: s.id, operation: 'upsert', createdAt: nowIso, retryCount: 0 });
+    for (const b of batches) items.push({ tableName: 'stockBatches', recordId: b.id, operation: 'upsert', createdAt: nowIso, retryCount: 0 });
+    for (const c of cash) items.push({ tableName: 'cashLedger', recordId: c.id, operation: 'upsert', createdAt: nowIso, retryCount: 0 });
+    for (const l of loans) items.push({ tableName: 'loans', recordId: l.id, operation: 'upsert', createdAt: nowIso, retryCount: 0 });
+    for (const i of investors) items.push({ tableName: 'investors', recordId: i.id, operation: 'upsert', createdAt: nowIso, retryCount: 0 });
+    for (const u of usages) items.push({ tableName: 'personalUsages', recordId: u.id, operation: 'upsert', createdAt: nowIso, retryCount: 0 });
+
+    await db.transaction('rw', [db.syncQueue], async () => {
+      await db.syncQueue.clear();
+      await db.syncQueue.bulkAdd(items);
+    });
+
+    return items.length;
   },
 
   // ===================== RATE PRESETS =====================
@@ -239,7 +373,7 @@ export const repository = {
       createdAt: now,
     };
 
-    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs, db.loans], async () => {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs, db.loans, db.syncQueue], async () => {
       await db.stockBatches.put(newBatch);
       await db.stockMovements.put(movement);
       if (newLoan) {
@@ -248,6 +382,7 @@ export const repository = {
       if (ownFunds > 0) {
         // Hanya memotong kas toko untuk porsi uang sendiri
         await db.cashLedger.put(cashEntry);
+        await enqueueSync('cashLedger', cashEntry.id, 'upsert');
       }
       await db.auditLogs.put(audit);
     });
@@ -304,7 +439,7 @@ export const repository = {
       createdAt: now,
     };
 
-    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.auditLogs], async () => {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.auditLogs, db.syncQueue], async () => {
       await db.stockBatches.put(newBatch);
       await db.stockMovements.put(movement);
       await db.auditLogs.put(audit);
@@ -322,6 +457,9 @@ export const repository = {
 
     batch.notes = notes.trim() || undefined;
     await db.stockBatches.put(batch);
+      await enqueueSync('stockBatches', batch.id, 'upsert');
+      await enqueueSync('stockBatches', batch.id, 'upsert');
+      await enqueueSync('stockBatches', batch.id, 'upsert');
 
     const audit: AuditLog = {
       id: `LOG-${Date.now()}`,
@@ -339,7 +477,7 @@ export const repository = {
    * Jika batch bertipe RESTOCK, entri pengeluaran kas otomatis terkait akan dibatalkan/dihapus.
    */
   async deleteStockBatch(batchId: string): Promise<void> {
-    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs, db.loans], async () => {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs, db.loans, db.syncQueue], async () => {
       const batch = await db.stockBatches.get(batchId);
       if (!batch) throw new Error('Batch tidak ditemukan');
 
@@ -370,6 +508,7 @@ export const repository = {
 
       // Hapus batch
       await db.stockBatches.delete(batchId);
+      await enqueueSync('stockBatches', batchId, 'delete');
 
       // Audit Log
       const audit: AuditLog = {
@@ -406,7 +545,7 @@ export const repository = {
 
     const now = new Date().toISOString();
 
-    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs, db.loans], async () => {
+    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.cashLedger, db.auditLogs, db.loans, db.syncQueue], async () => {
       const batch = await db.stockBatches.get(params.batchId);
       if (!batch) {
         throw new Error('Batch tidak ditemukan.');
@@ -669,7 +808,7 @@ export const repository = {
   async adjustBatchRemainingStock(batchId: string, newRemainingRobux: number, notes?: string): Promise<StockBatch> {
     const targetRobux = Math.max(0, Math.floor(newRemainingRobux || 0));
 
-    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.auditLogs], async () => {
+    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.auditLogs, db.syncQueue], async () => {
       const batch = await db.stockBatches.get(batchId);
       if (!batch) throw new Error('Batch tidak ditemukan');
 
@@ -689,6 +828,7 @@ export const repository = {
         batch.notes = batch.notes ? `${batch.notes} | ${notes}` : notes;
       }
       await db.stockBatches.put(batch);
+      await enqueueSync('stockBatches', batch.id, 'upsert');
 
       const movement: StockMovement = {
         id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -740,7 +880,7 @@ export const repository = {
     const now = new Date().toISOString();
     const invoiceNumber = generateTransactionCode();
 
-    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs, db.loans], async () => {
+    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs, db.loans, db.syncQueue], async () => {
       // 1. Ambil antrean FIFO
       const activeBatches = await db.stockBatches
         .where('remainingRobux')
@@ -769,6 +909,7 @@ export const repository = {
         batch.remainingRobux = item.batchRemainingRobuxAfter;
         batch.remainingCostRupiah = item.batchRemainingCostAfter;
         await db.stockBatches.put(batch);
+        await enqueueSync('stockBatches', batch.id, 'upsert');
 
         // Cicilan otomatis jika batch ini didanai pinjaman luar
         if ((batch.fundingSource === 'LOAN' || batch.fundingSource === 'COMBINED') && batch.loanId) {
@@ -787,6 +928,7 @@ export const repository = {
               notes: `Cicilan pokok dari penjualan ${robuxSold} R$ (${invoiceNumber})`,
             });
             await db.loans.put(loan);
+      await enqueueSync('loans', loan.id, 'upsert');
           }
         }
 
@@ -826,6 +968,7 @@ export const repository = {
       };
 
       await db.sales.put(sale);
+      await enqueueSync('sales', sale.id, 'upsert');
 
       // 5. Catat Uang Masuk ke Buku Kas
       const cashEntry: CashLedgerEntry = {
@@ -839,6 +982,7 @@ export const repository = {
         notes: `Penjualan ${robuxSold.toLocaleString('id-ID')} R$ (${invoiceNumber})`,
       };
       await db.cashLedger.put(cashEntry);
+      await enqueueSync('cashLedger', cashEntry.id, 'upsert');
 
       // 6. Catat Audit Log
       const audit: AuditLog = {
@@ -860,7 +1004,7 @@ export const repository = {
    * Kembalikan stok dan HPP ke batch masing-masing secara presisi!
    */
   async voidSale(saleId: string, reason = 'Pembatalan transaksi'): Promise<void> {
-    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs, db.loans], async () => {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.sales, db.cashLedger, db.auditLogs, db.loans, db.syncQueue], async () => {
       const sale = await db.sales.get(saleId);
       if (!sale) throw new Error('Data penjualan tidak ditemukan');
       if (sale.status === 'VOID') throw new Error('Transaksi ini sudah berstatus BATAL');
@@ -1015,7 +1159,7 @@ export const repository = {
     const now = new Date().toISOString();
     const id = `PRIVE-${Date.now()}`;
 
-    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.personalUsages, db.auditLogs], async () => {
+    return await db.transaction('rw', [db.stockBatches, db.stockMovements, db.personalUsages, db.auditLogs, db.syncQueue], async () => {
       const activeBatches = await db.stockBatches
         .where('remainingRobux')
         .above(0)
@@ -1069,6 +1213,7 @@ export const repository = {
       };
 
       await db.personalUsages.put(usage);
+      await enqueueSync('personalUsages', usage.id, 'upsert');
 
       const audit: AuditLog = {
         id: `LOG-${Date.now()}`,
@@ -1093,7 +1238,7 @@ export const repository = {
    * Mengembalikan stok Robux dan modal HPP secara presisi ke batch FIFO asalnya.
    */
   async cancelPersonalUsage(usageId: string, reason = 'Pembatalan prive'): Promise<void> {
-    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.personalUsages, db.auditLogs], async () => {
+    await db.transaction('rw', [db.stockBatches, db.stockMovements, db.personalUsages, db.auditLogs, db.syncQueue], async () => {
       const usage = await db.personalUsages.get(usageId);
       if (!usage) throw new Error('Data pemakaian pribadi tidak ditemukan');
 
@@ -1134,6 +1279,7 @@ export const repository = {
       }
 
       await db.personalUsages.delete(usageId);
+      await enqueueSync('personalUsages', usageId, 'delete');
 
       const audit: AuditLog = {
         id: `LOG-${Date.now()}`,
@@ -1198,6 +1344,7 @@ export const repository = {
     };
 
     await db.cashLedger.put(entry);
+    await enqueueSync('cashLedger', entry.id, 'upsert');
     return entry;
   },
 
@@ -1208,6 +1355,7 @@ export const repository = {
       throw new Error('Entri kas otomatis dari penjualan atau restock tidak dapat dihapus manual dari sini!');
     }
     await db.cashLedger.delete(id);
+    await enqueueSync('cashLedger', id, 'delete');
   },
 
   async updateManualCashEntry(id: string, updates: {
@@ -1234,6 +1382,7 @@ export const repository = {
     if (updates.dateKey) entry.dateKey = updates.dateKey;
 
     await db.cashLedger.put(entry);
+    await enqueueSync('cashLedger', id, 'upsert');
 
     const audit: AuditLog = {
       id: `LOG-${Date.now()}`,
@@ -1375,16 +1524,19 @@ export const repository = {
       createdAt: now,
     };
     await db.investors.put(investor);
+    await enqueueSync('investors', id, 'upsert');
     return id;
   },
 
   async updateInvestor(id: string, updates: Partial<Investor>): Promise<void> {
     await db.investors.update(id, updates);
+    await enqueueSync('investors', id, 'upsert');
   },
 
   async deleteInvestor(id: string): Promise<void> {
-    await db.transaction('rw', [db.investors, db.investorPayouts], async () => {
+    await db.transaction('rw', [db.investors, db.investorPayouts, db.syncQueue], async () => {
       await db.investors.delete(id);
+      await enqueueSync('investors', id, 'delete');
       await db.investorPayouts.where('investorId').equals(id).delete();
     });
   },
@@ -1425,7 +1577,7 @@ export const repository = {
     const amount = Math.max(0, Math.floor(amountRupiah || 0));
     if (amount <= 0) throw new Error('Nominal pembayaran cicilan harus lebih dari 0');
 
-    return await db.transaction('rw', [db.loans, db.cashLedger, db.auditLogs], async () => {
+    return await db.transaction('rw', [db.loans, db.cashLedger, db.auditLogs, db.syncQueue], async () => {
       const loan = await db.loans.get(loanId);
       if (!loan) throw new Error('Data pinjaman tidak ditemukan');
       if (loan.status === 'PAID') throw new Error('Pinjaman ini sudah lunas');
@@ -1464,7 +1616,7 @@ export const repository = {
   },
 
   async deleteLoan(loanId: string): Promise<void> {
-    await db.transaction('rw', [db.loans, db.stockBatches, db.auditLogs], async () => {
+    await db.transaction('rw', [db.loans, db.stockBatches, db.auditLogs, db.syncQueue], async () => {
       const loan = await db.loans.get(loanId);
       if (!loan) throw new Error('Pinjaman tidak ditemukan');
 
@@ -1478,6 +1630,7 @@ export const repository = {
       }
 
       await db.loans.delete(loanId);
+      await enqueueSync('loans', loanId, 'delete');
     });
   },
 };

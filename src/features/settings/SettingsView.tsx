@@ -29,6 +29,8 @@ import {
   Globe,
   Radio,
   Rocket,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { z } from 'zod';
@@ -57,35 +59,23 @@ import {
 
 const APP_VERSION = '2.1.0';
 
-export const StockMovementBackupSchema = z.object({
-  id: z.string(),
-  batchId: z.string(),
-  type: z.enum(['RESTOCK', 'SALE', 'PERSONAL_USE', 'RECONCILE_ADD', 'VOID_RESTORE', 'EDIT']),
-  robuxAmount: z.number(),
-  costAllocatedRupiah: z.number(),
-  referenceId: z.string(),
-  createdAt: z.string(),
-  notes: z.string().optional(),
-  balanceAfter: z.number().optional(),
-}).passthrough();
+import {
+  exportBackupToFile,
+  getBackupJsonString,
+  restoreFromFile,
+  restoreFromJsonText,
+  BackupSchema,
+  StockMovementBackupSchema,
+} from '../../services/backupService';
+import {
+  subscribeSyncStatus,
+  SyncStatusInfo,
+  testAppsScriptConnection,
+  triggerManualSync,
+  triggerFullSync,
+} from '../../services/syncService';
 
-// Zod Schema untuk validasi file backup
-export const BackupSchema = z.object({
-  version: z.number().optional(),
-  exportedAt: z.string().optional(),
-  settings: z.array(z.any()).optional(),
-  ratePresets: z.array(z.any()).optional(),
-  stockBatches: z.array(z.any()).optional(),
-  stockMovements: z.array(z.any()).optional(),
-  sales: z.array(z.any()).optional(),
-  personalUsages: z.array(z.any()).optional(),
-  cashLedger: z.array(z.any()).optional(),
-  categories: z.array(z.any()).optional(),
-  auditLogs: z.array(z.any()).optional(),
-  investors: z.array(z.any()).optional(),
-  investorPayouts: z.array(z.any()).optional(),
-  loans: z.array(z.any()).optional(),
-});
+export { BackupSchema, StockMovementBackupSchema } from '../../services/backupService';
 
 interface SettingsViewProps {
   onSettingsChanged?: () => void;
@@ -123,6 +113,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState('');
   const [googleSpreadsheetDocUrl, setGoogleSpreadsheetDocUrl] = useState('');
   const [autoSyncFrequency, setAutoSyncFrequency] = useState<'MANUAL' | 'REALTIME' | 'DAILY' | 'MONTHLY'>('MANUAL');
+  const [googleSheetsToken, setGoogleSheetsToken] = useState('');
+  const [showToken, setShowToken] = useState(false);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<SyncStatusInfo | null>(null);
   const [isTestingSheets, setIsTestingSheets] = useState(false);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isInitializingTable, setIsInitializingTable] = useState(false);
@@ -225,14 +219,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
       return;
     }
 
-    // Jika pengguna tidak sengaja menempel link Google Spreadsheet dokumen ke kolom Web App
     if (cleanUrl.includes('docs.google.com/spreadsheets')) {
       setGoogleSpreadsheetDocUrl(cleanUrl);
       setGoogleSheetsUrl('');
       await repository.updateSettings({ googleSpreadsheetDocUrl: cleanUrl });
       await showWarningAlert(
         'Tautan Tersimpan sebagai Link Dokumen',
-        'Tautan yang Anda masukkan adalah link Spreadsheet Anda. Kami telah memindahkannya ke kolom Link Dokumen. Untuk mengirim data otomatis, silakan buat Web App Apps Script dengan mengikuti tombol Panduan.'
+        'Tautan yang Anda masukkan adalah link Spreadsheet Anda. Kami telah memindahkannya ke kolom Link Dokumen.'
       );
       setShowScriptGuideModal(true);
       return;
@@ -240,16 +233,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
 
     setIsTestingSheets(true);
     try {
-      const res = await testGoogleSheetsUrl(cleanUrl);
+      const res = await testAppsScriptConnection(cleanUrl, googleSheetsToken.trim());
       if (res.ok) {
         setIsSheetsVerified(true);
         await repository.updateSettings({
           googleSheetsUrl: cleanUrl,
           googleSpreadsheetDocUrl: googleSpreadsheetDocUrl.trim() || undefined,
+          googleSheetsToken: googleSheetsToken.trim() || undefined,
         });
         await loadSettings();
         playSuccessSound();
-        await showSuccessAlert('Koneksi Berhasil & Terverifikasi!', res.message);
+        await showSuccessAlert('Koneksi Berhasil!', res.message);
       } else {
         setIsSheetsVerified(false);
         await showErrorAlert('Koneksi Gagal', res.message);
@@ -304,6 +298,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
       await repository.updateSettings({
         googleSheetsUrl: googleSheetsUrl.trim(),
         googleSpreadsheetDocUrl: googleSpreadsheetDocUrl.trim(),
+        googleSheetsToken: googleSheetsToken.trim() || undefined,
+        autoSyncEnabled,
         autoSyncFrequency,
       });
       await loadSettings();
@@ -367,24 +363,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
 
     setIsSyncingSheets(true);
     try {
-      const res = await syncAllDataToGoogleSheets(googleSheetsUrl);
+      const res = await triggerManualSync();
       if (res.success) {
         await loadSettings();
         playSuccessSound();
-        const ok = await showConfirmDialog({
-          title: 'Sinkronisasi Berhasil!',
-          text: res.message + ' Ingin membuka spreadsheet sekarang untuk melihat hasil kerja pencadangan?',
-          confirmButtonText: 'Buka Spreadsheet',
-          cancelButtonText: 'Tutup',
-        });
-        if (ok && googleSpreadsheetDocUrl.trim()) {
-          window.open(getSpreadsheetOpenUrl(googleSpreadsheetDocUrl.trim()), '_blank');
-        }
+        await showSuccessAlert('Sinkronisasi Selesai', res.message);
       } else {
         await showErrorAlert('Sinkronisasi Gagal', res.message);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal melakukan sinkronisasi';
+      await showErrorAlert('Gagal', msg);
+    } finally {
+      setIsSyncingSheets(false);
+    }
+  };
+
+  // Handler: Sinkronisasi Penuh (Kirim Ulang Seluruh Data)
+  const handleFullSync = async () => {
+    playTapSound();
+    if (!googleSheetsUrl.trim()) {
+      await showWarningAlert('URL Belum Diatur', 'Masukkan dan simpan URL Web App Google Sheets terlebih dahulu.');
+      return;
+    }
+
+    const ok = await showConfirmDialog({
+      title: 'Sinkronisasi Penuh?',
+      text: 'Seluruh data penjualan, stok batch FIFO, buku kas, pinjaman modal, investor, dan pemakaian pribadi akan dimasukkan ke antrean sinkron untuk memperbarui seluruh spreadsheet.',
+      confirmButtonText: 'Ya, Sinkron Penuh',
+    });
+    if (!ok) return;
+
+    setIsSyncingSheets(true);
+    try {
+      const res = await triggerFullSync();
+      if (res.success) {
+        await loadSettings();
+        playSuccessSound();
+        await showSuccessAlert('Antrean Dibuat', res.message);
+      } else {
+        await showErrorAlert('Gagal Sinkron Penuh', res.message);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal memicu sinkronisasi penuh';
       await showErrorAlert('Gagal', msg);
     } finally {
       setIsSyncingSheets(false);
@@ -468,66 +489,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
   // Ekspor Database Backup JSON
   const handleExportBackup = async () => {
     try {
-      const [
-        s,
-        presets,
-        batches,
-        movements,
-        sales,
-        usages,
-        ledger,
-        cats,
-        logs,
-        invs,
-        pays,
-        allLoans,
-      ] = await Promise.all([
-        db.settings.toArray(),
-        db.ratePresets.toArray(),
-        db.stockBatches.toArray(),
-        db.stockMovements.toArray(),
-        db.sales.toArray(),
-        db.personalUsages.toArray(),
-        db.cashLedger.toArray(),
-        db.categories.toArray(),
-        db.auditLogs.toArray(),
-        db.investors.toArray(),
-        db.investorPayouts.toArray(),
-        db.loans.toArray(),
-      ]);
-
-      const backupData = {
-        version: 3,
-        exportedAt: new Date().toISOString(),
-        settings: s,
-        ratePresets: presets,
-        stockBatches: batches,
-        stockMovements: movements,
-        sales,
-        personalUsages: usages,
-        cashLedger: ledger,
-        categories: cats,
-        auditLogs: logs,
-        investors: invs,
-        investorPayouts: pays,
-        loans: allLoans,
-      };
-
-      const jsonStr = JSON.stringify(backupData, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `JufaStore_Backup_${Date.now()}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      const nowIso = new Date().toISOString();
-      await repository.updateSettings({ lastBackupAt: nowIso });
+      const nowIso = await exportBackupToFile();
       setSettings((prev) => (prev ? { ...prev, lastBackupAt: nowIso } : null));
       if (onSettingsChanged) onSettingsChanged();
-
       playSuccessSound();
       await showSuccessAlert('Ekspor Database Berhasil', 'File cadangan JSON berhasil diunduh ke perangkat Anda.');
     } catch (err: unknown) {
@@ -540,147 +504,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
   const handleCopyBackupJson = async () => {
     try {
       playTapSound();
-      const [
-        s,
-        presets,
-        batches,
-        movements,
-        sales,
-        usages,
-        ledger,
-        cats,
-        logs,
-        invs,
-        pays,
-        allLoans,
-      ] = await Promise.all([
-        db.settings.toArray(),
-        db.ratePresets.toArray(),
-        db.stockBatches.toArray(),
-        db.stockMovements.toArray(),
-        db.sales.toArray(),
-        db.personalUsages.toArray(),
-        db.cashLedger.toArray(),
-        db.categories.toArray(),
-        db.auditLogs.toArray(),
-        db.investors.toArray(),
-        db.investorPayouts.toArray(),
-        db.loans.toArray(),
-      ]);
-
-      const backupData = {
-        version: 3,
-        exportedAt: new Date().toISOString(),
-        settings: s,
-        ratePresets: presets,
-        stockBatches: batches,
-        stockMovements: movements,
-        sales,
-        personalUsages: usages,
-        cashLedger: ledger,
-        categories: cats,
-        auditLogs: logs,
-        investors: invs,
-        investorPayouts: pays,
-        loans: allLoans,
-      };
-
-      const jsonStr = JSON.stringify(backupData, null, 2);
+      const { jsonStr, timestamp } = await getBackupJsonString();
       await navigator.clipboard.writeText(jsonStr);
-
-      const nowIso = new Date().toISOString();
-      await repository.updateSettings({ lastBackupAt: nowIso });
-      setSettings((prev) => (prev ? { ...prev, lastBackupAt: nowIso } : null));
+      setSettings((prev) => (prev ? { ...prev, lastBackupAt: timestamp } : null));
       if (onSettingsChanged) onSettingsChanged();
-
       playSuccessSound();
       await showSuccessAlert(
         'Teks Database Tersalin!',
-        'Seluruh data JSON berhasil disalin ke clipboard. Anda bisa menyimpannya di catatan (Notes) atau mengirim ke perangkat lain.'
+        'Seluruh data JSON berhasil disalin ke clipboard tanpa token rahasia. Anda bisa menyimpannya di catatan (Notes) atau mengirim ke perangkat lain.'
       );
     } catch (err: unknown) {
       console.error('Failed to copy backup json:', err);
       await showErrorAlert('Gagal Menyalin', 'Tidak dapat mengakses clipboard perangkat.');
     }
-  };
-
-  // Helper Pemulihan Data Bersama
-  const executeRestore = async (data: z.infer<typeof BackupSchema>) => {
-    await db.transaction(
-      'rw',
-      [
-        db.settings,
-        db.ratePresets,
-        db.stockBatches,
-        db.stockMovements,
-        db.sales,
-        db.personalUsages,
-        db.cashLedger,
-        db.categories,
-        db.auditLogs,
-        db.investors,
-        db.investorPayouts,
-        db.loans,
-      ],
-      async () => {
-        if (data.settings) {
-          await db.settings.clear();
-          await db.settings.bulkPut(data.settings);
-        }
-        if (data.ratePresets) {
-          await db.ratePresets.clear();
-          await db.ratePresets.bulkPut(data.ratePresets);
-        }
-        if (data.stockBatches) {
-          await db.stockBatches.clear();
-          await db.stockBatches.bulkPut(data.stockBatches);
-        }
-        if (data.stockMovements) {
-          await db.stockMovements.clear();
-          await db.stockMovements.bulkPut(data.stockMovements);
-        }
-        if (data.sales) {
-          await db.sales.clear();
-          await db.sales.bulkPut(data.sales);
-        }
-        if (data.personalUsages) {
-          await db.personalUsages.clear();
-          await db.personalUsages.bulkPut(data.personalUsages);
-        }
-        if (data.cashLedger) {
-          await db.cashLedger.clear();
-          await db.cashLedger.bulkPut(data.cashLedger);
-        }
-        if (data.categories) {
-          await db.categories.clear();
-          await db.categories.bulkPut(data.categories);
-        }
-        if (data.auditLogs) {
-          await db.auditLogs.clear();
-          await db.auditLogs.bulkPut(data.auditLogs);
-        }
-        if (data.investors) {
-          await db.investors.clear();
-          await db.investors.bulkPut(data.investors);
-        }
-        if (data.investorPayouts) {
-          await db.investorPayouts.clear();
-          await db.investorPayouts.bulkPut(data.investorPayouts);
-        }
-        if (data.loans) {
-          await db.loans.clear();
-          await db.loans.bulkPut(data.loans);
-        }
-      }
-    );
-
-    const nowIso = new Date().toISOString();
-    await repository.updateSettings({ lastBackupAt: nowIso });
-    await loadSettings();
-    if (onSettingsChanged) onSettingsChanged();
-
-    playSuccessSound();
-    await showSuccessAlert('Impor Berhasil', 'Seluruh data transaksi dan stok berhasil dipulihkan.');
   };
 
   // Impor / Pulihkan Database dari File JSON
@@ -689,15 +525,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = async (event) => {
+    reader.onload = async () => {
       try {
-        const rawJson = JSON.parse(event.target?.result as string);
-        const parsed = BackupSchema.safeParse(rawJson);
-
-        if (!parsed.success) {
-          throw new Error('Format file JSON tidak valid atau rusak!');
-        }
-
         const ok = await showConfirmDialog({
           title: 'Impor & Pulihkan Database?',
           text: 'Data saat ini di aplikasi akan ditimpa dengan data dari file cadangan ini. Lanjutkan?',
@@ -707,7 +536,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
 
         if (!ok) return;
 
-        await executeRestore(parsed.data);
+        await restoreFromFile(file);
+        await loadSettings();
+        if (onSettingsChanged) onSettingsChanged();
+        playSuccessSound();
+        await showSuccessAlert('Impor Berhasil', 'Seluruh data transaksi dan stok berhasil dipulihkan dan antrean sinkron penuh dimulai.');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'File tidak dapat diproses';
         await showErrorAlert('Gagal Impor Data', msg);
@@ -724,13 +557,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
 
     setIsRestoringText(true);
     try {
-      const rawJson = JSON.parse(pasteJsonText.trim());
-      const parsed = BackupSchema.safeParse(rawJson);
-
-      if (!parsed.success) {
-        throw new Error('Teks JSON tidak sesuai dengan skema backup JufaStore!');
-      }
-
       const ok = await showConfirmDialog({
         title: 'Impor dari Teks JSON?',
         text: 'Data saat ini di aplikasi akan ditimpa dengan data JSON yang ditempel. Lanjutkan?',
@@ -743,9 +569,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         return;
       }
 
-      await executeRestore(parsed.data);
+      await restoreFromJsonText(pasteJsonText);
+      await loadSettings();
+      if (onSettingsChanged) onSettingsChanged();
       setShowPasteModal(false);
       setPasteJsonText('');
+      playSuccessSound();
+      await showSuccessAlert('Impor Berhasil', 'Seluruh data transaksi dan stok berhasil dipulihkan.');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Format JSON tidak valid';
       await showErrorAlert('Gagal Memproses JSON', msg);
@@ -1297,7 +1127,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
 
       {/* Bagian 4: Sinkronisasi Cloud Google Spreadsheet */}
       <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b theme-border">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b theme-border">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
               <Cloud size={17} />
@@ -1312,17 +1142,84 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {isSheetsVerified ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {syncStatus && syncStatus.pendingCount > 0 && (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                {syncStatus.pendingCount} data menunggu sinkron
+              </span>
+            )}
+
+            {syncStatus?.isSyncing ? (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1">
+                <RefreshCw size={11} className="animate-spin" />
+                <span>Menyinkronkan...</span>
+              </span>
+            ) : syncStatus?.lastSyncStatus === 'SUCCESS' ? (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                <CheckCircle2 size={11} />
+                <span>Terhubung & Sinkron</span>
+              </span>
+            ) : syncStatus?.lastSyncStatus === 'ERROR' ? (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1">
+                <AlertCircle size={11} />
+                <span>Galat Sinkronisasi</span>
+              </span>
+            ) : isSheetsVerified ? (
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
                 <Check size={11} />
                 <span>Terhubung</span>
               </span>
             ) : (
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold theme-bg-surface theme-text-muted border theme-border">
-                Belum Terhubung
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold theme-bg-surface theme-text-muted border theme-border flex items-center gap-1">
+                <CloudOff size={11} />
+                <span>Belum Terhubung</span>
               </span>
             )}
+          </div>
+        </div>
+
+        {/* Banner Galat Terakhir Jika Ada */}
+        {syncStatus?.lastSyncError && (
+          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-red-400 flex items-start gap-2.5 text-xs">
+            <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-400" />
+            <div className="space-y-0.5 flex-1">
+              <span className="font-bold block">Kendala Sinkronisasi Terakhir:</span>
+              <p className="text-[11px] opacity-90 leading-relaxed font-mono">
+                {syncStatus.lastSyncError}
+              </p>
+              <p className="text-[10px] opacity-75">
+                Data tetap tersimpan aman di perangkat dan akan dicoba kirim ulang secara otomatis saat koneksi stabil.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Info Waktu Sinkron Terakhir & Saklar Otomatis */}
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl theme-bg-surface border theme-border text-xs">
+          <div className="flex items-center gap-1.5 theme-text-secondary">
+            <Clock size={13} className="theme-text-muted" />
+            <span>Waktu Sinkron Terakhir:</span>
+            <span className="font-semibold theme-text-primary">
+              {syncStatus?.lastSyncAt ? formatDateJakarta(syncStatus.lastSyncAt) : 'Belum pernah'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] theme-text-secondary">Sinkronisasi Otomatis:</span>
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setAutoSyncEnabled(!autoSyncEnabled);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition border ${
+                autoSyncEnabled
+                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  : 'theme-bg-input theme-text-muted theme-border'
+              }`}
+            >
+              {autoSyncEnabled ? 'Aktif' : 'Nonaktif'}
+            </button>
           </div>
         </div>
 
@@ -1409,38 +1306,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
             </p>
           </div>
 
-          {/* Frekuensi Cadangan Otomatis */}
+          {/* Kolom 3: Token Keamanan Sinkronisasi (Opsional) */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold theme-text-secondary block">
-              Jadwal Cadangan Otomatis Cloud
+            <label className="text-xs font-semibold theme-text-secondary">
+              3. Token Keamanan Sinkronisasi (Opsional / JUFASTORE_SYNC_TOKEN)
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {(
-                [
-                  { id: 'REALTIME', label: 'Realtime (Online)', desc: 'Tiap transaksi selesai' },
-                  { id: 'DAILY', label: 'Harian (WIB)', desc: 'Pencadangan tiap hari' },
-                  { id: 'MONTHLY', label: 'Bulanan', desc: 'Pencadangan tiap bulan' },
-                  { id: 'MANUAL', label: 'Manual Saja', desc: 'Hanya jika tombol ditekan' },
-                ] as const
-              ).map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => {
-                    playTapSound();
-                    setAutoSyncFrequency(f.id);
-                  }}
-                  className={`p-2.5 rounded-xl border text-left transition ${
-                    autoSyncFrequency === f.id
-                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400 font-bold shadow-sm'
-                      : 'theme-border theme-bg-surface theme-text-secondary hover:theme-text-primary'
-                  }`}
-                >
-                  <span className="text-xs block">{f.label}</span>
-                  <span className="text-[10px] opacity-75 font-normal block">{f.desc}</span>
-                </button>
-              ))}
+            <div className="relative">
+              <input
+                type={showToken ? 'text' : 'password'}
+                placeholder="Masukkan token rahasia (kosongkan jika tidak memakai token)"
+                value={googleSheetsToken}
+                onChange={(e) => setGoogleSheetsToken(e.target.value)}
+                className="w-full pl-3.5 pr-10 py-2.5 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:theme-text-primary"
+                title={showToken ? 'Sembunyikan Token' : 'Tampilkan Token'}
+              >
+                {showToken ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
             </div>
+            <p className="text-[10px] theme-text-muted">
+              Cocokkan dengan Properti Script <span className="font-mono text-emerald-400 font-semibold">JUFASTORE_SYNC_TOKEN</span> di Apps Script untuk mencegah kiriman dari pihak lain.
+            </p>
           </div>
 
           {/* Tombol Aksi Lengkap */}
@@ -1455,7 +1345,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 title="Buat tabel dan header kolom otomatis di spreadsheet"
               >
                 <FileSpreadsheet size={14} className={isInitializingTable ? 'animate-spin' : ''} />
-                <span>{isInitializingTable ? 'Membuat Tabel...' : 'Buat Tabel di Spreadsheet'}</span>
+                <span>{isInitializingTable ? 'Membuat Tabel...' : 'Buat Tabel'}</span>
               </button>
 
               {/* Tombol Buka Panduan Kode */}
@@ -1468,11 +1358,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 className="px-3 py-2 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card text-xs font-medium theme-text-primary flex items-center gap-1.5 transition"
               >
                 <FileCode size={13} className="text-amber-400" />
-                <span>Panduan & Kode Script</span>
+                <span>Panduan Script</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Tombol Sinkron Penuh */}
+              <button
+                type="button"
+                onClick={handleFullSync}
+                disabled={isSyncingSheets || !googleSheetsUrl.trim()}
+                className="px-3.5 py-2 rounded-xl theme-bg-surface border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 disabled:opacity-40 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                title="Kirim ulang seluruh data ke spreadsheet"
+              >
+                <Database size={13} />
+                <span>Sinkron Penuh</span>
+              </button>
+
               {/* Tombol Sinkronkan Sekarang */}
               <button
                 type="button"
@@ -1481,7 +1383,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
               >
                 <RefreshCw size={13} className={isSyncingSheets ? 'animate-spin' : ''} />
-                <span>{isSyncingSheets ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}</span>
+                <span>{isSyncingSheets ? 'Menyinkronkan...' : 'Sinkron Sekarang'}</span>
               </button>
 
               <button
@@ -1489,7 +1391,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 disabled={isSavingSheetsConfig}
                 className="px-4 py-2 rounded-xl theme-btn-primary hover:opacity-90 disabled:opacity-40 text-xs font-semibold transition shadow-sm"
               >
-                {isSavingSheetsConfig ? 'Menyimpan...' : 'Simpan Pengaturan'}
+                {isSavingSheetsConfig ? 'Menyimpan...' : 'Simpan'}
               </button>
             </div>
           </div>
