@@ -28,7 +28,7 @@ export class JufaStoreDatabase extends Dexie {
   investors!: Table<Investor, string>;
   investorPayouts!: Table<InvestorPayout, string>;
   loans!: Table<Loan, string>;
-  syncQueue!: Table<SyncQueueItem, number>;
+  syncQueue?: Table<any, number>;
 
   constructor() {
     super('JufaStoreDB');
@@ -84,6 +84,11 @@ export class JufaStoreDatabase extends Dexie {
     // Versi 5: Penambahan tabel syncQueue untuk sinkronisasi Google Sheets berbasis antrean
     this.version(5).stores({
       syncQueue: '++seq, tableName, recordId, createdAt, nextRetryAt',
+    });
+
+    // Versi 6: Rombak total sinkronisasi Sheets menjadi cermin per tabel; hapus syncQueue
+    this.version(6).stores({
+      syncQueue: null,
     });
   }
 }

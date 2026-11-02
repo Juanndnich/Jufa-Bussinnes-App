@@ -26,7 +26,7 @@ import { repository } from '../../db/repository';
 import { Sale } from '../../db/schema';
 import { formatRupiah, formatNumber, formatDecimal } from '../../utils/formatters';
 import { playTapSound } from '../../utils/sound';
-import { subscribeSyncStatus, SyncStatusInfo } from '../../services/syncService';
+import { subscribeSheetsSyncState, SheetsSyncState } from '../../services/sheetsSync';
 
 interface DashboardViewProps {
   onNavigateTab: (tab: any) => void;
@@ -51,7 +51,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
   });
 
   const [sales, setSales] = useState<Sale[]>([]);
-  const [syncInfo, setSyncInfo] = useState<SyncStatusInfo | null>(null);
+  const [syncState, setSyncState] = useState<SheetsSyncState | null>(null);
 
   const loadData = async () => {
     try {
@@ -68,7 +68,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
 
   useEffect(() => {
     loadData();
-    const unsub = subscribeSyncStatus(setSyncInfo);
+    const unsub = subscribeSheetsSyncState(setSyncState);
     return () => unsub();
   }, []);
 
@@ -121,7 +121,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
 
         {/* Quick Actions */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          {syncInfo && syncInfo.pendingCount > 0 && (
+          {syncState && syncState.pendingTableCount > 0 && (
             <button
               type="button"
               onClick={() => {
@@ -131,8 +131,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateTab }) =
               className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 text-xs font-medium flex items-center gap-1.5 transition hover:bg-amber-500/20 shadow-sm"
               title="Data dalam antrean sinkronisasi Google Sheets"
             >
-              <RefreshCw size={12} className={syncInfo.isSyncing ? 'animate-spin' : ''} />
-              <span>{syncInfo.pendingCount} menunggu sinkron</span>
+              <RefreshCw size={12} className={syncState.isSyncing ? 'animate-spin' : ''} />
+              <span>{syncState.pendingTableCount} tabel menunggu sinkron</span>
             </button>
           )}
           <button
