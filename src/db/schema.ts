@@ -16,6 +16,13 @@ export interface AppSettings {
   lastSyncStatus?: 'SUCCESS' | 'ERROR' | 'SYNCING';
   lastSyncError?: string;
   autoSyncEnabled?: boolean;
+  sheetsWebhookUrl?: string;
+  sheetsSecret?: string;
+  sheetsSyncEnabled?: boolean;
+  lastSheetsSyncAt?: string;
+  lastSheetsSyncStatus?: 'IDLE' | 'SYNCING' | 'SUCCESS' | 'ERROR';
+  lastSheetsSyncError?: string;
+  tableHashes?: Record<string, string>;
 }
 
 export interface RatePreset {

@@ -23,7 +23,7 @@ import { App as CapApp } from '@capacitor/app';
 import { playTapSound, resumeAudioContext } from './utils/sound';
 import { checkForUpdates, cleanupOldUpdateApks } from './services/updateChecker';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
-import { initSyncService } from './services/syncService';
+import { initSheetsSyncService } from './services/sheetsSync';
 
 export const App: React.FC = () => {
   useNetworkStatus();
@@ -73,7 +73,7 @@ export const App: React.FC = () => {
     }
 
     // Inisialisasi service antrean sinkronisasi Google Sheets
-    const cleanupSyncService = initSyncService();
+    const cleanupSyncService = initSheetsSyncService();
 
     // Pastikan AudioContext di-resume pada interaksi pengguna pertama
     const handleFirstInteraction = () => {

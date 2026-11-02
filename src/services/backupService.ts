@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { db } from '../db/db';
 import { repository } from '../db/repository';
+import { triggerFullSheetsSync } from './sheetsSync';
 
 export const StockMovementBackupSchema = z.object({
   id: z.string(),
@@ -38,7 +39,7 @@ export type BackupData = z.infer<typeof BackupSchema>;
  */
 export function sanitizeSettingsForBackup(settings: any[]): any[] {
   return settings.map((setting) => {
-    const { googleSheetsToken, ...rest } = setting;
+    const { googleSheetsToken, sheetsSecret, ...rest } = setting;
     return rest;
   });
 }
@@ -136,6 +137,8 @@ export async function restoreFromBackupData(data: BackupData): Promise<void> {
   // Ambil token Google Sheets lokal yang ada agar tidak hilang jika cadangan tidak memilikinya
   const currentSettings = await db.settings.toCollection().first();
   const existingToken = currentSettings?.googleSheetsToken;
+  const existingSecret = currentSettings?.sheetsSecret;
+  const existingUrl = currentSettings?.sheetsWebhookUrl || currentSettings?.googleSheetsUrl;
 
   await db.transaction(
     'rw',
@@ -159,6 +162,8 @@ export async function restoreFromBackupData(data: BackupData): Promise<void> {
         const settingsToPut = data.settings.map((st: any) => ({
           ...st,
           googleSheetsToken: st.googleSheetsToken || existingToken,
+          sheetsSecret: st.sheetsSecret || existingSecret,
+          sheetsWebhookUrl: st.sheetsWebhookUrl || existingUrl,
         }));
         await db.settings.bulkPut(settingsToPut);
       }
@@ -213,7 +218,7 @@ export async function restoreFromBackupData(data: BackupData): Promise<void> {
   await repository.updateSettings({ lastBackupAt: nowIso });
 
   // Sesuai requirement: Backup restore triggers full re-sync (queue all records)
-  await repository.queueFullSync();
+  triggerFullSheetsSync().catch(() => {});
 }
 
 /**

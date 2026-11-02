@@ -17,17 +17,21 @@ describe('JufaStore - Loan & Cloud Sync Specification Tests', () => {
     expect(GOOGLE_SHEETS_COLUMNS.length).toBe(10);
   });
 
-  it('2. Verifikasi 6 Tabel Terpisah Sesuai Seluruh Modul Aplikasi JufaStore', () => {
+  it('2. Verifikasi 10 Tabel Terpisah Sesuai Seluruh Modul Aplikasi JufaStore V2', () => {
     const tableKeys = Object.keys(GOOGLE_SHEETS_TABLES);
-    expect(tableKeys.length).toBe(6);
+    expect(tableKeys.length).toBe(10);
     expect(tableKeys).toEqual(
       expect.arrayContaining([
+        'ringkasan',
         'penjualan',
-        'stokBatches',
-        'bukuKas',
-        'pinjamanModal',
-        'investor',
-        'pemakaianPribadi',
+        'stockBatches',
+        'stockMovements',
+        'cashLedger',
+        'loans',
+        'investors',
+        'investorPayouts',
+        'personalUsages',
+        'categories',
       ])
     );
 
@@ -38,48 +42,47 @@ describe('JufaStore - Loan & Cloud Sync Specification Tests', () => {
     expect(GOOGLE_SHEETS_TABLES.penjualan.headers).toContain('Laba Kotor (Rp)');
 
     // 2. Stok & Batch FIFO
-    expect(GOOGLE_SHEETS_TABLES.stokBatches.name).toBe('Stok_Batch_FIFO');
-    expect(GOOGLE_SHEETS_TABLES.stokBatches.color).toBe('#d97706');
-    expect(GOOGLE_SHEETS_TABLES.stokBatches.headers).toContain('Robux Awal (R$)');
-    expect(GOOGLE_SHEETS_TABLES.stokBatches.headers).toContain('Modal per Robux (Rp)');
+    expect(GOOGLE_SHEETS_TABLES.stockBatches.name).toBe('Batch_Stok');
+    expect(GOOGLE_SHEETS_TABLES.stockBatches.color).toBe('#d97706');
+    expect(GOOGLE_SHEETS_TABLES.stockBatches.headers).toContain('Robux Awal (R$)');
+    expect(GOOGLE_SHEETS_TABLES.stockBatches.headers).toContain('Modal per Robux (Rp)');
 
     // 3. Buku Kas
-    expect(GOOGLE_SHEETS_TABLES.bukuKas.name).toBe('Buku_Kas');
-    expect(GOOGLE_SHEETS_TABLES.bukuKas.color).toBe('#0284c7');
-    expect(GOOGLE_SHEETS_TABLES.bukuKas.headers).toContain('Arus Kas');
-    expect(GOOGLE_SHEETS_TABLES.bukuKas.headers).toContain('Nominal (Rp)');
+    expect(GOOGLE_SHEETS_TABLES.cashLedger.name).toBe('Buku_Kas');
+    expect(GOOGLE_SHEETS_TABLES.cashLedger.color).toBe('#0284c7');
+    expect(GOOGLE_SHEETS_TABLES.cashLedger.headers).toContain('Arus Kas');
+    expect(GOOGLE_SHEETS_TABLES.cashLedger.headers).toContain('Nominal (Rp)');
 
-    // 4. Pinjaman Modal
-    expect(GOOGLE_SHEETS_TABLES.pinjamanModal.name).toBe('Pinjaman_Modal');
-    expect(GOOGLE_SHEETS_TABLES.pinjamanModal.color).toBe('#7c3aed');
-    expect(GOOGLE_SHEETS_TABLES.pinjamanModal.headers).toContain('Pokok Pinjaman (Rp)');
-    expect(GOOGLE_SHEETS_TABLES.pinjamanModal.headers).toContain('Sisa Utang (Rp)');
+    // 4. Pinjaman
+    expect(GOOGLE_SHEETS_TABLES.loans.name).toBe('Pinjaman');
+    expect(GOOGLE_SHEETS_TABLES.loans.color).toBe('#7c3aed');
+    expect(GOOGLE_SHEETS_TABLES.loans.headers).toContain('Pokok Utang (Rp)');
+    expect(GOOGLE_SHEETS_TABLES.loans.headers).toContain('Sisa Utang (Rp)');
 
     // 5. Investor
-    expect(GOOGLE_SHEETS_TABLES.investor.name).toBe('Investor');
-    expect(GOOGLE_SHEETS_TABLES.investor.color).toBe('#4f46e5');
-    expect(GOOGLE_SHEETS_TABLES.investor.headers).toContain('Modal Disetor (Rp)');
-    expect(GOOGLE_SHEETS_TABLES.investor.headers).toContain('Porsi Bagi Hasil (%)');
+    expect(GOOGLE_SHEETS_TABLES.investors.name).toBe('Investor');
+    expect(GOOGLE_SHEETS_TABLES.investors.color).toBe('#4f46e5');
+    expect(GOOGLE_SHEETS_TABLES.investors.headers).toContain('Modal Disetor (Rp)');
+    expect(GOOGLE_SHEETS_TABLES.investors.headers).toContain('Porsi Bagi Hasil (%)');
 
     // 6. Pemakaian Pribadi
-    expect(GOOGLE_SHEETS_TABLES.pemakaianPribadi.name).toBe('Pemakaian_Pribadi');
-    expect(GOOGLE_SHEETS_TABLES.pemakaianPribadi.color).toBe('#e11d48');
-    expect(GOOGLE_SHEETS_TABLES.pemakaianPribadi.headers).toContain('Robux Diambil (R$)');
-    expect(GOOGLE_SHEETS_TABLES.pemakaianPribadi.headers).toContain('Nilai Modal HPP (Rp)');
+    expect(GOOGLE_SHEETS_TABLES.personalUsages.name).toBe('Pemakaian_Pribadi');
+    expect(GOOGLE_SHEETS_TABLES.personalUsages.color).toBe('#e11d48');
+    expect(GOOGLE_SHEETS_TABLES.personalUsages.headers).toContain('Robux Diambil (R$)');
+    expect(GOOGLE_SHEETS_TABLES.personalUsages.headers).toContain('Nilai Modal HPP (Rp)');
   });
 
-  it('3. Verifikasi Template Google Apps Script mendukung Multi-Sheet 6 Tabel Terpisah', () => {
+  it('3. Verifikasi Template Google Apps Script mendukung Multi-Sheet 10 Tabel Terpisah V2', () => {
     expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('function doPost(e)');
     expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('function doGet(e)');
-    expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('function inisialisasiTabelManual()');
+    expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('function setup()');
     expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('Penjualan');
-    expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('Stok_Batch_FIFO');
+    expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('Batch_Stok');
     expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('Buku_Kas');
-    expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('Pinjaman_Modal');
+    expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('Pinjaman');
     expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('Investor');
     expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('Pemakaian_Pribadi');
-    expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('prosesSheetTabel');
-    expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('sheet.setRowHeight(1, 32)');
+    expect(GOOGLE_APPS_SCRIPT_TEMPLATE).toContain('setRowHeight');
   });
 
   it('4. Perhitungan Alokasi Pelunasan Pinjaman dari Penjualan FIFO', () => {

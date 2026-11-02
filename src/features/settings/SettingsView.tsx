@@ -31,6 +31,8 @@ import {
   Rocket,
   Eye,
   EyeOff,
+  Edit3,
+  MoreVertical,
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { z } from 'zod';
@@ -47,7 +49,7 @@ import {
   showWarningAlert,
   showConfirmDialog,
 } from '../../utils/alert';
-import { testGoogleSheetsUrl, syncAllDataToGoogleSheets, initializeGoogleSheetTable, getSpreadsheetOpenUrl, GOOGLE_APPS_SCRIPT_TEMPLATE } from '../../utils/googleSheets';
+import { getSpreadsheetOpenUrl } from '../../utils/googleSheets';
 
 import {
   subscribeUpdateState,
@@ -68,12 +70,15 @@ import {
   StockMovementBackupSchema,
 } from '../../services/backupService';
 import {
-  subscribeSyncStatus,
-  SyncStatusInfo,
-  testAppsScriptConnection,
-  triggerManualSync,
-  triggerFullSync,
-} from '../../services/syncService';
+  SheetsSyncState,
+  subscribeSheetsSyncState,
+  triggerSyncNow,
+  triggerFullSheetsSync,
+  testSheetsConnection,
+  requestSetupSheets,
+  resetSheetsSettings,
+  SHEETS_CODE_GS_TEMPLATE,
+} from '../../services/sheetsSync';
 
 export { BackupSchema, StockMovementBackupSchema } from '../../services/backupService';
 
@@ -109,20 +114,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
   const [txSound, setTxSound] = useState<boolean>(() => isTxSoundEnabled());
   const [soundVolume, setSoundVolume] = useState<number>(() => getMasterVolume());
 
-  // Google Sheets Cloud Sync State
-  const [googleSheetsUrl, setGoogleSheetsUrl] = useState('');
+  // Google Sheets Cloud Sync State V2
+  const [sheetsWebhookUrl, setSheetsWebhookUrl] = useState('');
+  const [sheetsSecret, setSheetsSecret] = useState('');
   const [googleSpreadsheetDocUrl, setGoogleSpreadsheetDocUrl] = useState('');
-  const [autoSyncFrequency, setAutoSyncFrequency] = useState<'MANUAL' | 'REALTIME' | 'DAILY' | 'MONTHLY'>('MANUAL');
-  const [googleSheetsToken, setGoogleSheetsToken] = useState('');
-  const [showToken, setShowToken] = useState(false);
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<SyncStatusInfo | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const [sheetsSyncEnabled, setSheetsSyncEnabled] = useState(false);
+  const [isEditingConnection, setIsEditingConnection] = useState(false);
+  const [showAdvancedDropdown, setShowAdvancedDropdown] = useState(false);
+  const [hasLegacyTokenNotice, setHasLegacyTokenNotice] = useState(false);
+  const [sheetsSyncState, setSheetsSyncState] = useState<SheetsSyncState | null>(null);
+
   const [isTestingSheets, setIsTestingSheets] = useState(false);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isInitializingTable, setIsInitializingTable] = useState(false);
-  const [isSavingSheetsConfig, setIsSavingSheetsConfig] = useState(false);
   const [showScriptGuideModal, setShowScriptGuideModal] = useState(false);
-  const [isSheetsVerified, setIsSheetsVerified] = useState(false);
 
   // Cropper state
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -145,12 +151,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
       setSettings(s);
       setStoreName(s.storeName || 'JufaStore');
       setThemeMode(s.theme || 'dark');
-      setGoogleSheetsUrl(s.googleSheetsUrl || '');
+      const loadedUrl = s.sheetsWebhookUrl || s.googleSheetsUrl || '';
+      const loadedSecret = s.sheetsSecret || '';
+      setSheetsWebhookUrl(loadedUrl);
+      setSheetsSecret(loadedSecret);
       setGoogleSpreadsheetDocUrl(s.googleSpreadsheetDocUrl || '');
-      setAutoSyncFrequency(s.autoSyncFrequency || 'MANUAL');
-      if (s.googleSheetsUrl && s.googleSheetsUrl.includes('/exec')) {
-        setIsSheetsVerified(true);
-      }
+      setSheetsSyncEnabled(s.sheetsSyncEnabled ?? false);
+      setHasLegacyTokenNotice(!!s.googleSheetsToken && !s.sheetsSecret);
+      setIsEditingConnection(!loadedUrl || !loadedSecret);
     } catch (err) {
       console.error('Failed to load settings:', err);
     }
@@ -158,6 +166,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
 
   useEffect(() => {
     loadSettings();
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeSheetsSyncState((st) => {
+      setSheetsSyncState(st);
+    });
+    return unsub;
   }, []);
 
   // Status & Indikator Pengingat Cadangan Terakhir
@@ -198,6 +213,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
   };
 
 
+  // Helper: Mask URL Web App
+  const maskUrl = (url: string) => {
+    if (!url) return '';
+    if (url.length <= 42) return url;
+    return url.slice(0, 30) + '...' + url.slice(-10);
+  };
+
   // Handler: Buka Spreadsheet di Tab Baru
   const handleOpenSpreadsheetDoc = () => {
     playTapSound();
@@ -210,22 +232,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
     window.open(finalUrl, '_blank');
   };
 
-  // Handler: Uji Koneksi Google Sheets
-  const handleTestSheetsConnection = async () => {
+  // Handler: Toggle Aktif/Nonaktif Sinkronisasi Otomatis
+  const handleToggleSyncEnabled = async () => {
     playTapSound();
-    const cleanUrl = googleSheetsUrl.trim();
+    const nextVal = !sheetsSyncEnabled;
+    setSheetsSyncEnabled(nextVal);
+    await repository.updateSettings({ sheetsSyncEnabled: nextVal });
+    if (nextVal) {
+      triggerSyncNow().catch(() => {});
+    }
+  };
+
+  // Handler: Uji Koneksi Google Sheets & Simpan
+  const handleTestAndSaveConnection = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    playTapSound();
+    const cleanUrl = sheetsWebhookUrl.trim();
+    const cleanSecret = sheetsSecret.trim();
+
     if (!cleanUrl) {
       await showWarningAlert('URL Masih Kosong', 'Masukkan URL Web App Apps Script (berakhiran /exec) terlebih dahulu.');
+      return;
+    }
+    if (!cleanSecret) {
+      await showWarningAlert('Kode Rahasia Kosong', 'Masukkan Kode Rahasia yang didapatkan dari log eksekusi fungsi setup() di Apps Script.');
       return;
     }
 
     if (cleanUrl.includes('docs.google.com/spreadsheets')) {
       setGoogleSpreadsheetDocUrl(cleanUrl);
-      setGoogleSheetsUrl('');
+      setSheetsWebhookUrl('');
       await repository.updateSettings({ googleSpreadsheetDocUrl: cleanUrl });
       await showWarningAlert(
         'Tautan Tersimpan sebagai Link Dokumen',
-        'Tautan yang Anda masukkan adalah link Spreadsheet Anda. Kami telah memindahkannya ke kolom Link Dokumen.'
+        'Tautan yang Anda masukkan adalah link Spreadsheet Anda, bukan URL Web App. Kami telah memindahkannya ke kolom Link Dokumen.'
       );
       setShowScriptGuideModal(true);
       return;
@@ -233,19 +273,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
 
     setIsTestingSheets(true);
     try {
-      const res = await testAppsScriptConnection(cleanUrl, googleSheetsToken.trim());
+      const res = await testSheetsConnection(cleanUrl, cleanSecret);
       if (res.ok) {
-        setIsSheetsVerified(true);
         await repository.updateSettings({
-          googleSheetsUrl: cleanUrl,
+          sheetsWebhookUrl: cleanUrl,
+          sheetsSecret: cleanSecret,
+          sheetsSyncEnabled: true,
           googleSpreadsheetDocUrl: googleSpreadsheetDocUrl.trim() || undefined,
-          googleSheetsToken: googleSheetsToken.trim() || undefined,
+          googleSheetsToken: undefined,
         });
+        setSheetsSyncEnabled(true);
+        setIsEditingConnection(false);
+        setHasLegacyTokenNotice(false);
         await loadSettings();
         playSuccessSound();
-        await showSuccessAlert('Koneksi Berhasil!', res.message);
+
+        const askFull = await showConfirmDialog({
+          title: 'Koneksi Berhasil!',
+          text: 'Jembatan Google Apps Script berhasil terhubung. Kirim seluruh data Anda ke Google Spreadsheet sekarang?',
+          confirmButtonText: 'Kirim Data Sekarang',
+          cancelButtonText: 'Nanti Saja',
+        });
+        if (askFull) {
+          setIsSyncingSheets(true);
+          try {
+            const syncRes = await triggerFullSheetsSync();
+            if (syncRes.success) {
+              await showSuccessAlert('Sinkronisasi Selesai', syncRes.message);
+            } else {
+              await showErrorAlert('Gagal Sinkron', syncRes.message);
+            }
+          } finally {
+            setIsSyncingSheets(false);
+          }
+        }
       } else {
-        setIsSheetsVerified(false);
         await showErrorAlert('Koneksi Gagal', res.message);
       }
     } catch (err: unknown) {
@@ -256,116 +318,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
     }
   };
 
-  // Handler: Buat Struktur Tabel Kolom Otomatis di Spreadsheet
-  const handleInitializeTable = async () => {
-    playTapSound();
-    if (!googleSheetsUrl.trim()) {
-      await showWarningAlert('Web App Belum Diatur', 'Hubungkan URL Web App Apps Script terlebih dahulu.');
-      return;
-    }
-
-    setIsInitializingTable(true);
-    try {
-      const res = await initializeGoogleSheetTable(googleSheetsUrl);
-      if (res.success) {
-        playSuccessSound();
-        const ok = await showConfirmDialog({
-          title: '6 Tabel Terpisah Berhasil Dibuat!',
-          text: 'Semua 6 sheet tabel (Penjualan, Stok FIFO, Buku Kas, Pinjaman Modal, Investor, dan Pemakaian Pribadi) telah berhasil dibuat di tab masing-masing dengan jarak kolom yang lapang. Buka spreadsheet sekarang untuk melihat hasilnya?',
-          confirmButtonText: 'Buka Spreadsheet',
-          cancelButtonText: 'Tutup',
-        });
-        if (ok && googleSpreadsheetDocUrl.trim()) {
-          window.open(getSpreadsheetOpenUrl(googleSpreadsheetDocUrl.trim()), '_blank');
-        }
-      } else {
-        await showErrorAlert('Gagal Membuat Tabel', res.message);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Terjadi kesalahan';
-      await showErrorAlert('Gagal', msg);
-    } finally {
-      setIsInitializingTable(false);
-    }
-  };
-
-  // Handler: Simpan Pengaturan Google Sheets
-  const handleSaveSheetsConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
-    playTapSound();
-    setIsSavingSheetsConfig(true);
-    try {
-      await repository.updateSettings({
-        googleSheetsUrl: googleSheetsUrl.trim(),
-        googleSpreadsheetDocUrl: googleSpreadsheetDocUrl.trim(),
-        googleSheetsToken: googleSheetsToken.trim() || undefined,
-        autoSyncEnabled,
-        autoSyncFrequency,
-      });
-      await loadSettings();
-      playSuccessSound();
-      await showSuccessAlert('Pengaturan Disimpan', 'Konfigurasi Google Sheets berhasil disimpan ke database lokal.');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Gagal menyimpan pengaturan';
-      await showErrorAlert('Gagal', msg);
-    } finally {
-      setIsSavingSheetsConfig(false);
-    }
-  };
-
-  // Handler: Salin Template Script Google Apps Script (Dengan Fallback Handal)
-  const handleCopyAppsScript = async () => {
-    playTapSound();
-    let copied = false;
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_TEMPLATE);
-        copied = true;
-      }
-    } catch (err) {
-      copied = false;
-    }
-
-    if (!copied) {
-      try {
-        const textarea = document.getElementById('appsScriptTextArea') as HTMLTextAreaElement;
-        if (textarea) {
-          textarea.select();
-          document.execCommand('copy');
-          copied = true;
-        }
-      } catch (err) {
-        copied = false;
-      }
-    }
-
-    if (copied) {
-      playSuccessSound();
-      await showSuccessAlert(
-        'Kode Berhasil Disalin!',
-        'Tempelkan kode ini ke editor Google Apps Script di spreadsheet Anda, lalu Deploy sebagai Web App dengan izin "Anyone".'
-      );
-    } else {
-      await showWarningAlert(
-        'Seleksi Manual',
-        'Silakan seleksi seluruh teks pada kotak kode di bawah dan tekan Ctrl+C pada keyboard Anda.'
-      );
-    }
-  };
-
-  // Handler: Sinkronisasikan Sekarang
+  // Handler: Sinkron Sekarang (Hanya yang Berubah)
   const handleSyncSheetsNow = async () => {
     playTapSound();
-    if (!googleSheetsUrl.trim()) {
-      await showWarningAlert('URL Belum Diatur', 'Masukkan dan simpan URL Web App Google Sheets terlebih dahulu.');
+    if (!sheetsWebhookUrl.trim() || !sheetsSecret.trim()) {
+      await showWarningAlert('Belum Terhubung', 'Hubungkan Web App dan Kode Rahasia Google Sheets terlebih dahulu.');
       return;
     }
 
     setIsSyncingSheets(true);
     try {
-      const res = await triggerManualSync();
+      const res = await triggerSyncNow();
       if (res.success) {
-        await loadSettings();
         playSuccessSound();
         await showSuccessAlert('Sinkronisasi Selesai', res.message);
       } else {
@@ -379,28 +343,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
     }
   };
 
-  // Handler: Sinkronisasi Penuh (Kirim Ulang Seluruh Data)
+  // Handler: Sinkronisasi Penuh (Kirim Ulang Seluruh Tabel)
   const handleFullSync = async () => {
     playTapSound();
-    if (!googleSheetsUrl.trim()) {
-      await showWarningAlert('URL Belum Diatur', 'Masukkan dan simpan URL Web App Google Sheets terlebih dahulu.');
+    if (!sheetsWebhookUrl.trim() || !sheetsSecret.trim()) {
+      await showWarningAlert('Belum Terhubung', 'Hubungkan Web App dan Kode Rahasia Google Sheets terlebih dahulu.');
       return;
     }
 
     const ok = await showConfirmDialog({
       title: 'Sinkronisasi Penuh?',
-      text: 'Seluruh data penjualan, stok batch FIFO, buku kas, pinjaman modal, investor, dan pemakaian pribadi akan dimasukkan ke antrean sinkron untuk memperbarui seluruh spreadsheet.',
+      text: 'Seluruh 9 tabel dan dasbor ringkasan akan dikirim ulang ke Google Spreadsheet tanpa memeriksa sidik jari.',
       confirmButtonText: 'Ya, Sinkron Penuh',
+      cancelButtonText: 'Batal',
     });
     if (!ok) return;
 
     setIsSyncingSheets(true);
     try {
-      const res = await triggerFullSync();
+      const res = await triggerFullSheetsSync();
       if (res.success) {
-        await loadSettings();
         playSuccessSound();
-        await showSuccessAlert('Antrean Dibuat', res.message);
+        await showSuccessAlert('Sinkronisasi Penuh Berhasil', res.message);
       } else {
         await showErrorAlert('Gagal Sinkron Penuh', res.message);
       }
@@ -410,6 +374,100 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
     } finally {
       setIsSyncingSheets(false);
     }
+  };
+
+  // Handler: Buat & Rapikan Struktur 10 Sheet
+  const handleInitializeTable = async () => {
+    playTapSound();
+    if (!sheetsWebhookUrl.trim() || !sheetsSecret.trim()) {
+      await showWarningAlert('Belum Terhubung', 'Hubungkan Web App dan Kode Rahasia Google Sheets terlebih dahulu.');
+      return;
+    }
+
+    setIsInitializingTable(true);
+    try {
+      const res = await requestSetupSheets(sheetsWebhookUrl.trim(), sheetsSecret.trim());
+      if (res.ok) {
+        playSuccessSound();
+        const ok = await showConfirmDialog({
+          title: 'Struktur Sheet Selesai Dirapikan!',
+          text: 'Seluruh 10 tab sheet telah dibuat dan dirapikan di Google Spreadsheet. Buka dokumen spreadsheet Anda sekarang?',
+          confirmButtonText: 'Buka Spreadsheet',
+          cancelButtonText: 'Tutup',
+        });
+        if (ok && googleSpreadsheetDocUrl.trim()) {
+          window.open(getSpreadsheetOpenUrl(googleSpreadsheetDocUrl.trim()), '_blank');
+        }
+      } else {
+        await showErrorAlert('Gagal Merapikan Sheet', res.message);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Terjadi kesalahan';
+      await showErrorAlert('Gagal', msg);
+    } finally {
+      setIsInitializingTable(false);
+    }
+  };
+
+  // Handler: Salin Template Script Google Apps Script
+  const handleCopyAppsScript = async () => {
+    playTapSound();
+    let copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(SHEETS_CODE_GS_TEMPLATE);
+        copied = true;
+      }
+    } catch {
+      copied = false;
+    }
+
+    if (!copied) {
+      try {
+        const textarea = document.getElementById('appsScriptTextArea') as HTMLTextAreaElement;
+        if (textarea) {
+          textarea.select();
+          document.execCommand('copy');
+          copied = true;
+        }
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (copied) {
+      playSuccessSound();
+      await showSuccessAlert(
+        'Kode Berhasil Disalin!',
+        'Tempelkan kode ini ke editor Google Apps Script di spreadsheet Anda, jalankan fungsi setup(), lalu Deploy sebagai Web App dengan akses "Anyone".'
+      );
+    } else {
+      await showWarningAlert(
+        'Seleksi Manual',
+        'Silakan seleksi seluruh teks pada kotak kode dan tekan Ctrl+C pada keyboard Anda.'
+      );
+    }
+  };
+
+  // Handler: Reset Pengaturan Sheets
+  const handleResetSheets = async () => {
+    playTapSound();
+    setShowAdvancedDropdown(false);
+    const ok = await showConfirmDialog({
+      title: 'Reset Pengaturan Sheets?',
+      text: 'Pengaturan URL Web App, Kode Rahasia, dan riwayat sidik jari tabel akan dihapus dari perangkat ini. Data di spreadsheet Anda tidak akan terhapus.',
+      confirmButtonText: 'Ya, Reset',
+      cancelButtonText: 'Batal',
+    });
+    if (!ok) return;
+
+    await resetSheetsSettings();
+    setSheetsWebhookUrl('');
+    setSheetsSecret('');
+    setSheetsSyncEnabled(false);
+    setIsEditingConnection(true);
+    playSuccessSound();
+    await showSuccessAlert('Pengaturan Direset', 'Pengaturan sinkronisasi Google Sheets telah dibersihkan.');
   };
 
   // Save store name
@@ -1125,277 +1183,458 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
         </div>
       </div>
 
-      {/* Bagian 4: Sinkronisasi Cloud Google Spreadsheet */}
-      <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b theme-border">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-              <Cloud size={17} />
+      {/* Bagian 4: Sinkronisasi Google Sheets V2 */}
+      <div className="space-y-4">
+        {/* Banner Pembaruan V2 jika masih ada token lama */}
+        {hasLegacyTokenNotice && (
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-400 space-y-1.5 text-xs">
+            <div className="flex items-center gap-2 font-bold">
+              <AlertCircle size={15} />
+              <span>Pembaruan Sistem Sinkronisasi Google Sheets V2</span>
             </div>
-            <div>
-              <h2 className="text-sm font-bold theme-text-primary tracking-tight">
-                Sinkronisasi Cloud Google Spreadsheet
-              </h2>
-              <p className="text-[11px] theme-text-secondary">
-                Cadangkan data transaksi, restock, kas, & pinjaman ke Google Spreadsheet secara online
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {syncStatus && syncStatus.pendingCount > 0 && (
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                {syncStatus.pendingCount} data menunggu sinkron
-              </span>
-            )}
-
-            {syncStatus?.isSyncing ? (
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1">
-                <RefreshCw size={11} className="animate-spin" />
-                <span>Menyinkronkan...</span>
-              </span>
-            ) : syncStatus?.lastSyncStatus === 'SUCCESS' ? (
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                <CheckCircle2 size={11} />
-                <span>Terhubung & Sinkron</span>
-              </span>
-            ) : syncStatus?.lastSyncStatus === 'ERROR' ? (
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1">
-                <AlertCircle size={11} />
-                <span>Galat Sinkronisasi</span>
-              </span>
-            ) : isSheetsVerified ? (
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-                <Check size={11} />
-                <span>Terhubung</span>
-              </span>
-            ) : (
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold theme-bg-surface theme-text-muted border theme-border flex items-center gap-1">
-                <CloudOff size={11} />
-                <span>Belum Terhubung</span>
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Banner Galat Terakhir Jika Ada */}
-        {syncStatus?.lastSyncError && (
-          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-red-400 flex items-start gap-2.5 text-xs">
-            <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-400" />
-            <div className="space-y-0.5 flex-1">
-              <span className="font-bold block">Kendala Sinkronisasi Terakhir:</span>
-              <p className="text-[11px] opacity-90 leading-relaxed font-mono">
-                {syncStatus.lastSyncError}
-              </p>
-              <p className="text-[10px] opacity-75">
-                Data tetap tersimpan aman di perangkat dan akan dicoba kirim ulang secara otomatis saat koneksi stabil.
-              </p>
-            </div>
+            <p className="text-[11px] leading-relaxed opacity-90">
+              Sistem sinkronisasi telah ditingkatkan ke arsitektur cermin tabel yang lebih aman dan mandiri dengan enkripsi HMAC-SHA256. Token lama tidak digunakan lagi. Silakan ikuti panduan di bawah untuk memasang kode Apps Script baru dan menyalin Kode Rahasia baru.
+            </p>
           </div>
         )}
 
-        {/* Info Waktu Sinkron Terakhir & Saklar Otomatis */}
-        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl theme-bg-surface border theme-border text-xs">
-          <div className="flex items-center gap-1.5 theme-text-secondary">
-            <Clock size={13} className="theme-text-muted" />
-            <span>Waktu Sinkron Terakhir:</span>
-            <span className="font-semibold theme-text-primary">
-              {syncStatus?.lastSyncAt ? formatDateJakarta(syncStatus.lastSyncAt) : 'Belum pernah'}
-            </span>
+        {/* (a) Kartu Status di Paling Atas */}
+        <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div
+                className={`p-2.5 rounded-xl border ${
+                  isSyncingSheets || sheetsSyncState?.isSyncing
+                    ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                    : sheetsSyncState?.status === 'ERROR' || sheetsSyncState?.lastError
+                    ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                    : sheetsWebhookUrl && sheetsSecret
+                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                    : 'theme-bg-surface theme-text-muted theme-border'
+                }`}
+              >
+                {isSyncingSheets || sheetsSyncState?.isSyncing ? (
+                  <RefreshCw size={22} className="animate-spin" />
+                ) : sheetsSyncState?.status === 'ERROR' || sheetsSyncState?.lastError ? (
+                  <AlertCircle size={22} />
+                ) : sheetsWebhookUrl && sheetsSecret ? (
+                  <CheckCircle2 size={22} />
+                ) : (
+                  <CloudOff size={22} />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold theme-text-primary tracking-tight">
+                    {isSyncingSheets || sheetsSyncState?.isSyncing
+                      ? 'Sedang Sinkron...'
+                      : sheetsSyncState?.status === 'ERROR' || sheetsSyncState?.lastError
+                      ? 'Galat Sinkronisasi'
+                      : sheetsWebhookUrl && sheetsSecret
+                      ? 'Terhubung'
+                      : 'Belum Terhubung'}
+                  </h2>
+                  {sheetsSyncState && sheetsSyncState.pendingTableCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25">
+                      {sheetsSyncState.pendingTableCount} tabel menunggu
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] theme-text-secondary mt-0.5">
+                  <Clock size={12} className="theme-text-muted" />
+                  <span>Waktu Sinkron Terakhir:</span>
+                  <span className="font-semibold theme-text-primary">
+                    {sheetsSyncState?.lastSyncAt ? formatDateJakarta(sheetsSyncState.lastSyncAt) : 'Belum pernah'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Saklar Aktif/Nonaktif */}
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="text-xs theme-text-secondary font-medium">Sinkronisasi:</span>
+              <button
+                type="button"
+                onClick={handleToggleSyncEnabled}
+                disabled={!sheetsWebhookUrl || !sheetsSecret}
+                className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold transition border flex items-center gap-1.5 shadow-sm disabled:opacity-40 ${
+                  sheetsSyncEnabled
+                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                    : 'theme-bg-input theme-text-muted theme-border'
+                }`}
+              >
+                {sheetsSyncEnabled ? 'Aktif' : 'Nonaktif'}
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] theme-text-secondary">Sinkronisasi Otomatis:</span>
+          {/* Tombol Utama Status Card */}
+          <div className="pt-2 border-t theme-border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+            <p className="text-[11px] theme-text-muted">
+              Data lokal di perangkat adalah sumber utama. Sheets bertindak sebagai cermin cadangan dan pelaporan satu arah.
+            </p>
             <button
               type="button"
-              onClick={() => {
-                playTapSound();
-                setAutoSyncEnabled(!autoSyncEnabled);
-              }}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition border ${
-                autoSyncEnabled
-                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                  : 'theme-bg-input theme-text-muted theme-border'
-              }`}
+              onClick={handleSyncSheetsNow}
+              disabled={isSyncingSheets || !sheetsWebhookUrl.trim() || !sheetsSecret.trim()}
+              className="min-h-[44px] px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm shrink-0"
             >
-              {autoSyncEnabled ? 'Aktif' : 'Nonaktif'}
+              <RefreshCw size={14} className={isSyncingSheets ? 'animate-spin' : ''} />
+              <span>{isSyncingSheets ? 'Menyinkronkan...' : 'Sinkron Sekarang'}</span>
             </button>
           </div>
         </div>
 
-        <form onSubmit={handleSaveSheetsConfig} className="space-y-4">
-          {/* Kolom 1: Link Google Spreadsheet Dokumen Pengguna */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold theme-text-secondary">
-                1. Link Google Spreadsheet Anda (Tempat Melihat Hasil)
-              </label>
-              {googleSpreadsheetDocUrl.trim() && (
-                <button
-                  type="button"
-                  onClick={handleOpenSpreadsheetDoc}
-                  className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
+        {/* (e) Kartu Galat (Hanya muncul saat ada galat) */}
+        {(sheetsSyncState?.lastError || sheetsSyncState?.status === 'ERROR') && (
+          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/25 text-red-400 space-y-2 text-xs shadow-sm">
+            <div className="flex items-center gap-2 font-bold">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>Kendala Sinkronisasi</span>
+            </div>
+            <p className="text-[11px] font-mono leading-relaxed opacity-95">
+              {sheetsSyncState?.lastError || 'Terjadi kegagalan saat menghubungi Google Apps Script.'}
+            </p>
+            <div className="pt-1.5 border-t border-red-500/20 text-[11px] space-y-1 opacity-90">
+              <span className="font-semibold block">Saran Perbaikan:</span>
+              <p>1. Pastikan URL Web App berakhiran <strong className="font-mono">/exec</strong> dan penerapannya adalah versi terbaru.</p>
+              <p>2. Pastikan hak akses Web App disetel ke <strong>Anyone (Siapa saja)</strong>.</p>
+              <p>3. Pastikan Kode Rahasia cocok dengan yang dicetak oleh fungsi <strong className="font-mono">setup()</strong> di log eksekusi Apps Script.</p>
+            </div>
+          </div>
+        )}
+
+        {/* (b) Kartu Hubungkan (Stepper 3 Langkah / Ringkas saat terhubung) */}
+        <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-4 shadow-sm">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b theme-border">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                <Cloud size={16} />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold theme-text-primary uppercase tracking-wider">
+                  Koneksi Google Spreadsheet
+                </h3>
+                <p className="text-[11px] theme-text-secondary">
+                  Jembatan aman Google Apps Script dengan enkripsi tanda tangan HMAC-SHA256
+                </p>
+              </div>
+            </div>
+
+            {sheetsWebhookUrl && sheetsSecret && !isEditingConnection && (
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setIsEditingConnection(true);
+                }}
+                className="min-h-[44px] px-3.5 py-1.5 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card text-xs font-semibold theme-text-primary transition flex items-center gap-1.5"
+              >
+                <Edit3 size={13} className="text-emerald-400" />
+                <span>Ubah</span>
+              </button>
+            )}
+          </div>
+
+          {/* Tampilan Ringkas Saat Terhubung */}
+          {sheetsWebhookUrl && sheetsSecret && !isEditingConnection ? (
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-xl theme-bg-surface border theme-border space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span className="text-[11px] theme-text-secondary">URL Web App:</span>
+                  <span className="font-mono text-[11px] theme-text-primary truncate" title={sheetsWebhookUrl}>
+                    {maskUrl(sheetsWebhookUrl)}
+                  </span>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pt-1.5 border-t theme-border">
+                  <span className="text-[11px] theme-text-secondary">Kode Rahasia (HMAC):</span>
+                  <span className="font-mono text-[11px] text-emerald-400 font-bold">
+                    ••••••••••••••••••••••••••••••••
+                  </span>
+                </div>
+                {googleSpreadsheetDocUrl.trim() && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pt-1.5 border-t theme-border">
+                    <span className="text-[11px] theme-text-secondary">Dokumen Spreadsheet:</span>
+                    <button
+                      type="button"
+                      onClick={handleOpenSpreadsheetDoc}
+                      className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 font-semibold self-start sm:self-auto"
+                    >
+                      <ExternalLink size={12} />
+                      <span>Buka Dokumen di Tab Baru</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Tampilan Stepper 3 Langkah */
+            <form onSubmit={handleTestAndSaveConnection} className="space-y-4">
+              {/* Langkah 1: Salin Script */}
+              <div className="p-3.5 rounded-xl theme-bg-surface border theme-border space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">1</span>
+                  <span className="text-xs font-bold theme-text-primary">
+                    Pasang Kode Apps Script di Spreadsheet
+                  </span>
+                </div>
+                <p className="text-[11px] theme-text-secondary leading-relaxed pl-7">
+                  Buka Spreadsheet baru di browser, buka menu <strong>Ekstensi &gt; Apps Script</strong>, tempelkan kode script, lalu jalankan fungsi <strong>setup()</strong> dan salin Kode Rahasia dari log eksekusi.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pl-7 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCopyAppsScript}
+                    className="min-h-[44px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm"
+                  >
+                    <Copy size={13} />
+                    <span>Salin Script Apps Script</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      setShowScriptGuideModal(true);
+                    }}
+                    className="min-h-[44px] px-3.5 py-2 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card text-xs font-semibold theme-text-primary flex items-center gap-1.5 transition"
+                  >
+                    <FileCode size={13} className="text-amber-400" />
+                    <span>Panduan Lengkap</span>
+                  </button>
+                </div>
+
+                {/* Tautan Dokumen Opsional */}
+                <div className="pl-7 pt-2 space-y-1">
+                  <label className="text-[11px] font-semibold theme-text-secondary block">
+                    Link Google Spreadsheet Anda (Opsional, untuk tombol buka cepat):
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="Contoh: https://docs.google.com/spreadsheets/d/.../edit"
+                    value={googleSpreadsheetDocUrl}
+                    onChange={(e) => setGoogleSpreadsheetDocUrl(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Langkah 2: Tempel URL Web App & Secret */}
+              <div className="p-3.5 rounded-xl theme-bg-surface border theme-border space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">2</span>
+                  <span className="text-xs font-bold theme-text-primary">
+                    Masukkan URL Web App &amp; Kode Rahasia
+                  </span>
+                </div>
+
+                <div className="pl-7 space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold theme-text-secondary block">
+                      URL Web App Google Apps Script (berakhiran /exec):
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      value={sheetsWebhookUrl}
+                      onChange={(e) => setSheetsWebhookUrl(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold theme-text-secondary block">
+                      Kode Rahasia (Secret dari log setup):
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showSecret ? 'text' : 'password'}
+                        placeholder="Tempel 64 karakter kode rahasia heksadesimal"
+                        value={sheetsSecret}
+                        onChange={(e) => setSheetsSecret(e.target.value)}
+                        className="w-full pl-3.5 pr-10 py-2.5 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret(!showSecret)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:theme-text-primary p-1"
+                        title={showSecret ? 'Sembunyikan' : 'Tampilkan'}
+                      >
+                        {showSecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Langkah 3: Uji Koneksi & Simpan */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t theme-border">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">3</span>
+                  <span className="text-xs theme-text-secondary">Uji koneksi untuk mengaktifkan sinkronisasi.</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {sheetsWebhookUrl && sheetsSecret && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playTapSound();
+                        setIsEditingConnection(false);
+                      }}
+                      className="min-h-[44px] px-4 py-2 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card text-xs font-medium theme-text-secondary transition"
+                    >
+                      Batal Ubah
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isTestingSheets || !sheetsWebhookUrl.trim() || !sheetsSecret.trim()}
+                    className="min-h-[44px] px-5 py-2.5 rounded-xl theme-btn-primary hover:opacity-90 disabled:opacity-40 text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <Radio size={14} className={isTestingSheets ? 'animate-pulse text-emerald-400' : ''} />
+                    <span>{isTestingSheets ? 'Menguji...' : 'Uji Koneksi & Simpan'}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+        </div>
+
+        {/* (c) Kartu Status Tabel (9 Tabel) */}
+        <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-3 shadow-sm">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b theme-border">
+            <div>
+              <h3 className="text-xs font-bold theme-text-primary uppercase tracking-wider">
+                Status Tabel Sinkronisasi
+              </h3>
+              <p className="text-[11px] theme-text-secondary">
+                9 tabel dicerminkan secara berkala saat ada perubahan data
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {sheetsSyncState?.tables && Object.keys(sheetsSyncState.tables).length > 0 ? (
+              Object.entries(sheetsSyncState.tables).map(([key, t]) => (
+                <div
+                  key={key}
+                  className="p-3 rounded-xl theme-bg-surface border theme-border flex items-center justify-between gap-2"
                 >
-                  <ExternalLink size={12} />
-                  <span>Buka Spreadsheet di Tab Baru</span>
-                </button>
+                  <div className="space-y-0.5 truncate">
+                    <span className="text-xs font-semibold theme-text-primary block truncate">
+                      {t.name}
+                    </span>
+                    <span className="text-[10px] theme-text-muted block">
+                      {t.rowCount} baris
+                    </span>
+                  </div>
+
+                  <div>
+                    {t.status === 'SYNCED' ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1 whitespace-nowrap">
+                        <CheckCircle2 size={11} />
+                        <span>Sudah sinkron</span>
+                      </span>
+                    ) : t.status === 'PENDING' ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1 whitespace-nowrap">
+                        <Clock size={11} />
+                        <span>Menunggu</span>
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1 whitespace-nowrap">
+                        <AlertCircle size={11} />
+                        <span>Gagal</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="col-span-full p-4 text-center text-xs theme-text-muted">
+                Daftar status tabel akan tampil setelah aplikasi selesai memuat data.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* (d) Kartu Lanjutan */}
+        <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-4 shadow-sm relative">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b theme-border">
+            <div>
+              <h3 className="text-xs font-bold theme-text-primary uppercase tracking-wider">
+                Pengaturan Lanjutan
+              </h3>
+              <p className="text-[11px] theme-text-secondary">
+                Alat pemeliharaan &amp; sinkronisasi manual
+              </p>
+            </div>
+
+            {/* Titik Tiga Dropdown Menu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedDropdown(!showAdvancedDropdown)}
+                className="w-10 h-10 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card flex items-center justify-center text-zinc-400 hover:theme-text-primary transition"
+                title="Menu lainnya"
+              >
+                <MoreVertical size={16} />
+              </button>
+
+              {showAdvancedDropdown && (
+                <div className="absolute right-0 top-11 z-20 w-56 rounded-xl theme-bg-card border theme-border p-1.5 shadow-xl space-y-1 animate-in fade-in zoom-in-95 duration-100">
+                  <button
+                    type="button"
+                    onClick={handleResetSheets}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-red-400 hover:bg-red-500/10 transition flex items-center gap-2"
+                  >
+                    <Trash2 size={13} />
+                    <span>Reset Pengaturan Sheets</span>
+                  </button>
+                </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="url"
-                placeholder="Contoh: https://docs.google.com/spreadsheets/d/1eh5OCM.../edit"
-                value={googleSpreadsheetDocUrl}
-                onChange={(e) => setGoogleSpreadsheetDocUrl(e.target.value)}
-                className="flex-1 px-3.5 py-2.5 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
-              />
-              <button
-                type="button"
-                onClick={handleOpenSpreadsheetDoc}
-                disabled={!googleSpreadsheetDocUrl.trim()}
-                className="px-3.5 py-2.5 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card disabled:opacity-40 text-xs font-semibold theme-text-primary transition flex items-center gap-1.5 shrink-0"
-                title="Buka dokumen spreadsheet"
-              >
-                <ExternalLink size={13} className="text-emerald-400" />
-                <span className="hidden sm:inline">Buka Sheet</span>
-              </button>
-            </div>
-            <p className="text-[10px] theme-text-muted">
-              Tempelkan link Google Spreadsheet Anda di sini agar bisa dibuka langsung dengan 1 klik kapan saja.
-            </p>
           </div>
 
-          {/* Kolom 2: URL Web App Apps Script (Jembatan Kirim Data) */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold theme-text-secondary">
-                2. URL Web App Google Apps Script (Jembatan Kirim Data)
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  playTapSound();
-                  setShowScriptGuideModal(true);
-                }}
-                className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
-              >
-                <FileCode size={12} />
-                <span>Panduan & Salin Kode Apps Script</span>
-              </button>
-            </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <input
-                type="url"
-                placeholder="https://script.google.com/macros/s/.../exec"
-                value={googleSheetsUrl}
-                onChange={(e) => setGoogleSheetsUrl(e.target.value)}
-                className="flex-1 px-3.5 py-2.5 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
-              />
-              <button
-                type="button"
-                onClick={handleTestSheetsConnection}
-                disabled={isTestingSheets || !googleSheetsUrl.trim()}
-                className="px-4 py-2.5 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card disabled:opacity-40 text-xs font-semibold theme-text-primary transition flex items-center justify-center gap-1.5 shadow-sm"
-              >
-                <Radio size={14} className={isTestingSheets ? 'animate-pulse text-emerald-400' : 'text-emerald-400'} />
-                <span>{isTestingSheets ? 'Menguji...' : 'Uji Koneksi'}</span>
-              </button>
-            </div>
-            <p className="text-[10px] theme-text-muted">
-              URL Web App didapat setelah Anda memasang kode di menu <strong>Ekstensi &gt; Apps Script</strong> pada spreadsheet Anda (berakhiran <span className="font-mono text-emerald-400 font-bold">/exec</span>).
-            </p>
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5">
+            {/* Tombol Utama Kartu Lanjutan: Sinkron Penuh */}
+            <button
+              type="button"
+              onClick={handleFullSync}
+              disabled={isSyncingSheets || !sheetsWebhookUrl.trim() || !sheetsSecret.trim()}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 disabled:opacity-40 text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm"
+              title="Kirim ulang seluruh 9 tabel dan dasbor ringkasan"
+            >
+              <Database size={14} />
+              <span>Sinkron Penuh</span>
+            </button>
+
+            {/* Tombol Buat / Rapikan Sheet */}
+            <button
+              type="button"
+              onClick={handleInitializeTable}
+              disabled={isInitializingTable || !sheetsWebhookUrl.trim() || !sheetsSecret.trim()}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl theme-bg-surface border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40 text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm"
+              title="Rapikan tab dan formula dasbor di spreadsheet"
+            >
+              <FileSpreadsheet size={14} className={isInitializingTable ? 'animate-spin' : ''} />
+              <span>{isInitializingTable ? 'Merapikan...' : 'Buat / Rapikan Sheet'}</span>
+            </button>
+
+            {/* Tombol Salin Script */}
+            <button
+              type="button"
+              onClick={handleCopyAppsScript}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card text-xs font-semibold theme-text-primary flex items-center justify-center gap-2 transition"
+            >
+              <FileCode size={14} className="text-amber-400" />
+              <span>Salin Script</span>
+            </button>
           </div>
 
-          {/* Kolom 3: Token Keamanan Sinkronisasi (Opsional) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold theme-text-secondary">
-              3. Token Keamanan Sinkronisasi (Opsional / JUFASTORE_SYNC_TOKEN)
-            </label>
-            <div className="relative">
-              <input
-                type={showToken ? 'text' : 'password'}
-                placeholder="Masukkan token rahasia (kosongkan jika tidak memakai token)"
-                value={googleSheetsToken}
-                onChange={(e) => setGoogleSheetsToken(e.target.value)}
-                className="w-full pl-3.5 pr-10 py-2.5 rounded-xl theme-bg-input border theme-border text-xs font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
-              />
-              <button
-                type="button"
-                onClick={() => setShowToken(!showToken)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:theme-text-primary"
-                title={showToken ? 'Sembunyikan Token' : 'Tampilkan Token'}
-              >
-                {showToken ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
-            </div>
-            <p className="text-[10px] theme-text-muted">
-              Cocokkan dengan Properti Script <span className="font-mono text-emerald-400 font-semibold">JUFASTORE_SYNC_TOKEN</span> di Apps Script untuk mencegah kiriman dari pihak lain.
-            </p>
-          </div>
-
-          {/* Tombol Aksi Lengkap */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t theme-border">
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Tombol Buat Tabel Otomatis */}
-              <button
-                type="button"
-                onClick={handleInitializeTable}
-                disabled={isInitializingTable || !googleSheetsUrl.trim()}
-                className="px-3.5 py-2 rounded-xl theme-bg-surface border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                title="Buat tabel dan header kolom otomatis di spreadsheet"
-              >
-                <FileSpreadsheet size={14} className={isInitializingTable ? 'animate-spin' : ''} />
-                <span>{isInitializingTable ? 'Membuat Tabel...' : 'Buat Tabel'}</span>
-              </button>
-
-              {/* Tombol Buka Panduan Kode */}
-              <button
-                type="button"
-                onClick={() => {
-                  playTapSound();
-                  setShowScriptGuideModal(true);
-                }}
-                className="px-3 py-2 rounded-xl theme-bg-surface border theme-border hover:theme-bg-card text-xs font-medium theme-text-primary flex items-center gap-1.5 transition"
-              >
-                <FileCode size={13} className="text-amber-400" />
-                <span>Panduan Script</span>
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Tombol Sinkron Penuh */}
-              <button
-                type="button"
-                onClick={handleFullSync}
-                disabled={isSyncingSheets || !googleSheetsUrl.trim()}
-                className="px-3.5 py-2 rounded-xl theme-bg-surface border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 disabled:opacity-40 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                title="Kirim ulang seluruh data ke spreadsheet"
-              >
-                <Database size={13} />
-                <span>Sinkron Penuh</span>
-              </button>
-
-              {/* Tombol Sinkronkan Sekarang */}
-              <button
-                type="button"
-                onClick={handleSyncSheetsNow}
-                disabled={isSyncingSheets || !googleSheetsUrl.trim()}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-              >
-                <RefreshCw size={13} className={isSyncingSheets ? 'animate-spin' : ''} />
-                <span>{isSyncingSheets ? 'Menyinkronkan...' : 'Sinkron Sekarang'}</span>
-              </button>
-
-              <button
-                type="submit"
-                disabled={isSavingSheetsConfig}
-                className="px-4 py-2 rounded-xl theme-btn-primary hover:opacity-90 disabled:opacity-40 text-xs font-semibold transition shadow-sm"
-              >
-                {isSavingSheetsConfig ? 'Menyimpan...' : 'Simpan'}
-              </button>
-            </div>
-          </div>
-        </form>
+          <p className="text-[10px] theme-text-muted">
+            Gunakan tombol <strong>Sinkron Penuh</strong> sekali setelah pertama kali menghubungkan akun atau setelah memulihkan cadangan agar seluruh data historis terunggah.
+          </p>
+        </div>
       </div>
 
       {/* Modal Panduan & Salin Kode Apps Script */}
@@ -1412,7 +1651,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
               <button
                 type="button"
                 onClick={() => setShowScriptGuideModal(false)}
-                className="text-xs theme-text-muted hover:theme-text-primary"
+                className="text-xs theme-text-muted hover:theme-text-primary p-1"
               >
                 Tutup
               </button>
@@ -1422,7 +1661,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
               <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 space-y-1">
                 <span className="font-bold block">Hanya Perlu Dilakukan 1 Kali:</span>
                 <p className="text-[11px] leading-relaxed opacity-95">
-                  Spreadsheet Anda membutuhkan jembatan Web App Apps Script agar JufaStore dapat mengirim data transaksi, membuat tabel, dan melakukan pencadangan otomatis secara aman.
+                  Spreadsheet Anda membutuhkan jembatan Web App Apps Script agar JufaStore dapat mencerminkan data transaksi, mutasi stok, buku kas, dan pinjaman modal secara aman dengan tanda tangan HMAC-SHA256.
                 </p>
               </div>
 
@@ -1431,18 +1670,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">1</span>
                   <div className="space-y-1">
-                    <span className="font-semibold theme-text-primary block">Buka Spreadsheet Anda</span>
-                    <p className="text-[11px] theme-text-muted">Buka Google Spreadsheet kosong Anda di browser.</p>
-                    {googleSpreadsheetDocUrl.trim() && (
-                      <button
-                        type="button"
-                        onClick={handleOpenSpreadsheetDoc}
-                        className="text-[11px] text-emerald-400 underline font-semibold flex items-center gap-1 mt-1"
-                      >
-                        <ExternalLink size={11} />
-                        <span>Klik di sini untuk membuka Spreadsheet Anda</span>
-                      </button>
-                    )}
+                    <span className="font-semibold theme-text-primary block">Buat Google Spreadsheet Baru</span>
+                    <p className="text-[11px] theme-text-muted">Buka Google Drive atau Google Sheets di browser, lalu buat spreadsheet kosong baru.</p>
                   </div>
                 </div>
 
@@ -1457,18 +1686,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">3</span>
                   <div>
-                    <span className="font-semibold theme-text-primary block">Hapus Kode Lama &amp; Tempelkan Kode di Bawah</span>
-                    <p className="text-[11px] theme-text-muted">Hapus kode bawaan yang ada di editor Apps Script, lalu tempel kode lengkap yang disediakan di bawah ini.</p>
+                    <span className="font-semibold theme-text-primary block">Tempel Kode Code.gs</span>
+                    <p className="text-[11px] theme-text-muted">Hapus seluruh kode bawaan di editor, lalu tempelkan kode lengkap yang disediakan di bawah ini.</p>
                   </div>
                 </div>
 
                 <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">4</span>
                   <div>
-                    <span className="font-semibold theme-text-primary block">Deploy Sebagai Web App</span>
+                    <span className="font-semibold theme-text-primary block">Jalankan Fungsi setup() &amp; Salin Kode Rahasia</span>
                     <p className="text-[11px] theme-text-muted leading-relaxed">
-                      Klik tombol biru <strong>Deploy</strong> (Terapkan) di kanan atas &gt; pilih <strong>New Deployment</strong> (Penerapan baru).
-                      Pilih jenis <strong>Web App</strong>. Pada bagian <em>Who has access</em> (Siapa yang memiliki akses), pilih <strong>Anyone</strong> (Siapa saja). Lalu klik <strong>Deploy</strong>.
+                      Pilih fungsi <strong>setup</strong> pada menu drop-down di atas editor &gt; klik <strong>Jalankan (Run)</strong> &gt; izinkan akses saat diminta. Buka menu <strong>Log Eksekusi</strong> di bagian bawah, lalu salin <strong>Kode Rahasia</strong> (64 karakter) yang tercetak.
                     </p>
                   </div>
                 </div>
@@ -1476,8 +1704,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                 <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">5</span>
                   <div>
-                    <span className="font-semibold theme-text-primary block">Salin Web App URL</span>
-                    <p className="text-[11px] theme-text-muted">Salin Web App URL yang berakhiran <strong className="text-emerald-400">/exec</strong> dan tempelkan ke kolom URL Web App di JufaStore.</p>
+                    <span className="font-semibold theme-text-primary block">Deploy Sebagai Web App</span>
+                    <p className="text-[11px] theme-text-muted leading-relaxed">
+                      Klik tombol biru <strong>Deploy (Terapkan)</strong> di kanan atas &gt; pilih <strong>New Deployment</strong>.
+                      Pilih jenis <strong>Web App</strong>. Pada bagian <em>Who has access</em> (Siapa yang memiliki akses), pilih <strong>Anyone (Siapa saja)</strong>. Lalu klik <strong>Deploy</strong> dan salin Web App URL (berakhiran <strong className="text-emerald-400 font-mono">/exec</strong>).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-[11px] shrink-0">6</span>
+                  <div>
+                    <span className="font-semibold theme-text-primary block">Hubungkan di JufaStore</span>
+                    <p className="text-[11px] theme-text-muted">Masukkan Web App URL dan Kode Rahasia ke kolom di JufaStore, lalu klik tombol <strong>Uji Koneksi &amp; Simpan</strong>.</p>
                   </div>
                 </div>
               </div>
@@ -1489,9 +1728,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                   <button
                     type="button"
                     onClick={handleCopyAppsScript}
-                    className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm"
+                    className="min-h-[44px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm"
                   >
-                    <Copy size={12} />
+                    <Copy size={13} />
                     <span>Salin Kode</span>
                   </button>
                 </div>
@@ -1500,12 +1739,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
                   id="appsScriptTextArea"
                   readOnly
                   rows={8}
-                  value={GOOGLE_APPS_SCRIPT_TEMPLATE}
+                  value={SHEETS_CODE_GS_TEMPLATE}
                   className="w-full p-3 rounded-xl theme-bg-input border theme-border text-[11px] font-mono theme-text-primary focus:outline-none focus:border-emerald-500"
                 />
-                <p className="text-[10px] theme-text-muted">
-                  Jika tombol salin otomatis terhalang oleh pengaturan privasi browser Anda, Anda dapat menyeleksi seluruh teks di dalam kotak di atas dan tekan <strong className="theme-text-primary">Ctrl + C</strong>.
-                </p>
               </div>
             </div>
 
@@ -1513,7 +1749,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
               <button
                 type="button"
                 onClick={() => setShowScriptGuideModal(false)}
-                className="px-4 py-2 rounded-xl text-xs theme-btn-primary font-bold shadow-sm"
+                className="min-h-[44px] px-5 py-2 rounded-xl text-xs theme-btn-primary font-bold shadow-sm"
               >
                 Saya Mengerti, Tutup Panduan
               </button>
