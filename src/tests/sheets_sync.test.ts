@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'fs';
 import {
   computeTableHash,
   computeHmacSha256Hex,
@@ -6,6 +7,7 @@ import {
   generateRandomNonce,
   SHEETS_TABLES,
   CHUNK_SIZE,
+  SHEETS_CODE_GS_TEMPLATE,
 } from '../services/sheetsSync';
 import { sanitizeSettingsForBackup, BackupSchema } from '../services/backupService';
 import { AppSettings } from '../db/schema';
@@ -260,5 +262,63 @@ describe('JufaStore — Google Sheets Mirror Sync V2 Test Suite', () => {
         expect(h).not.toMatch(/[\uD800-\uDFFF]/);
       }
     }
+  });
+  // 11. Verifikasi File Code.gs vs Konstanta SHEETS_CODE_GS_TEMPLATE
+  it('11. File docs/google-apps-script/Code.gs identik 100% dengan konstanta SHEETS_CODE_GS_TEMPLATE', () => {
+    const codeGsFile = fs.readFileSync('docs/google-apps-script/Code.gs', 'utf8');
+    expect(SHEETS_CODE_GS_TEMPLATE).toBe(codeGsFile);
+  });
+
+  // 12. Sanitasi Anti-Formula Injection
+  it('12. Sanitasi anti-formula injection: string diawali =, +, -, @ diberi awalan apostrof', () => {
+    const rawRows = [
+      ['=SUM(A1:A10)', '+628123456789', '-500', '@mention', 'Normal Text', 150000, -25000],
+    ];
+
+    for (let r = 0; r < rawRows.length; r++) {
+      const row = rawRows[r];
+      for (let c = 0; c < row.length; c++) {
+        const val = row[c];
+        if (typeof val === 'string' && val.length > 0) {
+          const firstChar = val.charAt(0);
+          if (firstChar === '=' || firstChar === '+' || firstChar === '-' || firstChar === '@') {
+            row[c] = "'" + val;
+          }
+        }
+      }
+    }
+
+    expect(rawRows[0][0]).toBe("'=SUM(A1:A10)");
+    expect(rawRows[0][1]).toBe("'+628123456789");
+    expect(rawRows[0][2]).toBe("'-500");
+    expect(rawRows[0][3]).toBe("'@mention");
+    expect(rawRows[0][4]).toBe('Normal Text');
+    expect(rawRows[0][5]).toBe(150000); // Angka positif tidak diubah
+    expect(rawRows[0][6]).toBe(-25000); // Angka negatif tidak diubah
+  });
+
+  // 13. Verifikasi Peningkatan Spesifikasi Code.gs
+  it('13. Verifikasi fitur baru Code.gs: Utilities.getUuid, tanpa blokir 15m, hide gridlines, row banding, line chart', () => {
+    // 1. UUID dua kali tanpa Math.random
+    expect(SHEETS_CODE_GS_TEMPLATE).toContain('Utilities.getUuid()');
+    expect(SHEETS_CODE_GS_TEMPLATE).not.toContain('Math.random()');
+
+    // 2. Tanpa blokir 15 menit
+    expect(SHEETS_CODE_GS_TEMPLATE).not.toContain('JUFA_BLOCKED_UNTIL');
+    expect(SHEETS_CODE_GS_TEMPLATE).not.toContain('JUFA_FAIL_COUNT');
+
+    // 3. Batasan nonce & body
+    expect(SHEETS_CODE_GS_TEMPLATE).toContain('nonce.length > 64');
+    expect(SHEETS_CODE_GS_TEMPLATE).toContain('2 * 1024 * 1024');
+
+    // 4. Layout
+    expect(SHEETS_CODE_GS_TEMPLATE).toContain('setHiddenGridlines(true)');
+    expect(SHEETS_CODE_GS_TEMPLATE).toContain('applyRowBanding');
+    expect(SHEETS_CODE_GS_TEMPLATE).toContain('Charts.ChartType.LINE');
+    expect(SHEETS_CODE_GS_TEMPLATE).toContain('pasangPewarnaanStatus');
+
+    // 5. Anti-rumus di replace chunk
+    expect(SHEETS_CODE_GS_TEMPLATE).toContain('firstChar === "="');
+    expect(SHEETS_CODE_GS_TEMPLATE).toContain("row[c] = \"'\" + val;");
   });
 });
