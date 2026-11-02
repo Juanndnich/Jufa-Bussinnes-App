@@ -147,14 +147,10 @@ function setup() {
   var secret = props.getProperty("JUFASTORE_SYNC_SECRET");
 
   if (!secret) {
-    var bytes = [];
-    for (var i = 0; i < 32; i++) {
-      bytes.push(Math.floor(Math.random() * 256));
-    }
-    secret = bytes.map(function(b) {
-      var h = b.toString(16);
-      return h.length === 1 ? "0" + h : h;
-    }).join("");
+    // Sumber acak aman menggunakan Utilities.getUuid() dua kali (64 karakter heksadesimal)
+    var uuid1 = Utilities.getUuid().replace(/-/g, "").toLowerCase();
+    var uuid2 = Utilities.getUuid().replace(/-/g, "").toLowerCase();
+    secret = uuid1 + uuid2;
     props.setProperty("JUFASTORE_SYNC_SECRET", secret);
   }
 
@@ -174,7 +170,7 @@ function resetSecret() {
   setup();
 }
 
-// 4. FORMAT TAMPILAN SHEET LENGKAP & RAPI
+// 4. FORMAT TAMPILAN SHEET LENGKAP & RAPI (Hanya dijalankan di setup / setup-sheets)
 function setupSemuaSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var defs = dapatkanDefinisiTabel();
@@ -216,7 +212,7 @@ function setupSheetRingkasan(ss, def) {
     s = ss.insertSheet(def.name, 0);
   }
   s.setTabColor(def.color);
-  s.setHiddenGridlines(false);
+  s.setHiddenGridlines(true);
 
   // Buat Header Ringkasan
   if (s.getLastRow() === 0) {
@@ -247,7 +243,7 @@ function setupSheetRingkasan(ss, def) {
       ["Total Omzet Penjualan", 0, "Total penjualan Robux terbayar", "-"],
       ["Total Laba Kotor", 0, "Omzet riil dikurangi modal HPP FIFO", "-"],
       ["Total Laba Bersih", 0, "Laba kotor dikurangi biaya operasional kas", "-"],
-      ["Versi Aplikasi Terhubung", "JufaStore v2.1.27", "Aplikasi pencatatan internal Robux", "-"]
+      ["Versi Aplikasi Terhubung", "JufaStore v2.1.28", "Aplikasi pencatatan internal Robux", "-"]
     ];
 
     s.getRange(3, 1, rowsKpi.length, 4).setValues(rowsKpi);
@@ -281,6 +277,26 @@ function setupSheetRingkasan(ss, def) {
     s.setColumnWidth(4, 160);
   }
 
+  // Buat Grafik Garis Tren Omzet vs Laba Kotor SEKALI di setup (jangan duplikat jika dijalankan ulang)
+  var charts = s.getCharts();
+  if (!charts || charts.length === 0) {
+    try {
+      var startTren = 12;
+      var chartRange = s.getRange(startTren + 1, 1, 13, 3); // Header baris 13 + 12 baris data
+      var chart = s.newChart()
+        .setChartType(Charts.ChartType.LINE)
+        .addRange(chartRange)
+        .setPosition(3, 5, 15, 10) // Kolom E, Baris 3 di samping tabel KPI
+        .setOption("title", "Tren Omzet vs Laba Kotor (12 Bulan)")
+        .setOption("legend", { position: "bottom" })
+        .setOption("colors", ["#059669", "#d97706"])
+        .setOption("width", 540)
+        .setOption("height", 300)
+        .build();
+      s.insertChart(chart);
+    } catch (eChart) {}
+  }
+
   pasangProteksiPeringatan(s);
 }
 
@@ -310,19 +326,38 @@ function formatHeaderDataSheet(sheet, headers, color) {
     } catch (e2) {}
   }
 
+  // Terapkan baris selang-seling (banding) di sheet data SEKALI di setup
+  try {
+    var bandings = sheet.getBandings();
+    if (!bandings || bandings.length === 0) {
+      var bandingRange = sheet.getRange(1, 1, Math.max(sheet.getMaxRows(), 500), headers.length);
+      bandingRange.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false);
+    }
+  } catch (eBanding) {}
+
   pasangProteksiPeringatan(sheet);
 }
 
 function terapkanFormatKolomKhusus(sheet, key) {
   var maxRows = Math.max(sheet.getMaxRows(), 500);
 
-  // Format kolom angka rupiah dan tanggal per tabel
+  // Format kolom angka rupiah, robux, dan tanggal berlaku sampai baris akhir kolom
   if (key === "penjualan") {
     sheet.getRange(2, 4, maxRows - 1, 1).setNumberFormat('#,##0'); // Robux
     sheet.getRange(2, 5, maxRows - 1, 4).setNumberFormat('"Rp " #,##0'); // Rate, Omzet, HPP, Laba
+    // Pewarnaan bersyarat kolom 10 (Status Transaksi)
+    pasangPewarnaanStatus(sheet, 10, [
+      { text: "Selesai", bg: "#d1fae5", fg: "#065f46" },
+      { text: "Dibatalkan (VOID)", bg: "#fee2e2", fg: "#991b1b" }
+    ]);
   } else if (key === "stockBatches") {
     sheet.getRange(2, 5, maxRows - 1, 2).setNumberFormat('#,##0'); // Robux awal & sisa
     sheet.getRange(2, 7, maxRows - 1, 3).setNumberFormat('"Rp " #,##0'); // Modal beli, unit cost, sisa modal
+    // Pewarnaan bersyarat kolom 10 (Status Batch)
+    pasangPewarnaanStatus(sheet, 10, [
+      { text: "Aktif (Tersedia)", bg: "#d1fae5", fg: "#065f46" },
+      { text: "Habis Terjual", bg: "#f3f4f6", fg: "#6b7280" }
+    ]);
   } else if (key === "stockMovements") {
     sheet.getRange(2, 5, maxRows - 1, 1).setNumberFormat('#,##0'); // Robux
     sheet.getRange(2, 6, maxRows - 1, 1).setNumberFormat('"Rp " #,##0'); // Alokasi modal
@@ -331,15 +366,61 @@ function terapkanFormatKolomKhusus(sheet, key) {
     sheet.getRange(2, 6, maxRows - 1, 1).setNumberFormat('"Rp " #,##0'); // Nominal kas
   } else if (key === "loans") {
     sheet.getRange(2, 4, maxRows - 1, 3).setNumberFormat('"Rp " #,##0'); // Pokok, Sisa, Terbayar
+    // Pewarnaan bersyarat kolom 8 (Status Pinjaman)
+    pasangPewarnaanStatus(sheet, 8, [
+      { text: "Lunas", bg: "#d1fae5", fg: "#065f46" },
+      { text: "Belum Lunas", bg: "#fef3c7", fg: "#92400e" }
+    ]);
   } else if (key === "investors") {
     sheet.getRange(2, 3, maxRows - 1, 1).setNumberFormat('"Rp " #,##0'); // Modal disetor
     sheet.getRange(2, 4, maxRows - 1, 1).setNumberFormat('0"%"'); // Porsi bagi hasil
+    // Pewarnaan bersyarat kolom 6 (Status Investor)
+    pasangPewarnaanStatus(sheet, 6, [
+      { text: "Aktif", bg: "#d1fae5", fg: "#065f46" },
+      { text: "Nonaktif", bg: "#f3f4f6", fg: "#6b7280" }
+    ]);
   } else if (key === "investorPayouts") {
     sheet.getRange(2, 5, maxRows - 1, 1).setNumberFormat('"Rp " #,##0'); // Dividen
   } else if (key === "personalUsages") {
     sheet.getRange(2, 3, maxRows - 1, 1).setNumberFormat('#,##0'); // Robux prive
     sheet.getRange(2, 4, maxRows - 1, 2).setNumberFormat('"Rp " #,##0'); // Modal total & per Robux
   }
+}
+
+// HELPER: Pasang Pewarnaan Bersyarat pada Kolom Status Tertentu
+function pasangPewarnaanStatus(sheet, colIndex, aturanList) {
+  try {
+    var maxRows = Math.max(sheet.getMaxRows(), 500);
+    var range = sheet.getRange(2, colIndex, maxRows - 1, 1);
+    var currentRules = sheet.getConditionalFormatRules();
+
+    var filteredRules = [];
+    for (var i = 0; i < currentRules.length; i++) {
+      var r = currentRules[i];
+      var rRanges = r.getRanges();
+      var isSameCol = false;
+      for (var j = 0; j < rRanges.length; j++) {
+        if (rRanges[j].getColumn() === colIndex) {
+          isSameCol = true;
+          break;
+        }
+      }
+      if (!isSameCol) filteredRules.push(r);
+    }
+
+    for (var k = 0; k < aturanList.length; k++) {
+      var a = aturanList[k];
+      var rule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo(a.text)
+        .setBackground(a.bg)
+        .setFontColor(a.fg)
+        .setRanges([range])
+        .build();
+      filteredRules.push(rule);
+    }
+
+    sheet.setConditionalFormatRules(filteredRules);
+  } catch (eRule) {}
 }
 
 function pasangProteksiPeringatan(sheet) {
@@ -370,18 +451,6 @@ function hapusSheet1Bawaan(ss) {
 
 // 5. PENERIMA WEBHOOK (doPost)
 function doPost(e) {
-  var cache = CacheService.getScriptCache();
-  var blockKey = "JUFA_BLOCKED_UNTIL";
-  var failKey = "JUFA_FAIL_COUNT";
-
-  // Cek apakah sistem sedang diblokir sementara karena proteksi serangan brute-force
-  if (cache.get(blockKey)) {
-    return createJsonResponse({
-      ok: false,
-      error: "Akses ditolak: Terlalu banyak percobaan autentikasi tidak valid. Silakan coba kembali dalam 15 menit."
-    });
-  }
-
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -395,15 +464,18 @@ function doPost(e) {
   try {
     var rawText = e && e.postData && e.postData.contents;
     if (!rawText) {
-      catatKegagalanAutentikasi(cache, failKey, blockKey);
       return createJsonResponse({ ok: false, error: "Isi payload permintaan kosong." });
+    }
+
+    // Batasi ukuran payload body (maksimal 2 MB)
+    if (rawText.length > 2 * 1024 * 1024) {
+      return createJsonResponse({ ok: false, error: "Ukuran payload melebihi batas maksimal (2 MB)." });
     }
 
     var packet;
     try {
       packet = JSON.parse(rawText);
     } catch (parseErr) {
-      catatKegagalanAutentikasi(cache, failKey, blockKey);
       return createJsonResponse({ ok: false, error: "Format JSON tidak valid." });
     }
 
@@ -421,26 +493,24 @@ function doPost(e) {
     var nowMs = Date.now();
     var reqTime = packet.timestamp || 0;
     if (Math.abs(nowMs - reqTime) > 5 * 60 * 1000) {
-      catatKegagalanAutentikasi(cache, failKey, blockKey);
       return createJsonResponse({
         ok: false,
         error: "Waktu permintaan kedaluwarsa atau jam perangkat tidak sinkron (maksimal selisih 5 menit)."
       });
     }
 
-    // 3. Validasi Nonce (Cegah serangan kirim ulang / Replay Attacks)
+    // 3. Validasi Nonce (Wajib string 8-64 karakter)
     var nonce = packet.nonce;
-    if (!nonce || typeof nonce !== "string" || nonce.length < 8) {
-      catatKegagalanAutentikasi(cache, failKey, blockKey);
-      return createJsonResponse({ ok: false, error: "Nonce acak tidak valid." });
+    if (!nonce || typeof nonce !== "string" || nonce.length < 8 || nonce.length > 64) {
+      return createJsonResponse({ ok: false, error: "Nonce acak tidak valid (wajib 8-64 karakter)." });
     }
 
+    var cache = CacheService.getScriptCache();
     var nonceKey = "JUFA_NONCE_" + nonce;
     if (cache.get(nonceKey)) {
-      catatKegagalanAutentikasi(cache, failKey, blockKey);
       return createJsonResponse({ ok: false, error: "Permintaan ditolak: nonce sudah pernah digunakan." });
     }
-    // Simpan nonce selama 10 menit
+    // Simpan nonce selama 10 menit untuk mencegah replay attack
     cache.put(nonceKey, "1", 600);
 
     // 4. Validasi Tanda Tangan Digital HMAC-SHA256
@@ -453,15 +523,11 @@ function doPost(e) {
     }).join("");
 
     if (!constantTimeCompare(packet.signature, expectedSig)) {
-      catatKegagalanAutentikasi(cache, failKey, blockKey);
       return createJsonResponse({
         ok: false,
         error: "Autentikasi tanda tangan digital gagal. Pastikan Kode Rahasia (Secret) di aplikasi cocok."
       });
     }
-
-    // Reset hitungan gagal setelah autentikasi sukses
-    cache.remove(failKey);
 
     // 5. Eksekusi Aksi yang Diminta
     var body = typeof packet.body === "string" ? JSON.parse(packet.body) : packet.body;
@@ -512,7 +578,7 @@ function doPost(e) {
   }
 }
 
-// 6. PROSES EKSEKUSI REPLACE-CHUNK PER TABEL (Idempoten & Bersih)
+// 6. PROSES EKSEKUSI REPLACE-CHUNK PER TABEL (Idempoten, Cepat, & Anti-Rumus)
 function eksekusiReplaceChunk(payload) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tableName = payload.table;
@@ -548,13 +614,27 @@ function eksekusiReplaceChunk(payload) {
     return { ok: true, table: tableName, written: 0, totalRows: 0, isComplete: true };
   }
 
-  // Tulis potongan baris data
+  // Tulis potongan baris data dengan sanitasi anti-formula injection
   if (rows.length > 0) {
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r];
+      for (var c = 0; c < row.length; c++) {
+        var val = row[c];
+        if (typeof val === "string" && val.length > 0) {
+          var firstChar = val.charAt(0);
+          if (firstChar === "=" || firstChar === "+" || firstChar === "-" || firstChar === "@") {
+            row[c] = "'" + val;
+          }
+        }
+      }
+    }
+
     var neededRows = targetRow + rows.length - 1;
     if (neededRows > sheet.getMaxRows()) {
       sheet.insertRowsAfter(sheet.getMaxRows(), neededRows - sheet.getMaxRows() + 50);
     }
 
+    // Hanya menulis nilai tanpa operasi formatting agar performa cepat
     var range = sheet.getRange(targetRow, 1, rows.length, headers.length);
     range.setValues(rows);
     range.setVerticalAlignment("middle");
@@ -592,7 +672,7 @@ function eksekusiUpdateSummary(payload) {
 
   var kpi = payload.kpi || {};
   var syncTime = payload.syncTime || "-";
-  var appVersion = payload.appVersion || "JufaStore v2.1.27";
+  var appVersion = payload.appVersion || "JufaStore v2.1.28";
 
   var rowsValues = [
     [kpi.saldoKas || 0, "Uang kas riil tersedia di buku kas", syncTime],
@@ -615,6 +695,8 @@ function eksekusiUpdateSummary(payload) {
       var item = monthlyTrends[m];
       trendRows.push([item.month, item.omzet || 0, item.laba || 0]);
     }
+    // Bersihkan rentang tren bulanan lama sebelum menulis data baru
+    sheet.getRange(startTren, 1, 12, 3).clearContent();
     sheet.getRange(startTren, 1, trendRows.length, 3).setValues(trendRows);
     sheet.getRange(startTren, 2, trendRows.length, 2).setNumberFormat('"Rp " #,##0');
   }
@@ -637,18 +719,6 @@ function constantTimeCompare(a, b) {
     mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return mismatch === 0;
-}
-
-// HELPER: Catat Kegagalan Autentikasi untuk Rate-Limiting
-function catatKegagalanAutentikasi(cache, failKey, blockKey) {
-  var count = Number(cache.get(failKey) || 0) + 1;
-  if (count >= 10) {
-    // Blokir akses selama 15 menit (900 detik)
-    cache.put(blockKey, "1", 900);
-    cache.remove(failKey);
-  } else {
-    cache.put(failKey, String(count), 900);
-  }
 }
 
 // HELPER: Format Output JSON
