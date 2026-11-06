@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Capacitor } from '@capacitor/core';
 import {
   Info,
   ShieldCheck,
@@ -27,6 +26,7 @@ import {
   Download,
   AlertCircle,
   ExternalLink,
+  Monitor,
 } from 'lucide-react';
 import { db } from '../../db/db';
 import { formatNumber } from '../../utils/formatters';
@@ -38,6 +38,9 @@ import {
   promptUpdateDialog,
   UpdateInfo,
 } from '../../services/updateChecker';
+import { CURRENT_APP_VERSION } from '../../domain/patchNotes';
+import { getCurrentPlatform, getPlatformLabel } from '../../utils/platform';
+import { PatchNotesSection } from './PatchNotesSection';
 import { NavItem } from '../../components/Sidebar';
 
 interface AppInfoViewProps {
@@ -55,9 +58,12 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
     auditLogs: 0,
   });
 
-  const [currentVersion, setCurrentVersion] = useState<string>('2.1.0');
+  const [currentVersion, setCurrentVersion] = useState<string>(CURRENT_APP_VERSION);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  const platform = getCurrentPlatform();
+  const platformLabel = getPlatformLabel();
 
   useEffect(() => {
     getInstalledVersion().then(setCurrentVersion);
@@ -106,8 +112,6 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
     }
   };
 
-  const isNative = Capacitor.isNativePlatform();
-
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-10">
       {/* Header View */}
@@ -131,7 +135,7 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
             Versi {currentVersion}
           </span>
 
-          {isNative && updateInfo?.hasUpdate && (
+          {updateInfo?.hasUpdate && (
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse flex items-center gap-1">
               <span>●</span> Update v{updateInfo.version} Tersedia
             </span>
@@ -139,84 +143,94 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
         </div>
       </div>
 
-      {/* Bagian Update Otomatis GitHub (Hanya Tampil di Native Android) */}
-      {isNative && (
-        <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-3.5">
-          <div className="flex items-center justify-between pb-2 border-b theme-border flex-wrap gap-2">
-            <div className="flex items-center gap-2">
+      {/* Bagian Update Resmi GitHub (Mendukung Android & Desktop) */}
+      <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border space-y-3.5">
+        <div className="flex items-center justify-between pb-2 border-b theme-border flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            {platform === 'desktop' ? (
+              <Monitor size={18} className="text-emerald-500" />
+            ) : platform === 'android' ? (
               <Smartphone size={18} className="text-emerald-500" />
-              <h2 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
-                Pembaruan Aplikasi (Auto-Update)
-              </h2>
+            ) : (
+              <Globe size={18} className="text-emerald-500" />
+            )}
+            <h2 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
+              Pembaruan Aplikasi ({platformLabel})
+            </h2>
+          </div>
+          <span className="text-[11px] theme-text-muted font-mono">
+            GitHub Releases Official
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 rounded-xl theme-bg-surface border theme-border">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold theme-text-primary">
+                Versi Terpasang: <span className="font-mono text-emerald-400">v{currentVersion}</span>
+              </span>
+              {updateInfo?.hasUpdate ? (
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Versi Baru: v{updateInfo.version}
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border theme-border">
+                  Terbaru
+                </span>
+              )}
             </div>
-            <span className="text-[11px] theme-text-muted font-mono">
-              GitHub Releases Official
-            </span>
+            <p className="text-[11px] theme-text-secondary leading-relaxed">
+              JufaStore memeriksa rilis pembaruan resmi langsung dari repositori publik GitHub tanpa pihak ketiga. Seluruh data bisnis tetap 100% aman tersimpan di perangkat lokal.
+            </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 rounded-xl theme-bg-surface border theme-border">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold theme-text-primary">
-                  Versi Terpasang: <span className="font-mono text-emerald-400">v{currentVersion}</span>
-                </span>
-                {updateInfo?.hasUpdate ? (
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    Versi Baru: v{updateInfo.version}
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border theme-border">
-                    Terbaru
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] theme-text-secondary leading-relaxed">
-                JufaStore memeriksa pembaruan resmi langsung dari repositori publik GitHub tanpa pihak ketiga. Data bisnis Anda tetap 100% aman tersimpan di perangkat.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              {updateInfo?.hasUpdate && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    playTapSound();
-                    promptUpdateDialog(updateInfo);
-                  }}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition flex items-center gap-1.5 shadow-sm"
-                >
-                  <Download size={14} />
-                  <span>Perbarui Sekarang</span>
-                </button>
-              )}
-
+          <div className="flex items-center gap-2 shrink-0">
+            {updateInfo?.hasUpdate && (
               <button
                 type="button"
-                disabled={isCheckingUpdate}
-                onClick={handleManualCheck}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border hover:theme-border-strong theme-text-primary transition flex items-center gap-1.5 active:scale-[0.98] ${
-                  isCheckingUpdate ? 'opacity-60 cursor-not-allowed' : ''
-                }`}
+                onClick={() => {
+                  playTapSound();
+                  promptUpdateDialog(updateInfo);
+                }}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition flex items-center gap-1.5 shadow-sm"
               >
-                <RefreshCw size={13} className={isCheckingUpdate ? 'animate-spin text-emerald-400' : ''} />
-                <span>{isCheckingUpdate ? 'Memeriksa...' : 'Cek Pembaruan'}</span>
+                <Download size={14} />
+                <span>Perbarui Sekarang</span>
               </button>
-            </div>
-          </div>
+            )}
 
-          {updateInfo?.hasUpdate && (
-            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs theme-text-primary space-y-1.5">
-              <div className="font-bold text-emerald-400 flex items-center gap-1.5">
-                <CheckCircle2 size={14} />
-                <span>Catatan Rilis v{updateInfo.version}:</span>
-              </div>
-              <p className="text-[11px] theme-text-secondary leading-relaxed whitespace-pre-line pl-5 font-sans">
-                {updateInfo.releaseNotes}
-              </p>
-            </div>
-          )}
+            <button
+              type="button"
+              disabled={isCheckingUpdate}
+              onClick={handleManualCheck}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border hover:theme-border-strong theme-text-primary transition flex items-center gap-1.5 active:scale-[0.98] ${
+                isCheckingUpdate ? 'opacity-60 cursor-not-allowed' : ''
+              }`}
+            >
+              <RefreshCw size={13} className={isCheckingUpdate ? 'animate-spin text-emerald-400' : ''} />
+              <span>{isCheckingUpdate ? 'Memeriksa...' : 'Cek Pembaruan'}</span>
+            </button>
+          </div>
         </div>
-      )}
+
+        {updateInfo?.hasUpdate && (
+          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs theme-text-primary space-y-1.5">
+            <div className="font-bold text-emerald-400 flex items-center gap-1.5">
+              <CheckCircle2 size={14} />
+              <span>Catatan Rilis v{updateInfo.version}:</span>
+            </div>
+            <p className="text-[11px] theme-text-secondary leading-relaxed whitespace-pre-line pl-5 font-sans">
+              {updateInfo.releaseNotes}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Pusat Catatan Pembaruan & Fitur Baru (Play Store Style) */}
+      <PatchNotesSection
+        onCheckUpdate={handleManualCheck}
+        isCheckingUpdate={isCheckingUpdate}
+      />
 
       {/* Hero Badge Identity */}
       <div className="p-5 rounded-2xl theme-bg-card border theme-border space-y-3 relative overflow-hidden">
@@ -238,8 +252,8 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border">
-            <span className="text-[10px] theme-text-muted block">Arsitektur</span>
-            <span className="text-xs font-bold theme-text-primary">Capacitor 6 Android</span>
+            <span className="text-[10px] theme-text-muted block">Platform Aktif</span>
+            <span className="text-xs font-bold theme-text-primary">{platformLabel}</span>
           </div>
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border">
             <span className="text-[10px] theme-text-muted block">Metode Stok</span>
@@ -333,8 +347,8 @@ export const AppInfoView: React.FC<AppInfoViewProps> = ({ onNavigateTab }) => {
             <span className="font-mono font-semibold theme-text-primary">Inter, Poppins, JetBrains Mono</span>
           </div>
           <div className="p-2.5 rounded-xl theme-bg-surface border theme-border flex items-center justify-between">
-            <span className="theme-text-secondary">Platform Android</span>
-            <span className="font-mono font-semibold theme-text-primary">Capacitor 6 + PWA Service Worker</span>
+            <span className="theme-text-secondary">Arsitektur Multi-Platform</span>
+            <span className="font-mono font-semibold theme-text-primary">Android (Capacitor) + Desktop (Tauri)</span>
           </div>
         </div>
       </div>

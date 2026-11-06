@@ -59,7 +59,8 @@ import {
   UpdateInfo,
 } from '../../services/updateChecker';
 
-const APP_VERSION = '2.1.0';
+import { CURRENT_APP_VERSION } from '../../domain/patchNotes';
+const APP_VERSION = CURRENT_APP_VERSION;
 
 import {
   exportBackupToFile,
@@ -741,7 +742,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsChanged })
             <span className="font-bold text-emerald-500 dark:text-emerald-400">v{currentVersion}</span>
           </div>
 
-          {Capacitor.isNativePlatform() && (
+          {(
             updateInfo?.hasUpdate ? (
               <button
                 type="button"
