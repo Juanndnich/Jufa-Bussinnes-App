@@ -3,11 +3,14 @@ import { App } from '@capacitor/app';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Browser } from '@capacitor/browser';
 import Swal from 'sweetalert2';
+import { getCurrentPlatform, AppPlatform } from '../utils/platform';
+import { CURRENT_APP_VERSION, CURRENT_PATCH_NOTE } from '../domain/patchNotes';
 
 export const GITHUB_REPO_OWNER = 'Juanndnich';
 export const GITHUB_REPO_NAME = 'Jufa-Bussinnes-App';
 export const GITHUB_LATEST_RELEASE_URL = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/latest`;
 export const TARGET_APK_NAME = 'JufaStore.apk';
+export const TARGET_EXE_NAME = 'JufaStore-Setup.exe';
 
 const LAST_CHECK_KEY = 'jufastore_last_update_check_time';
 const DISMISSED_VERSION_KEY = 'jufastore_dismissed_update_version';
@@ -29,14 +32,16 @@ export interface GitHubReleaseResponse {
 }
 
 export interface UpdateInfo {
-  version: string; // contoh: "2.1.25"
-  currentVersion: string; // contoh: "2.1.24"
-  tagName: string; // contoh: "v2.1.25"
+  version: string; // contoh: "2.1.29"
+  currentVersion: string; // contoh: "2.1.28"
+  tagName: string; // contoh: "v2.1.29"
   releaseNotes: string;
-  downloadUrl: string; // direct download URL asset JufaStore.apk
+  downloadUrl: string; // direct download URL asset
   releasePageUrl: string; // URL halaman release GitHub (html_url)
   apkSize: number; // in bytes
   hasUpdate: boolean;
+  assetName?: string;
+  platform?: AppPlatform;
 }
 
 let latestDiscoveredUpdate: UpdateInfo | null = null;
@@ -66,15 +71,20 @@ export function getDiscoveredUpdate(): UpdateInfo | null {
 }
 
 /**
- * Membuka URL langsung di browser sistem perangkat menggunakan @capacitor/browser.
+ * Membuka URL langsung di browser sistem perangkat menggunakan @capacitor/browser dengan fallback aman
  */
 export async function openInSystemBrowser(url: string): Promise<void> {
-  try {
-    await Browser.open({ url });
-  } catch {
-    if (typeof window !== 'undefined') {
-      window.open(url, '_blank') || (window.location.href = url);
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await Browser.open({ url });
+      return;
+    } catch {
+      // Fallback
     }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 }
 
@@ -131,8 +141,31 @@ export function findApkAsset(
 ): { downloadUrl: string; size: number; name: string } | null {
   if (!release.assets || !Array.isArray(release.assets)) return null;
   const asset = release.assets.find(
-    (a) => a.name.toLowerCase() === TARGET_APK_NAME.toLowerCase()
+    (a) => (a.name || '').toLowerCase() === TARGET_APK_NAME.toLowerCase()
   );
+  if (!asset || !asset.browser_download_url) return null;
+  return {
+    downloadUrl: asset.browser_download_url,
+    size: Number(asset.size) || 0,
+    name: asset.name,
+  };
+}
+
+/**
+ * Ekstraksi asset Desktop Windows (.exe) dari respons GitHub Release
+ */
+export function findDesktopAsset(
+  release: GitHubReleaseResponse
+): { downloadUrl: string; size: number; name: string } | null {
+  if (!release.assets || !Array.isArray(release.assets)) return null;
+  const asset = release.assets.find((a) => {
+    const lower = (a.name || '').toLowerCase();
+    return (
+      lower === TARGET_EXE_NAME.toLowerCase() ||
+      (lower.startsWith('jufastore') && lower.endsWith('.exe')) ||
+      lower.endsWith('.exe')
+    );
+  });
   if (!asset || !asset.browser_download_url) return null;
   return {
     downloadUrl: asset.browser_download_url,
@@ -153,7 +186,7 @@ export async function getInstalledVersion(): Promise<string> {
       // Fallback
     }
   }
-  return '2.1.25';
+  return CURRENT_APP_VERSION;
 }
 
 /**
@@ -205,28 +238,14 @@ function getSwalTheme() {
 }
 
 /**
- * Cek Pembaruan dari GitHub Releases
+ * Cek Pembaruan dari GitHub Releases (Mendukung Android, Windows Desktop, dan Web)
  */
 export async function checkForUpdates(options: {
   manual?: boolean;
   onNavigateToBackup?: () => void;
+  onViewPatchNotes?: () => void;
 }): Promise<UpdateInfo | null> {
-  const isNative = Capacitor.isNativePlatform();
-
-  // Jika di browser biasa (bukan native), lewati pengecekan
-  if (!isNative) {
-    if (options.manual) {
-      const theme = getSwalTheme();
-      await Swal.fire({
-        icon: 'info',
-        title: 'Pembaruan Khusus Aplikasi Android',
-        text: 'Fitur pembaruan APK otomatis hanya aktif pada aplikasi native Android.',
-        confirmButtonText: 'Mengerti',
-        ...theme,
-      });
-    }
-    return null;
-  }
+  const platform = getCurrentPlatform();
 
   // Cek batas interval waktu 6 jam jika auto-check
   if (!options.manual) {
@@ -306,32 +325,64 @@ export async function checkForUpdates(options: {
     const remoteTag = release.tag_name || '';
     const cleanRemoteVersion = remoteTag.replace(/^[vV]/, '');
     const hasUpdate = isNewerVersion(cleanRemoteVersion, currentVersion);
-    const apkAsset = findApkAsset(release);
 
-    if (!hasUpdate || !apkAsset) {
+    // Cari asset berdasarkan platform yang sedang berjalan
+    let chosenAsset: { downloadUrl: string; size: number; name: string } | null = null;
+    if (platform === 'desktop') {
+      chosenAsset = findDesktopAsset(release) || findApkAsset(release);
+    } else {
+      chosenAsset = findApkAsset(release);
+    }
+
+    const releasePageUrl =
+      release.html_url ||
+      `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/tag/${remoteTag}`;
+
+    if (!hasUpdate) {
       notifyUpdateListeners(null);
       if (options.manual) {
         const theme = getSwalTheme();
-        await Swal.fire({
+        const resAlert = await Swal.fire({
           icon: 'success',
           title: 'Versi Sudah Terbaru',
-          html: `<p>Aplikasi JufaStore Anda sudah menggunakan versi terbaru: <strong>v${currentVersion}</strong>.</p>`,
-          confirmButtonText: 'Mantap',
+          html: `
+            <div class="space-y-2 text-xs">
+              <p>Aplikasi JufaStore Anda sudah menggunakan versi resmi terbaru: <strong>v${currentVersion}</strong>.</p>
+              <div class="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 font-mono">
+                Platform Aktif: <strong>${platform === 'desktop' ? 'Windows Desktop' : platform === 'android' ? 'Android APK' : 'Web Browser'}</strong>
+              </div>
+            </div>
+          `,
+          showCancelButton: true,
+          confirmButtonText: 'Mengerti',
+          cancelButtonText: 'Buka Catatan Pembaruan',
           ...theme,
+          cancelButtonColor: '#3b82f6',
         });
+
+        if (resAlert.isDismissed && resAlert.dismiss === Swal.DismissReason.cancel) {
+          options.onViewPatchNotes?.();
+        }
       }
       return null;
     }
+
+    // Jika ada update tapi asset spesifik belum ada (misal masih diproses CI), gunakan fallback halaman rilis
+    const downloadUrl = chosenAsset?.downloadUrl || releasePageUrl;
+    const assetSize = chosenAsset?.size || 0;
+    const assetName = chosenAsset?.name || (platform === 'desktop' ? TARGET_EXE_NAME : TARGET_APK_NAME);
 
     const updateInfo: UpdateInfo = {
       version: cleanRemoteVersion,
       currentVersion,
       tagName: remoteTag,
       releaseNotes: release.body?.trim() || 'Pembaruan performa dan stabilitas aplikasi.',
-      downloadUrl: apkAsset.downloadUrl,
-      releasePageUrl: release.html_url || `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/tag/${remoteTag}`,
-      apkSize: apkAsset.size,
+      downloadUrl,
+      releasePageUrl,
+      apkSize: assetSize,
       hasUpdate: true,
+      assetName,
+      platform,
     };
 
     notifyUpdateListeners(updateInfo);
@@ -361,16 +412,35 @@ export async function checkForUpdates(options: {
 }
 
 /**
- * Tampilkan Dialog Konfirmasi Pembaruan Versi Baru (Alur Tombol ke GitHub)
+ * Tampilkan Dialog Konfirmasi Pembaruan Versi Baru (Play Store Style)
  */
 export async function promptUpdateDialog(updateInfo: UpdateInfo): Promise<void> {
   const theme = getSwalTheme();
   const sizeMb = (updateInfo.apkSize / (1024 * 1024)).toFixed(1);
+  const isDesktop = updateInfo.platform === 'desktop';
 
   const escapedNotes = updateInfo.releaseNotes
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/\n/g, '<br/>');
+
+  const installInstructions = isDesktop
+    ? `
+      <ol class="list-decimal pl-4 space-y-1 text-zinc-600 dark:text-zinc-400 leading-relaxed">
+        <li>Tekan tombol <strong>"Unduh Installer PC (.exe)"</strong> di bawah.</li>
+        <li>Buka file <strong>${updateInfo.assetName || TARGET_EXE_NAME}</strong> dari folder Download.</li>
+        <li>Jalankan pemasangan hingga selesai (seluruh database IndexedDB Anda aman).</li>
+      </ol>
+    `
+    : `
+      <ol class="list-decimal pl-4 space-y-1 text-zinc-600 dark:text-zinc-400 leading-relaxed">
+        <li>Tekan tombol <strong>"Unduh di GitHub"</strong> di bawah.</li>
+        <li>Buka file dari panel notifikasi HP atau folder <strong>Download</strong>.</li>
+        <li>Tekan <strong>Instal</strong> saat installer muncul (seluruh data toko & kas aman 100%).</li>
+      </ol>
+    `;
+
+  const primaryBtnText = isDesktop ? 'Unduh Installer PC (.exe)' : 'Unduh di GitHub';
 
   const result = await Swal.fire({
     title: 'Pembaruan Tersedia',
@@ -382,27 +452,23 @@ export async function promptUpdateDialog(updateInfo: UpdateInfo): Promise<void> 
           <span>Versi Baru: <strong>v${updateInfo.version}</strong></span>
         </div>
 
-        <div class="p-3 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-1.5 max-h-32 overflow-y-auto">
-          <div class="font-bold text-zinc-700 dark:text-zinc-300">Catatan Rilis (${updateInfo.tagName}):</div>
+        <div class="p-3 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-1.5 max-h-36 overflow-y-auto">
+          <div class="font-bold text-zinc-700 dark:text-zinc-300">Yang Baru di Versi ${updateInfo.tagName} (Play Store Style):</div>
           <div class="text-zinc-600 dark:text-zinc-400 leading-relaxed font-sans">${escapedNotes}</div>
         </div>
 
         <div class="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-2">
           <div class="font-bold text-zinc-800 dark:text-zinc-200 flex items-center justify-between">
-            <span>3 Langkah Cepat Pasang Pembaruan:</span>
-            <span class="text-[10px] font-mono text-zinc-500 font-normal">~${sizeMb} MB</span>
+            <span>Petunjuk Pemasangan Pembaruan:</span>
+            <span class="text-[10px] font-mono text-zinc-500 font-normal">${updateInfo.apkSize > 0 ? `~${sizeMb} MB` : 'Rilis Resmi'}</span>
           </div>
-          <ol class="list-decimal pl-4 space-y-1 text-zinc-600 dark:text-zinc-400 leading-relaxed">
-            <li>Tekan tombol <strong>"Unduh di GitHub"</strong> di bawah.</li>
-            <li>Buka file dari panel notifikasi HP atau folder <strong>Download</strong>.</li>
-            <li>Tekan <strong>Instal</strong> saat installer muncul (seluruh data toko & kas aman 100%).</li>
-          </ol>
+          ${installInstructions}
         </div>
       </div>
     `,
     showCancelButton: true,
     showDenyButton: true,
-    confirmButtonText: 'Unduh di GitHub',
+    confirmButtonText: primaryBtnText,
     denyButtonText: 'Lihat Halaman Rilis',
     cancelButtonText: 'Nanti',
     denyButtonColor: '#3b82f6',
@@ -411,13 +477,10 @@ export async function promptUpdateDialog(updateInfo: UpdateInfo): Promise<void> 
   });
 
   if (result.isConfirmed) {
-    // Tombol utama: unduh langsung APK resmi dari GitHub
     await openInSystemBrowser(updateInfo.downloadUrl);
   } else if (result.isDenied) {
-    // Tombol sekunder: buka halaman rilis GitHub
     await openInSystemBrowser(updateInfo.releasePageUrl);
   } else if (result.isDismissed) {
-    // Tombol Nanti: ingat versi ini agar tidak mengganggu pengecekan otomatis berikutnya
     localStorage.setItem(DISMISSED_VERSION_KEY, updateInfo.version);
   }
 }

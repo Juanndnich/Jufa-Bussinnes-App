@@ -1,13 +1,14 @@
 {
   "name": "jufastore",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.1.29",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",
