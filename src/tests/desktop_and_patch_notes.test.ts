@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   CURRENT_APP_VERSION,
   CURRENT_PATCH_NOTE,
-  UPCOMING_ROADMAP,
+
   HISTORICAL_PATCH_NOTES,
 } from '../domain/patchNotes';
 import {
@@ -49,17 +49,8 @@ describe('JufaStore - Desktop Support & Patch Notes Integrity Tests', () => {
       }
     });
 
-    it('1.4. Peta jalan pembaruan mendatang (upcoming roadmap) terisi lengkap dengan status valid', () => {
-      expect(UPCOMING_ROADMAP.length).toBeGreaterThan(0);
-      const validStatuses = ['Dalam Pengerjaan', 'Direncanakan', 'Eksplorasi'];
-      for (const item of UPCOMING_ROADMAP) {
-        expect(item.id).toBeTruthy();
-        expect(item.title).toBeTruthy();
-        expect(validStatuses).toContain(item.status);
-        expect(item.targetVersion).toMatch(/^v\d+\.\d+\.\d+$/);
-        expect(item.description).toBeTruthy();
-        expect(item.benefits.length).toBeGreaterThan(0);
-      }
+    it('1.4. Catatan rilis v2.1.29 memuat rincian fitur dan peningkatan sistem', () => {
+      expect(CURRENT_PATCH_NOTE.categories.length).toBeGreaterThan(0);
     });
 
     it('1.5. Riwayat rilis terdahulu berisi versi v2.1.28, v2.1.27, v2.1.26, dst', () => {
@@ -173,7 +164,8 @@ describe('JufaStore - Desktop Support & Patch Notes Integrity Tests', () => {
     });
 
     it('3.6. SemVer comparison mendeteksi versi lebih baru dengan tepat', () => {
-      expect(isNewerVersion('2.1.30', CURRENT_APP_VERSION)).toBe(true);
+      expect(isNewerVersion('2.1.31', CURRENT_APP_VERSION)).toBe(true);
+      expect(isNewerVersion('2.1.30', CURRENT_APP_VERSION)).toBe(false);
       expect(isNewerVersion('2.1.29', CURRENT_APP_VERSION)).toBe(false);
       expect(isNewerVersion('2.1.28', CURRENT_APP_VERSION)).toBe(false);
     });

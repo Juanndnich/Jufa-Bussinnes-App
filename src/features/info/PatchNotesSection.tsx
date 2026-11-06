@@ -2,29 +2,23 @@ import React, { useState } from 'react';
 import {
   Sparkles,
   CheckCircle2,
-  Clock,
   History,
   ShieldCheck,
   Layers,
   ChevronDown,
   ChevronUp,
-  Tag,
-  ArrowRight,
-  ExternalLink,
   Smartphone,
   Monitor,
   Globe,
 } from 'lucide-react';
 import {
   CURRENT_PATCH_NOTE,
-  UPCOMING_ROADMAP,
   HISTORICAL_PATCH_NOTES,
-  PatchNoteItem,
 } from '../../domain/patchNotes';
 import { getCurrentPlatform, getPlatformLabel } from '../../utils/platform';
 import { playTapSound } from '../../utils/sound';
 
-type ActiveTab = 'current' | 'upcoming' | 'history';
+type ActiveTab = 'current' | 'history';
 
 interface PatchNotesSectionProps {
   onCheckUpdate?: () => void;
@@ -64,7 +58,7 @@ export const PatchNotesSection: React.FC<PatchNotesSectionProps> = ({
               Catatan Pembaruan & Fitur Baru (Play Store Style)
             </h2>
             <p className="text-[11px] theme-text-secondary">
-              Informasi detail rilis aplikasi, peta jalan fitur mendatang, dan riwayat pembaruan
+              Informasi detail rilis aplikasi dan riwayat pembaruan
             </p>
           </div>
         </div>
@@ -74,15 +68,15 @@ export const PatchNotesSection: React.FC<PatchNotesSectionProps> = ({
           {platform === 'android' ? (
             <Smartphone size={13} className="text-emerald-400" />
           ) : platform === 'desktop' ? (
-            <Monitor size={13} className="text-cyan-400" />
+            <Monitor size={13} className="text-emerald-400" />
           ) : (
-            <Globe size={13} className="text-amber-400" />
+            <Globe size={13} className="text-emerald-400" />
           )}
           <span>{platformLabel}</span>
         </div>
       </div>
 
-      {/* Navigasi Tab */}
+      {/* Navigasi Tab (Hanya 2 Tab: Versi Ini & Riwayat Rilis) */}
       <div className="flex items-center gap-1.5 p-1 rounded-xl theme-bg-surface border theme-border">
         <button
           type="button"
@@ -95,19 +89,6 @@ export const PatchNotesSection: React.FC<PatchNotesSectionProps> = ({
         >
           <Sparkles size={13} />
           <span>Versi Ini (v{CURRENT_PATCH_NOTE.version})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleTabChange('upcoming')}
-          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
-            activeTab === 'upcoming'
-              ? 'bg-emerald-500 text-zinc-950 shadow-sm'
-              : 'theme-text-secondary hover:theme-text-primary'
-          }`}
-        >
-          <Clock size={13} />
-          <span>Mendatang ({UPCOMING_ROADMAP.length})</span>
         </button>
 
         <button
@@ -204,65 +185,7 @@ export const PatchNotesSection: React.FC<PatchNotesSectionProps> = ({
         </div>
       )}
 
-      {/* Konten Tab 2: Pembaruan Mendatang (Upcoming Features / Roadmap) */}
-      {activeTab === 'upcoming' && (
-        <div className="space-y-3 pt-1">
-          <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs theme-text-primary space-y-1">
-            <span className="font-bold text-cyan-400 block">Peta Jalan Pengembangan:</span>
-            <p className="text-[11px] theme-text-secondary leading-relaxed">
-              Berikut adalah daftar fitur yang direncanakan dan sedang dipersiapkan untuk rilis berikutnya demi kemudahan pencatatan bisnis Robux Anda.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            {UPCOMING_ROADMAP.map((item) => (
-              <div
-                key={item.id}
-                className="p-4 rounded-xl theme-bg-surface border theme-border space-y-2.5"
-              >
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
-                        item.status === 'Dalam Pengerjaan'
-                          ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                          : 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30'
-                      }`}
-                    >
-                      {item.status}
-                    </span>
-                    <span className="text-[10px] font-mono text-zinc-500">
-                      Target: {item.targetVersion}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-xs font-bold theme-text-primary mb-1">
-                    {item.title}
-                  </h4>
-                  <p className="text-xs theme-text-secondary leading-relaxed font-sans">
-                    {item.description}
-                  </p>
-                </div>
-
-                <div className="p-2.5 rounded-lg theme-bg-card border theme-border space-y-1">
-                  <span className="text-[10px] font-semibold text-emerald-400 block">
-                    Manfaat Operasional:
-                  </span>
-                  <ul className="space-y-0.5 pl-3 list-disc text-[11px] theme-text-muted">
-                    {item.benefits.map((b, bIdx) => (
-                      <li key={bIdx}>{b}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Konten Tab 3: Riwayat Rilis Sebelumnya */}
+      {/* Konten Tab 2: Riwayat Rilis Sebelumnya */}
       {activeTab === 'history' && (
         <div className="space-y-2.5 pt-1">
           <p className="text-[11px] theme-text-secondary pb-1">

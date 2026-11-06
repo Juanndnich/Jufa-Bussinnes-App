@@ -16,6 +16,7 @@ import {
   Users,
   Tag,
   Info,
+  PiggyBank,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { formatNumber } from '../utils/formatters';
@@ -30,6 +31,7 @@ export type NavItem =
   | 'finance'
   | 'analysis'
   | 'investor'
+  | 'savings'
   | 'settings'
   | 'info';
 
@@ -90,6 +92,12 @@ export const CATEGORIZED_NAV: NavCategory[] = [
         label: 'Buku Kas Harian',
         shortLabel: 'Kas',
         icon: Wallet,
+      },
+      {
+        id: 'savings',
+        label: 'Buku Tabungan Pribadi',
+        shortLabel: 'Tabungan',
+        icon: PiggyBank,
       },
     ],
   },

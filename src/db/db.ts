@@ -12,6 +12,8 @@ import {
   Investor,
   InvestorPayout,
   Loan,
+  SavingsEntry,
+  SavingsCategory,
   SyncQueueItem,
 } from './schema';
 
@@ -28,6 +30,8 @@ export class JufaStoreDatabase extends Dexie {
   investors!: Table<Investor, string>;
   investorPayouts!: Table<InvestorPayout, string>;
   loans!: Table<Loan, string>;
+  savingsEntries!: Table<SavingsEntry, string>;
+  savingsCategories!: Table<SavingsCategory, string>;
   syncQueue?: Table<any, number>;
 
   constructor() {
@@ -89,6 +93,12 @@ export class JufaStoreDatabase extends Dexie {
     // Versi 6: Rombak total sinkronisasi Sheets menjadi cermin per tabel; hapus syncQueue
     this.version(6).stores({
       syncQueue: null,
+    });
+
+    // Versi 7: Penambahan Buku Tabungan Pribadi & Kategori Tabungan
+    this.version(7).stores({
+      savingsEntries: 'id, type, category, dateKey, createdAt',
+      savingsCategories: 'id, name, createdAt',
     });
   }
 }

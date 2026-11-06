@@ -30,6 +30,8 @@ export const BackupSchema = z.object({
   investors: z.array(z.any()).optional(),
   investorPayouts: z.array(z.any()).optional(),
   loans: z.array(z.any()).optional(),
+  savingsEntries: z.array(z.any()).optional(),
+  savingsCategories: z.array(z.any()).optional(),
 });
 
 export type BackupData = z.infer<typeof BackupSchema>;
@@ -62,6 +64,8 @@ export async function createBackupData(): Promise<BackupData> {
     invs,
     pays,
     allLoans,
+    allSavingsEntries,
+    allSavingsCategories,
   ] = await Promise.all([
     db.settings.toArray(),
     db.ratePresets.toArray(),
@@ -75,6 +79,8 @@ export async function createBackupData(): Promise<BackupData> {
     db.investors.toArray(),
     db.investorPayouts.toArray(),
     db.loans.toArray(),
+    db.savingsEntries.toArray(),
+    db.savingsCategories.toArray(),
   ]);
 
   // Hapus token Google Sheets dari file ekspor cadangan
@@ -95,6 +101,8 @@ export async function createBackupData(): Promise<BackupData> {
     investors: invs,
     investorPayouts: pays,
     loans: allLoans,
+    savingsEntries: allSavingsEntries,
+    savingsCategories: allSavingsCategories,
   };
 }
 
@@ -155,6 +163,8 @@ export async function restoreFromBackupData(data: BackupData): Promise<void> {
       db.investors,
       db.investorPayouts,
       db.loans,
+      db.savingsEntries,
+      db.savingsCategories,
     ],
     async () => {
       if (data.settings) {
@@ -210,6 +220,14 @@ export async function restoreFromBackupData(data: BackupData): Promise<void> {
       if (data.loans) {
         await db.loans.clear();
         await db.loans.bulkPut(data.loans);
+      }
+      if (data.savingsEntries) {
+        await db.savingsEntries.clear();
+        await db.savingsEntries.bulkPut(data.savingsEntries);
+      }
+      if (data.savingsCategories) {
+        await db.savingsCategories.clear();
+        await db.savingsCategories.bulkPut(data.savingsCategories);
       }
     }
   );

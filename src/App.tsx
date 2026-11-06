@@ -13,6 +13,7 @@ import { InvestorView } from './features/investor/InvestorView';
 import { SettingsView } from './features/settings/SettingsView';
 import { PricelistView } from './features/pricelist/PricelistView';
 import { AppInfoView } from './features/info/AppInfoView';
+import { SavingsView } from './features/savings/SavingsView';
 import { SplashScreen } from './components/SplashScreen';
 import { QuickSaleModal } from './features/sales/QuickSaleModal';
 import { repository } from './db/repository';
@@ -212,6 +213,8 @@ export const App: React.FC = () => {
                 {currentTab === 'sales' && <SalesView />}
 
                 {currentTab === 'finance' && <FinanceView />}
+
+                {currentTab === 'savings' && <SavingsView />}
 
                 {currentTab === 'analysis' && <AnalysisView />}
 

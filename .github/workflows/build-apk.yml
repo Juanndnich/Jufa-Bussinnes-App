@@ -1,4 +1,4 @@
-name: Build & Release Android APK
+name: Build & Release JufaStore (Android & Windows)
 
 on:
   push:
@@ -9,9 +9,13 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build & Release Android APK
+  build-android:
+    name: Build Android APK
     runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.versioning.outputs.release_tag }}
+      version_name: ${{ steps.versioning.outputs.version_name }}
+      version_code: ${{ steps.versioning.outputs.version_code }}
 
     steps:
       - name: Checkout Repository
@@ -48,6 +52,9 @@ jobs:
           echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_ENV
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
           echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+          echo "version_code=${VERSION_CODE}" >> $GITHUB_OUTPUT
+          echo "version_name=${VERSION_NAME}" >> $GITHUB_OUTPUT
+          echo "release_tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
           echo "Version Code: ${VERSION_CODE}"
           echo "Version Name: ${VERSION_NAME}"
           echo "Release Tag: ${RELEASE_TAG}"
@@ -86,7 +93,7 @@ jobs:
           echo "Memverifikasi tanda tangan APK..."
           $APKSIGNER verify --verbose --print-certs JufaStore.apk
 
-      - name: Upload APK Artifact
+      - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: JufaStore-Android-APK
@@ -94,22 +101,99 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release (Auto-Update APK)
-        uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+  build-desktop:
+    name: Build Windows Desktop (Tauri v2)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: JufaStore ${{ env.RELEASE_TAG }} (Rilis Resmi)
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Node Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Build Tauri Desktop Application
+        run: npx --yes @tauri-apps/cli@^2 build
+
+      - name: Prepare Windows Installer File
+        shell: pwsh
+        run: |
+          $nsisInstaller = Get-ChildItem -Path "src-tauri\target\release\bundle\nsis" -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($nsisInstaller) {
+            Copy-Item -Path $nsisInstaller.FullName -Destination "JufaStore-Setup.exe"
+            Write-Host "Berhasil menemukan NSIS installer: $($nsisInstaller.FullName)"
+          } else {
+            $anyExe = Get-ChildItem -Path "src-tauri\target\release" -Filter "jufastore.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($anyExe) {
+              Copy-Item -Path $anyExe.FullName -Destination "JufaStore-Setup.exe"
+              Write-Host "Menggunakan file binary fallback: $($anyExe.FullName)"
+            } else {
+              throw "File installer .exe tidak ditemukan di target release"
+            }
+          }
+
+      - name: Upload Windows Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JufaStore-Windows-Installer
+          path: JufaStore-Setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish Official Release (Android & Windows)
+    needs: [build-android, build-desktop]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: JufaStore-Android-APK
+          path: ./release-assets
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: JufaStore-Windows-Installer
+          path: ./release-assets
+
+      - name: Publish Unified GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build-android.outputs.release_tag }}
+          name: JufaStore ${{ needs.build-android.outputs.release_tag }} (Rilis Resmi)
           body: |
             ## Pembaruan Resmi JufaStore
-            - Versi Rilis: ${{ env.RELEASE_TAG }} (Version Code: ${{ env.VERSION_CODE }})
+            - Versi Rilis: ${{ needs.build-android.outputs.release_tag }} (Android Version Code: ${{ needs.build-android.outputs.version_code }})
+            - Multi-Platform: Android APK (`JufaStore.apk`) & Windows Desktop Installer (`JufaStore-Setup.exe`)
             - Ditandatangani resmi (Release Keystore)
             - Build otomatis dari commit: ${{ github.sha }}
             - File APK dapat langsung dipasang atau menimpa versi sebelumnya tanpa copot aplikasi.
+            - Seluruh data bisnis & keuangan tersimpan 100% aman di database lokal perangkat Anda.
           draft: false
           prerelease: false
           make_latest: true
           files: |
-            JufaStore.apk
+            release-assets/JufaStore.apk
+            release-assets/JufaStore-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
