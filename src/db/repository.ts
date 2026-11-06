@@ -13,6 +13,8 @@ import {
   InvestorPayout,
   Loan,
   LoanPayment,
+  SavingsEntry,
+  SavingsCategory,
 } from './schema';
 import {
   allocateFifoCost,
@@ -20,6 +22,11 @@ import {
   calculateProfit,
   FifoBatchInput,
 } from '../domain/calculations';
+import {
+  calculateSavingsSummary,
+  validateSavingsWithdrawal,
+  SavingsSummaryResult,
+} from '../domain/savings';
 import { generateTransactionCode, generateBatchCode } from '../utils/formatters';
 
 export function getTodayKey(): string {
@@ -1478,6 +1485,159 @@ export const repository = {
       }
 
       await db.loans.delete(loanId);
+    });
+  },
+
+  // ===================== BUKU TABUNGAN PRIBADI (SAVINGS) =====================
+  async getSavingsSummary(): Promise<SavingsSummaryResult> {
+    const [entries, savedCategories] = await Promise.all([
+      db.savingsEntries.toArray(),
+      db.savingsCategories.toArray(),
+    ]);
+    return calculateSavingsSummary(entries, savedCategories);
+  },
+
+  async getSavingsEntries(filter?: {
+    type?: 'ALL' | 'IN' | 'OUT';
+    category?: string;
+    search?: string;
+  }): Promise<SavingsEntry[]> {
+    let allEntries = await db.savingsEntries.toArray();
+
+    allEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    if (filter) {
+      if (filter.type && filter.type !== 'ALL') {
+        allEntries = allEntries.filter((e) => e.type === filter.type);
+      }
+      if (filter.category !== undefined && filter.category !== 'ALL') {
+        if (!filter.category || filter.category === 'UNALLOCATED') {
+          allEntries = allEntries.filter(
+            (e) => !e.category || e.category.trim() === '' || e.category.toUpperCase() === 'UMUM' || e.category.toLowerCase() === 'tanpa kategori'
+          );
+        } else {
+          allEntries = allEntries.filter((e) => e.category.trim().toLowerCase() === filter.category!.trim().toLowerCase());
+        }
+      }
+      if (filter.search && filter.search.trim()) {
+        const query = filter.search.trim().toLowerCase();
+        allEntries = allEntries.filter(
+          (e) =>
+            (e.notes && e.notes.toLowerCase().includes(query)) ||
+            (e.category && e.category.toLowerCase().includes(query)) ||
+            e.amountRupiah.toString().includes(query)
+        );
+      }
+    }
+
+    return allEntries;
+  },
+
+  async getSavingsCategories(): Promise<SavingsCategory[]> {
+    const list = await db.savingsCategories.toArray();
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  },
+
+  async addSavingsCategory(name: string): Promise<SavingsCategory> {
+    const cleanName = name.trim();
+    if (!cleanName) throw new Error('Nama kategori tabungan tidak boleh kosong');
+
+    const existing = await db.savingsCategories
+      .filter((c) => c.name.toLowerCase() === cleanName.toLowerCase())
+      .first();
+    if (existing) return existing;
+
+    const newCat: SavingsCategory = {
+      id: `SAVCAT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: cleanName,
+      createdAt: new Date().toISOString(),
+    };
+    await db.savingsCategories.put(newCat);
+    return newCat;
+  },
+
+  async deleteSavingsCategory(categoryId: string): Promise<void> {
+    await db.savingsCategories.delete(categoryId);
+  },
+
+  async addSavingsEntry(params: {
+    type: 'IN' | 'OUT';
+    amountRupiah: number;
+    category?: string;
+    notes?: string;
+    dateKey?: string;
+  }): Promise<SavingsEntry> {
+    const amount = Math.round(Number(params.amountRupiah) || 0);
+    if (amount <= 0) {
+      throw new Error('Nominal uang tabungan harus lebih dari Rp0');
+    }
+
+    const cleanCategory = (params.category || '').trim();
+    const isUnallocated = !cleanCategory || cleanCategory.toUpperCase() === 'UMUM' || cleanCategory.toLowerCase() === 'tanpa kategori';
+    const now = new Date().toISOString();
+
+    return await db.transaction('rw', [db.savingsEntries, db.savingsCategories, db.auditLogs], async () => {
+      if (params.type === 'OUT') {
+        const allEntries = await db.savingsEntries.toArray();
+        const check = validateSavingsWithdrawal(amount, isUnallocated ? '' : cleanCategory, allEntries);
+        if (!check.valid) {
+          throw new Error(check.error || 'Saldo tabungan tidak mencukupi');
+        }
+      }
+
+      if (!isUnallocated) {
+        const existingCat = await db.savingsCategories
+          .filter((c) => c.name.toLowerCase() === cleanCategory.toLowerCase())
+          .first();
+        if (!existingCat) {
+          await db.savingsCategories.put({
+            id: `SAVCAT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            name: cleanCategory,
+            createdAt: now,
+          });
+        }
+      }
+
+      const newEntry: SavingsEntry = {
+        id: `SAV-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        type: params.type,
+        amountRupiah: amount,
+        category: isUnallocated ? '' : cleanCategory,
+        notes: params.notes?.trim() || undefined,
+        dateKey: params.dateKey || getTodayKey(),
+        createdAt: now,
+      };
+
+      await db.savingsEntries.put(newEntry);
+
+      await db.auditLogs.put({
+        id: `LOG-${Date.now()}`,
+        action: params.type === 'IN' ? 'SAVINGS_DEPOSIT' : 'SAVINGS_WITHDRAWAL',
+        entity: 'savingsEntries',
+        entityId: newEntry.id,
+        details: `${params.type === 'IN' ? 'Setor' : 'Tarik'} tabungan Rp${amount.toLocaleString('id-ID')} (${isUnallocated ? 'Tanpa Kategori' : cleanCategory})${params.notes ? ` - ${params.notes}` : ''}`,
+        createdAt: now,
+      });
+
+      return newEntry;
+    });
+  },
+
+  async deleteSavingsEntry(id: string): Promise<void> {
+    await db.transaction('rw', [db.savingsEntries, db.auditLogs], async () => {
+      const entry = await db.savingsEntries.get(id);
+      if (!entry) throw new Error('Data tabungan tidak ditemukan');
+
+      await db.savingsEntries.delete(id);
+
+      await db.auditLogs.put({
+        id: `LOG-${Date.now()}`,
+        action: 'SAVINGS_DELETE',
+        entity: 'savingsEntries',
+        entityId: id,
+        details: `Hapus catatan tabungan ${entry.type === 'IN' ? 'Setor' : 'Tarik'} Rp${entry.amountRupiah.toLocaleString('id-ID')}`,
+        createdAt: new Date().toISOString(),
+      });
     });
   },
 };

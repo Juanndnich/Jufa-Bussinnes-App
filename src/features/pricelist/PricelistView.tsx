@@ -154,7 +154,7 @@ export const PricelistView: React.FC = () => {
       {/* Header View */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b theme-border">
         <div className="flex items-center gap-2.5">
-          <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-500 border border-cyan-500/20">
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
             <Tag size={20} />
           </div>
           <div>
@@ -171,7 +171,7 @@ export const PricelistView: React.FC = () => {
           <button
             type="button"
             onClick={handleCopyText}
-            className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-2 transition active:scale-98 shadow-sm self-start sm:self-auto"
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-2 transition active:scale-98 shadow-sm self-start sm:self-auto"
           >
             {copied ? <Check size={15} /> : <Copy size={15} />}
             <span>{copied ? 'Tersalin ke Clipboard' : 'Salin Teks Pricelist'}</span>
@@ -182,7 +182,7 @@ export const PricelistView: React.FC = () => {
       {/* Konfigurasi Rate Jual */}
       <div className="p-4 rounded-2xl theme-bg-card border theme-border space-y-3">
         <div className="flex items-center gap-2 pb-2 border-b theme-border">
-          <Coins size={16} className="text-cyan-400" />
+          <Coins size={16} className="text-emerald-400" />
           <h2 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
             1. Tentukan Rate Jual (Rp / R$)
           </h2>
@@ -217,8 +217,8 @@ export const PricelistView: React.FC = () => {
                     }}
                     className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold border transition ${
                       numRate === rp.rate
-                        ? 'bg-cyan-500 text-white border-cyan-400 shadow-sm'
-                        : 'theme-bg-surface border-theme theme-text-secondary hover:theme-text-primary hover:border-cyan-500/40'
+                        ? 'bg-emerald-500 text-zinc-950 font-bold border-emerald-400 shadow-sm'
+                        : 'theme-bg-surface border-theme theme-text-secondary hover:theme-text-primary hover:border-emerald-500/40'
                     }`}
                   >
                     {rp.label ? `${rp.label} (${rp.rate})` : `Rate ${rp.rate}`}
@@ -238,7 +238,7 @@ export const PricelistView: React.FC = () => {
       <div className="p-4 rounded-2xl theme-bg-card border theme-border space-y-3">
         <div className="flex items-center justify-between pb-2 border-b theme-border">
           <div className="flex items-center gap-2">
-            <ListOrdered size={16} className="text-cyan-400" />
+            <ListOrdered size={16} className="text-emerald-400" />
             <h2 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
               2. Daftar Nominal Robux yang Dijual
             </h2>
@@ -291,7 +291,7 @@ export const PricelistView: React.FC = () => {
           </div>
           <button
             type="submit"
-            className="h-[42px] px-3.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shrink-0 active:scale-98"
+            className="h-[42px] px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shrink-0 active:scale-98"
           >
             <Plus size={14} />
             <span>Tambah</span>
@@ -325,13 +325,13 @@ export const PricelistView: React.FC = () => {
       <div className="p-4 rounded-2xl theme-bg-card border theme-border space-y-3">
         <div className="flex items-center justify-between pb-2 border-b theme-border">
           <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-cyan-400" />
+            <Sparkles size={16} className="text-emerald-400" />
             <h2 className="text-xs font-bold uppercase tracking-wider theme-text-primary">
               3. Hasil Tabel Pricelist & Harga yang Cocok
             </h2>
           </div>
           {numRate > 0 && (
-            <span className="text-xs font-mono font-semibold text-cyan-400">
+            <span className="text-xs font-mono font-semibold text-emerald-400">
               Rate: Rp{formatNumber(numRate)} / R$
             </span>
           )}
@@ -339,7 +339,7 @@ export const PricelistView: React.FC = () => {
 
         {pricelistData.length === 0 || numRate <= 0 ? (
           <div className="p-8 rounded-xl theme-bg-surface border theme-border text-center space-y-2">
-            <div className="w-10 h-10 mx-auto rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
+            <div className="w-10 h-10 mx-auto rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
               <Calculator size={20} />
             </div>
             <h3 className="text-sm font-bold theme-text-primary">
@@ -361,7 +361,7 @@ export const PricelistView: React.FC = () => {
                   className={`p-3.5 rounded-xl theme-bg-surface border transition flex flex-col justify-between space-y-2 ${
                     item.isLoss
                       ? 'border-red-500/50 bg-red-500/5 shadow-sm'
-                      : 'theme-border hover:border-cyan-500/40'
+                      : 'theme-border hover:border-emerald-500/40'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -378,7 +378,7 @@ export const PricelistView: React.FC = () => {
                     <span className="text-[10px] uppercase font-bold theme-text-muted block">
                       Harga Jual Cocok:
                     </span>
-                    <span className="text-base font-mono font-extrabold text-cyan-400 block">
+                    <span className="text-base font-mono font-extrabold text-emerald-400 block">
                       {formatRupiah(item.price)}
                     </span>
                   </div>
@@ -413,9 +413,9 @@ export const PricelistView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleCopyText}
-                className="px-3 py-1.5 rounded-xl theme-bg-surface border theme-border text-xs font-semibold theme-text-primary hover:border-cyan-500 flex items-center gap-1.5 transition"
+                className="px-3 py-1.5 rounded-xl theme-bg-surface border theme-border text-xs font-semibold theme-text-primary hover:border-emerald-500 flex items-center gap-1.5 transition"
               >
-                <Copy size={13} className="text-cyan-400" />
+                <Copy size={13} className="text-emerald-400" />
                 <span>Salin Seluruh Pricelist</span>
               </button>
             </div>

@@ -189,3 +189,21 @@ export interface SyncQueueItem {
   lastError?: string;
   nextRetryAt?: string;
 }
+
+export type SavingsEntryType = 'IN' | 'OUT';
+
+export interface SavingsEntry {
+  id: string;
+  type: SavingsEntryType;
+  amountRupiah: number;
+  category: string;
+  notes?: string;
+  dateKey: string;
+  createdAt: string;
+}
+
+export interface SavingsCategory {
+  id: string;
+  name: string;
+  createdAt: string;
+}
