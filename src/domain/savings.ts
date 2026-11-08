@@ -65,12 +65,24 @@ export function calculateSavingsSummary(
     }
   }
 
-  const categoriesList = Array.from(catStats.entries()).map(([name, stat]) => ({
-    name,
-    balance: stat.totalIn - stat.totalOut,
-    totalIn: stat.totalIn,
-    totalOut: stat.totalOut,
-  }));
+  // Kategori aktif adalah yang tersimpan di savedCategories ATAU yang masih memiliki sisa saldo > 0.
+  // Kategori yang saldonya sudah 0 dan sudah dihapus dari savedCategories tidak dimunculkan lagi di ringkasan aktif.
+  const savedCatNameSet = new Set(
+    savedCategories.map((sc) => sc.name.trim().toLowerCase()).filter(Boolean)
+  );
+
+  const categoriesList = Array.from(catStats.entries())
+    .filter(([name, stat]) => {
+      const isSaved = savedCatNameSet.has(name.toLowerCase());
+      const hasPositiveBalance = stat.totalIn - stat.totalOut > 0;
+      return isSaved || hasPositiveBalance;
+    })
+    .map(([name, stat]) => ({
+      name,
+      balance: stat.totalIn - stat.totalOut,
+      totalIn: stat.totalIn,
+      totalOut: stat.totalOut,
+    }));
 
   categoriesList.sort((a, b) => a.name.localeCompare(b.name));
 

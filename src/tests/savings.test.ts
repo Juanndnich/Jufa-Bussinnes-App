@@ -162,4 +162,30 @@ describe('JufaStore - Buku Tabungan Pribadi (Savings Domain & Schema Tests)', ()
       expect(parsed.data.savingsCategories).toBeUndefined();
     }
   });
+
+  it('8. Pos kategori yang saldonya sudah 0 dan dihapus dari savedCategories tidak muncul di pos aktif', () => {
+    // Transaksi historis: setor 50.000 ke Makan, lalu ditarik 50.000 dari Makan (saldo 0)
+    const entries = [
+      { type: 'IN' as const, amountRupiah: 50000, category: 'Makan' },
+      { type: 'OUT' as const, amountRupiah: 50000, category: 'Makan' },
+      { type: 'IN' as const, amountRupiah: 100000, category: 'Mainan' },
+    ];
+
+    // Ketika Makan masih aktif di savedCategories
+    const withMakan = calculateSavingsSummary(entries, [{ name: 'Makan' }, { name: 'Mainan' }]);
+    expect(withMakan.categories.find((c) => c.name === 'Makan')).toBeDefined();
+    expect(withMakan.categories.find((c) => c.name === 'Makan')?.balance).toBe(0);
+
+    // Ketika Makan sudah dihapus oleh pengguna dari daftar pos aktif (tidak ada di savedCategories)
+    const afterDeleteMakan = calculateSavingsSummary(entries, [{ name: 'Mainan' }]);
+    expect(afterDeleteMakan.categories.find((c) => c.name === 'Makan')).toBeUndefined();
+    expect(afterDeleteMakan.categories).toHaveLength(1);
+    expect(afterDeleteMakan.categories[0].name).toBe('Mainan');
+    expect(afterDeleteMakan.categories[0].balance).toBe(100000);
+
+    // Total In dan Out keseluruhan tetap mencatat mutasi historis
+    expect(afterDeleteMakan.totalIn).toBe(150000);
+    expect(afterDeleteMakan.totalOut).toBe(50000);
+    expect(afterDeleteMakan.totalBalance).toBe(100000);
+  });
 });

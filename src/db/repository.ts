@@ -1556,8 +1556,24 @@ export const repository = {
     return newCat;
   },
 
-  async deleteSavingsCategory(categoryId: string): Promise<void> {
-    await db.savingsCategories.delete(categoryId);
+  async deleteSavingsCategory(identifier: string): Promise<void> {
+    await db.transaction('rw', [db.savingsCategories, db.auditLogs], async () => {
+      const clean = identifier.trim();
+      const matching = await db.savingsCategories
+        .filter((c) => c.id === clean || c.name.toLowerCase() === clean.toLowerCase())
+        .toArray();
+      for (const cat of matching) {
+        await db.savingsCategories.delete(cat.id);
+      }
+      await db.auditLogs.put({
+        id: `LOG-${Date.now()}`,
+        action: 'SAVINGS_CAT_DELETE',
+        entity: 'savingsCategories',
+        entityId: clean,
+        details: `Hapus pos kategori tabungan "${clean}"`,
+        createdAt: new Date().toISOString(),
+      });
+    });
   },
 
   async addSavingsEntry(params: {

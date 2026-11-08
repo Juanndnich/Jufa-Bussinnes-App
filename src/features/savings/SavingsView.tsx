@@ -140,6 +140,20 @@ export const SavingsView: React.FC = () => {
     });
   }, [entries, filterType, selectedFilterCategory, searchQuery]);
 
+  // Unique category names for the history filter
+  const filterCategoryOptions = useMemo(() => {
+    const names = new Set<string>();
+    summary.categories.forEach((c) => names.add(c.name));
+    categories.forEach((c) => names.add(c.name));
+    entries.forEach((e) => {
+      const c = (e.category || '').trim();
+      if (c && c.toUpperCase() !== 'UMUM' && c.toLowerCase() !== 'tanpa kategori') {
+        names.add(c);
+      }
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [summary.categories, categories, entries]);
+
   // Current balance of selected withdraw source
   const availableWithdrawBalance = useMemo(() => {
     if (withdrawSource === 'UNALLOCATED') {
@@ -297,8 +311,6 @@ export const SavingsView: React.FC = () => {
   // Delete Category
   const handleDeleteCategory = async (catName: string) => {
     playTapSound();
-    const targetCat = categories.find((c) => c.name.toLowerCase() === catName.toLowerCase());
-    if (!targetCat) return;
 
     const isConfirmed = await showConfirmDialog({
       title: `Hapus Pos "${catName}"?`,
@@ -311,7 +323,10 @@ export const SavingsView: React.FC = () => {
     if (!isConfirmed) return;
 
     try {
-      await repository.deleteSavingsCategory(targetCat.id);
+      await repository.deleteSavingsCategory(catName);
+      if (selectedFilterCategory.toLowerCase() === catName.toLowerCase()) {
+        setSelectedFilterCategory('ALL');
+      }
       await loadData();
       showToast(`Pos "${catName}" berhasil dihapus`, 'success');
     } catch (err: any) {
@@ -660,10 +675,10 @@ export const SavingsView: React.FC = () => {
           </span>
         </div>
 
-        {/* Toolbar: Search & Filter (Clean Row on Desktop, Stacked on Mobile) */}
+        {/* Toolbar: Search & Filter (Clean Row on Desktop, Ergonomic Stack on Mobile) */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          {/* Search Input */}
-          <div className="relative flex-1">
+          {/* Search Input: Full width on mobile, flex-1 on desktop */}
+          <div className="relative flex-1 min-w-0">
             <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
               type="text"
@@ -684,46 +699,43 @@ export const SavingsView: React.FC = () => {
             )}
           </div>
 
-          {/* Filter Controls: Pos Dropdown + Segmented Buttons */}
-          <div className="flex items-center gap-2 self-stretch sm:self-auto">
-            {/* Filter Pos Kategori */}
-            <select
-              value={selectedFilterCategory}
-              onChange={(e) => {
-                playTapSound();
-                setSelectedFilterCategory(e.target.value);
-              }}
-              className="flex-1 sm:flex-none px-3 py-2 text-xs rounded-xl theme-bg-surface border theme-border theme-text-primary focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium cursor-pointer max-w-[150px] sm:max-w-[180px] truncate"
-            >
-              <option value="ALL">Semua Pos</option>
-              <option value="UNALLOCATED">Uang Bebas (Umum)</option>
-              {summary.categories.map((c) => (
-                <option key={c.name} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+          {/* Filter Pos Kategori: Full width on mobile, compact on desktop */}
+          <select
+            value={selectedFilterCategory}
+            onChange={(e) => {
+              playTapSound();
+              setSelectedFilterCategory(e.target.value);
+            }}
+            className="w-full sm:w-auto px-3 py-2 text-xs rounded-xl theme-bg-surface border theme-border theme-text-primary focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium cursor-pointer sm:max-w-[170px] truncate"
+          >
+            <option value="ALL">Semua Pos</option>
+            <option value="UNALLOCATED">Uang Bebas (Umum)</option>
+            {filterCategoryOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
 
-            {/* Segmented Control */}
-            <div className="flex items-center p-1 rounded-xl theme-bg-surface border theme-border shrink-0">
-              {(['ALL', 'IN', 'OUT'] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => {
-                    playTapSound();
-                    setFilterType(t);
-                  }}
-                  className={`px-3 py-1 text-xs rounded-lg font-semibold transition ${
-                    filterType === t
-                      ? 'theme-btn-primary shadow-sm'
-                      : 'theme-text-muted hover:theme-text-primary'
-                  }`}
-                >
-                  {t === 'ALL' ? 'Semua' : t === 'IN' ? 'Setor (+)' : 'Tarik (-)'}
-                </button>
-              ))}
-            </div>
+          {/* Segmented Control (Grid 3-kolom di HP agar presisi dan tidak pernah melewati kotak, Flex rapi di Desktop) */}
+          <div className="w-full sm:w-auto grid grid-cols-3 sm:flex items-center p-1 rounded-xl theme-bg-surface border theme-border shrink-0">
+            {(['ALL', 'IN', 'OUT'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setFilterType(t);
+                }}
+                className={`px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs rounded-lg font-semibold transition text-center truncate ${
+                  filterType === t
+                    ? 'theme-btn-primary shadow-sm'
+                    : 'theme-text-muted hover:theme-text-primary'
+                }`}
+              >
+                {t === 'ALL' ? 'Semua' : t === 'IN' ? 'Setor (+)' : 'Tarik (-)'}
+              </button>
+            ))}
           </div>
         </div>
 
