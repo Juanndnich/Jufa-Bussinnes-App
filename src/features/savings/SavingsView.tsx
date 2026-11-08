@@ -158,6 +158,17 @@ export const SavingsView: React.FC = () => {
     setDepositAmount(current + val);
   };
 
+  // Breakdown for Uang Bebas (Umum)
+  const unallocatedIn = useMemo(() => {
+    const catsIn = summary.categories.reduce((acc, c) => acc + c.totalIn, 0);
+    return Math.max(0, summary.totalIn - catsIn);
+  }, [summary]);
+
+  const unallocatedOut = useMemo(() => {
+    const catsOut = summary.categories.reduce((acc, c) => acc + c.totalOut, 0);
+    return Math.max(0, summary.totalOut - catsOut);
+  }, [summary]);
+
   // Submit Deposit
   const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -339,15 +350,15 @@ export const SavingsView: React.FC = () => {
           </p>
         </div>
 
-        {/* Action Button Cluster */}
-        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+        {/* Action Button Cluster (Responsive Grid on Mobile, Sleek Flex on Desktop) */}
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto shrink-0">
           <button
             type="button"
             onClick={() => {
               playTapSound();
               setIsGuideModalOpen(true);
             }}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border theme-text-secondary hover:theme-text-primary transition shadow-sm active:scale-95"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border theme-text-secondary hover:theme-text-primary transition shadow-sm active:scale-95"
             title="Buka panduan lengkap cara kerja buku tabungan"
           >
             <BookOpen size={14} className="text-emerald-500" />
@@ -360,7 +371,7 @@ export const SavingsView: React.FC = () => {
               playTapSound();
               setIsCategoryModalOpen(true);
             }}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border theme-text-secondary hover:theme-text-primary transition shadow-sm active:scale-95"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border theme-text-secondary hover:theme-text-primary transition shadow-sm active:scale-95"
           >
             <FolderPlus size={14} className="text-emerald-500" />
             <span>Tambah Pos</span>
@@ -376,7 +387,7 @@ export const SavingsView: React.FC = () => {
               setWithdrawDateKey(getTodayKey());
               setIsWithdrawModalOpen(true);
             }}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition shadow-sm active:scale-95"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 transition shadow-sm active:scale-95"
           >
             <ArrowUpRight size={14} />
             <span>Tarik Dana</span>
@@ -394,7 +405,7 @@ export const SavingsView: React.FC = () => {
               setDepositDateKey(getTodayKey());
               setIsDepositModalOpen(true);
             }}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20 transition active:scale-95"
+            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20 transition active:scale-95"
           >
             <ArrowDownLeft size={14} />
             <span>Setor Dana</span>
@@ -403,21 +414,21 @@ export const SavingsView: React.FC = () => {
       </div>
 
       {/* ===================== SUMMARY CARDS ===================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Total Saldo Keseluruhan */}
         <div className="p-4 rounded-2xl theme-bg-card border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-transparent to-transparent shadow-sm flex flex-col justify-between overflow-hidden">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold theme-text-muted truncate">Total Saldo Tabungan</span>
+            <span className="text-xs font-semibold theme-text-muted truncate">Total Saldo</span>
             <span className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-500 shrink-0">
               <PiggyBank size={15} />
             </span>
           </div>
-          <div className="mt-3">
-            <div className="text-xl sm:text-2xl font-extrabold font-mono tracking-tight text-emerald-600 dark:text-emerald-400 truncate">
+          <div className="mt-3 min-w-0">
+            <div className="text-base sm:text-2xl font-extrabold font-mono tracking-tight text-emerald-600 dark:text-emerald-400 truncate">
               {formatRupiah(summary.totalBalance)}
             </div>
             <p className="text-[11px] theme-text-muted mt-1 truncate">
-              Gabungan seluruh pos tabungan aktif
+              Gabungan seluruh pos aktif
             </p>
           </div>
         </div>
@@ -425,17 +436,17 @@ export const SavingsView: React.FC = () => {
         {/* Card 2: Saldo Uang Bebas / Umum */}
         <div className="p-4 rounded-2xl theme-bg-card border theme-border shadow-sm flex flex-col justify-between overflow-hidden">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold theme-text-muted truncate">Uang Bebas (Umum)</span>
+            <span className="text-xs font-semibold theme-text-muted truncate">Uang Bebas</span>
             <span className="p-1.5 rounded-lg bg-zinc-500/10 text-zinc-400 shrink-0">
               <Wallet size={15} />
             </span>
           </div>
-          <div className="mt-3">
-            <div className="text-xl sm:text-2xl font-extrabold font-mono tracking-tight theme-text-primary truncate">
+          <div className="mt-3 min-w-0">
+            <div className="text-base sm:text-2xl font-extrabold font-mono tracking-tight theme-text-primary truncate">
               {formatRupiah(summary.unallocatedBalance)}
             </div>
             <p className="text-[11px] theme-text-muted mt-1 truncate">
-              Dana tabungan tanpa target pos khusus
+              Tanpa pos khusus (umum)
             </p>
           </div>
         </div>
@@ -443,17 +454,17 @@ export const SavingsView: React.FC = () => {
         {/* Card 3: Total Akumulasi Masuk */}
         <div className="p-4 rounded-2xl theme-bg-card border theme-border shadow-sm flex flex-col justify-between overflow-hidden">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold theme-text-muted truncate">Total Disimpan (Masuk)</span>
+            <span className="text-xs font-semibold theme-text-muted truncate">Total Disimpan</span>
             <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 shrink-0">
               <ArrowDownLeft size={15} />
             </span>
           </div>
-          <div className="mt-3">
-            <div className="text-xl sm:text-2xl font-extrabold font-mono tracking-tight text-emerald-500 truncate">
+          <div className="mt-3 min-w-0">
+            <div className="text-base sm:text-2xl font-extrabold font-mono tracking-tight text-emerald-500 truncate">
               +{formatRupiah(summary.totalIn)}
             </div>
             <p className="text-[11px] theme-text-muted mt-1 truncate">
-              Akumulasi dana yang disisihkan
+              Akumulasi dana disisihkan
             </p>
           </div>
         </div>
@@ -461,17 +472,17 @@ export const SavingsView: React.FC = () => {
         {/* Card 4: Total Akumulasi Keluar */}
         <div className="p-4 rounded-2xl theme-bg-card border theme-border shadow-sm flex flex-col justify-between overflow-hidden">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold theme-text-muted truncate">Total Digunakan (Keluar)</span>
+            <span className="text-xs font-semibold theme-text-muted truncate">Total Digunakan</span>
             <span className="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 shrink-0">
               <ArrowUpRight size={15} />
             </span>
           </div>
-          <div className="mt-3">
-            <div className="text-xl sm:text-2xl font-extrabold font-mono tracking-tight text-rose-500 truncate">
+          <div className="mt-3 min-w-0">
+            <div className="text-base sm:text-2xl font-extrabold font-mono tracking-tight text-rose-500 truncate">
               -{formatRupiah(summary.totalOut)}
             </div>
             <p className="text-[11px] theme-text-muted mt-1 truncate">
-              Akumulasi dana yang telah terpakai
+              Akumulasi dana terpakai
             </p>
           </div>
         </div>
@@ -496,7 +507,7 @@ export const SavingsView: React.FC = () => {
               playTapSound();
               setIsCategoryModalOpen(true);
             }}
-            className="text-xs font-semibold text-emerald-500 hover:text-emerald-400 flex items-center gap-1 shrink-0"
+            className="text-xs font-semibold text-emerald-500 hover:text-emerald-400 flex items-center gap-1 shrink-0 active:scale-95 transition"
           >
             <Plus size={14} />
             <span>Tambah Pos</span>
@@ -507,9 +518,9 @@ export const SavingsView: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {/* Card: Pos Uang Bebas */}
           <div className="p-4 rounded-xl border border-zinc-500/20 bg-zinc-500/5 flex flex-col justify-between gap-3 overflow-hidden">
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-bold theme-text-primary flex items-center gap-1.5 truncate">
+                <span className="text-xs font-bold theme-text-primary flex items-center gap-1.5 truncate min-w-0">
                   <Wallet size={14} className="text-zinc-400 shrink-0" />
                   <span className="truncate">Uang Bebas (Umum)</span>
                 </span>
@@ -524,6 +535,22 @@ export const SavingsView: React.FC = () => {
                   {formatRupiah(summary.unallocatedBalance)}
                 </div>
               </div>
+
+              {/* Micro Breakdown In & Out */}
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t theme-border text-[11px]">
+                <div className="min-w-0">
+                  <span className="text-[10px] theme-text-muted block">Masuk</span>
+                  <span className="font-semibold text-emerald-500 truncate block">
+                    +{formatRupiah(unallocatedIn)}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] theme-text-muted block">Keluar</span>
+                  <span className="font-semibold text-rose-500 truncate block">
+                    -{formatRupiah(unallocatedOut)}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="pt-2 border-t theme-border flex items-center gap-2">
@@ -531,7 +558,7 @@ export const SavingsView: React.FC = () => {
                 type="button"
                 disabled={summary.unallocatedBalance <= 0}
                 onClick={() => openWithdrawForCategory('UNALLOCATED')}
-                className="w-full py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-1"
+                className="w-full py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-1 active:scale-95"
               >
                 <ArrowUpRight size={13} />
                 <span>Gunakan Dana</span>
@@ -613,40 +640,52 @@ export const SavingsView: React.FC = () => {
 
       {/* ===================== RIWAYAT MUTASI TABUNGAN ===================== */}
       <div className="p-4 sm:p-5 rounded-2xl theme-bg-card border theme-border shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Calendar size={17} className="text-emerald-500 shrink-0" />
-            <h2 className="text-sm font-bold theme-text-primary">
-              Riwayat Mutasi Tabungan
-            </h2>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-500/10 theme-text-muted font-medium">
-              {filteredEntries.length} Transaksi
-            </span>
+        {/* Header: Title, Description & Badge */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b theme-border">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+              <Calendar size={18} />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold theme-text-primary tracking-tight">
+                Riwayat Mutasi Tabungan
+              </h2>
+              <p className="text-[11px] theme-text-muted">
+                Catatan mutasi penyetoran dan penarikan dana tabungan pribadi
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] px-2.5 py-1 rounded-full bg-zinc-500/10 theme-text-muted font-medium border theme-border self-start sm:self-auto shrink-0">
+            {filteredEntries.length} Transaksi
+          </span>
+        </div>
+
+        {/* Toolbar: Search & Filter (Clean Row on Desktop, Stacked on Mobile) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              placeholder="Cari catatan, nominal, atau pos..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 rounded-xl theme-bg-surface border theme-border text-xs theme-text-primary placeholder:theme-text-muted focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:theme-text-primary"
+                title="Hapus pencarian"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
 
-          {/* Filter Bar */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Filter Jenis: Segmented Control */}
-            <div className="flex rounded-xl p-0.5 bg-zinc-100 dark:bg-zinc-800/80 border theme-border">
-              {(['ALL', 'IN', 'OUT'] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => {
-                    playTapSound();
-                    setFilterType(t);
-                  }}
-                  className={`px-2.5 py-1 text-[11px] rounded-lg font-medium transition ${
-                    filterType === t
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'theme-text-muted hover:theme-text-primary'
-                  }`}
-                >
-                  {t === 'ALL' ? 'Semua' : t === 'IN' ? 'Setor (+)' : 'Tarik (-)'}
-                </button>
-              ))}
-            </div>
-
+          {/* Filter Controls: Pos Dropdown + Segmented Buttons */}
+          <div className="flex items-center gap-2 self-stretch sm:self-auto">
             {/* Filter Pos Kategori */}
             <select
               value={selectedFilterCategory}
@@ -654,7 +693,7 @@ export const SavingsView: React.FC = () => {
                 playTapSound();
                 setSelectedFilterCategory(e.target.value);
               }}
-              className="px-2.5 py-1 text-[11px] rounded-xl theme-bg-card theme-border border theme-text-primary focus:outline-none focus:ring-1 focus:ring-emerald-500 max-w-[140px] truncate"
+              className="flex-1 sm:flex-none px-3 py-2 text-xs rounded-xl theme-bg-surface border theme-border theme-text-primary focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium cursor-pointer max-w-[150px] sm:max-w-[180px] truncate"
             >
               <option value="ALL">Semua Pos</option>
               <option value="UNALLOCATED">Uang Bebas (Umum)</option>
@@ -665,25 +704,25 @@ export const SavingsView: React.FC = () => {
               ))}
             </select>
 
-            {/* Search Input */}
-            <div className="relative">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 theme-text-muted" />
-              <input
-                type="text"
-                placeholder="Cari catatan..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-7 pr-6 py-1 text-[11px] rounded-xl theme-bg-card theme-border border theme-text-primary placeholder:theme-text-muted focus:outline-none focus:ring-1 focus:ring-emerald-500 w-32 sm:w-44"
-              />
-              {searchQuery && (
+            {/* Segmented Control */}
+            <div className="flex items-center p-1 rounded-xl theme-bg-surface border theme-border shrink-0">
+              {(['ALL', 'IN', 'OUT'] as const).map((t) => (
                 <button
+                  key={t}
                   type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:theme-text-primary"
+                  onClick={() => {
+                    playTapSound();
+                    setFilterType(t);
+                  }}
+                  className={`px-3 py-1 text-xs rounded-lg font-semibold transition ${
+                    filterType === t
+                      ? 'theme-btn-primary shadow-sm'
+                      : 'theme-text-muted hover:theme-text-primary'
+                  }`}
                 >
-                  <X size={11} />
+                  {t === 'ALL' ? 'Semua' : t === 'IN' ? 'Setor (+)' : 'Tarik (-)'}
                 </button>
-              )}
+              ))}
             </div>
           </div>
         </div>
@@ -692,27 +731,46 @@ export const SavingsView: React.FC = () => {
         {isLoading ? (
           <div className="py-12 text-center text-xs theme-text-muted">Memuat catatan tabungan...</div>
         ) : filteredEntries.length === 0 ? (
-          <div className="py-12 px-4 text-center rounded-xl border border-dashed theme-border space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto">
+          <div className="py-12 px-4 text-center rounded-2xl border border-dashed theme-border space-y-3 bg-zinc-500/[0.02]">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto border border-emerald-500/20">
               <PiggyBank size={24} />
             </div>
-            <div>
+            <div className="space-y-1">
               <h3 className="text-sm font-semibold theme-text-primary">Belum Ada Catatan Tabungan</h3>
-              <p className="text-xs theme-text-muted mt-0.5 max-w-sm mx-auto">
-                Mulai menabung dengan menekan tombol <strong>Setor Dana</strong> di bagian atas.
+              <p className="text-xs theme-text-muted max-w-sm mx-auto">
+                {searchQuery || filterType !== 'ALL' || selectedFilterCategory !== 'ALL'
+                  ? 'Tidak ada catatan mutasi yang cocok dengan filter atau kata kunci pencarian.'
+                  : 'Mulai menabung dengan menekan tombol Setor Dana di bagian atas.'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                playTapSound();
-                setIsGuideModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold theme-bg-card border theme-border text-emerald-500 hover:text-emerald-400"
-            >
-              <BookOpen size={13} />
-              <span>Lihat Panduan Penggunaan</span>
-            </button>
+            <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setIsGuideModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border text-emerald-600 dark:text-emerald-400 hover:border-emerald-500/40 transition shadow-sm active:scale-95"
+              >
+                <BookOpen size={14} />
+                <span>Buku Panduan Penggunaan</span>
+              </button>
+              {(searchQuery || filterType !== 'ALL' || selectedFilterCategory !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTapSound();
+                    setSearchQuery('');
+                    setFilterType('ALL');
+                    setSelectedFilterCategory('ALL');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold theme-bg-card border theme-border theme-text-muted hover:theme-text-primary transition shadow-sm active:scale-95"
+                >
+                  <X size={13} />
+                  <span>Reset Filter</span>
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="divide-y theme-border">
@@ -726,10 +784,10 @@ export const SavingsView: React.FC = () => {
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div
-                      className={`p-2 rounded-xl shrink-0 ${
+                      className={`p-2 rounded-xl shrink-0 border ${
                         isDeposit
-                          ? 'bg-emerald-500/10 text-emerald-500'
-                          : 'bg-rose-500/10 text-rose-500'
+                          ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                          : 'bg-rose-500/10 text-rose-500 border-rose-500/20'
                       }`}
                     >
                       {isDeposit ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
@@ -741,10 +799,10 @@ export const SavingsView: React.FC = () => {
                           {isDeposit ? 'Setor Dana' : 'Tarik Dana'}
                         </span>
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded-md font-medium truncate max-w-[140px] sm:max-w-xs ${
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-medium truncate max-w-[130px] sm:max-w-xs border ${
                             catName
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                              : 'bg-zinc-500/10 theme-text-muted border theme-border'
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                              : 'bg-zinc-500/10 theme-text-muted theme-border'
                           }`}
                         >
                           {catName || 'Uang Bebas (Umum)'}
@@ -755,7 +813,7 @@ export const SavingsView: React.FC = () => {
                         {entry.notes && (
                           <>
                             <span>•</span>
-                            <span className="italic truncate max-w-[180px] sm:max-w-md">"{entry.notes}"</span>
+                            <span className="italic truncate max-w-[150px] sm:max-w-md">"{entry.notes}"</span>
                           </>
                         )}
                       </div>
@@ -775,7 +833,7 @@ export const SavingsView: React.FC = () => {
                       type="button"
                       onClick={() => handleDeleteEntry(entry)}
                       title="Hapus catatan mutasi"
-                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition"
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition active:scale-95"
                     >
                       <Trash2 size={14} />
                     </button>
